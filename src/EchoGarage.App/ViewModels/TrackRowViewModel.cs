@@ -60,6 +60,10 @@ public sealed partial class TrackRowViewModel : ObservableObject
     public string PathText => Track.Path;
     public string FileName => Track.FileName;
 
+    public string RowToolTip => IsMissing
+        ? $"{Track.Path}\n文件不存在或已被移动"
+        : Track.Path;
+
     public int TrackNumberSort => Track.TrackNumber;
     public int DiscNumberSort => Track.DiscNumber;
     public int YearSort => Track.Year ?? 0;

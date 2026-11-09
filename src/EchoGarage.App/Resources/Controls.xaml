@@ -579,6 +579,7 @@
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Height" Value="28" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="ToolTip" Value="{Binding RowToolTip}" />
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Background" Value="{StaticResource RowHoverBrush}" />
@@ -588,6 +589,9 @@
             </Trigger>
             <DataTrigger Binding="{Binding IsPlaying}" Value="True">
                 <Setter Property="Background" Value="{StaticResource PlayingRowBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsMissing}" Value="True">
+                <Setter Property="Opacity" Value="0.55" />
             </DataTrigger>
         </Style.Triggers>
     </Style>

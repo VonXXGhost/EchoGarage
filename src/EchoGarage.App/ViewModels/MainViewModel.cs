@@ -682,8 +682,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task PlayRowAsync(TrackRowViewModel? row)
     {
-        if (row is null || !row.IsPlayable)
+        if (row is null)
         {
+            return;
+        }
+
+        if (!row.IsPlayable)
+        {
+            SetStatus($"文件不存在或无法访问：{row.Track.Path}");
             return;
         }
 
