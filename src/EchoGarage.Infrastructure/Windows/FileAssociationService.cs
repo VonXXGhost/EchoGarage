@@ -40,9 +40,20 @@ public sealed class FileAssociationService
 
     public bool IsRegistered() => _store.KeyExists($@"{ProgIdPath}\shell\open\command");
 
-    public bool Register(string executablePath)
+    /// <summary>
+    /// Registers the ProgId for the selected extensions only. Registration is always an
+    /// explicit user action (see the association dialog); the app never registers itself on
+    /// startup, and it never overwrites the extension's current default handler.
+    /// </summary>
+    public bool Register(string executablePath, IReadOnlyList<string>? extensions = null)
     {
         if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+        {
+            return false;
+        }
+
+        var selected = NormalizeExtensions(extensions);
+        if (selected.Count == 0)
         {
             return false;
         }
@@ -62,7 +73,7 @@ public sealed class FileAssociationService
             (CapabilitiesPath, "ApplicationDescription", $"{DisplayName} 本地音乐播放器")
         };
 
-        foreach (var extension in AudioExtensions)
+        foreach (var extension in selected)
         {
             operations.Add(($@"Software\Classes\Applications\{ApplicationName}\SupportedTypes", extension, string.Empty));
             operations.Add(($@"Software\Classes\{extension}\OpenWithProgids", ProgId, string.Empty));
@@ -81,7 +92,47 @@ public sealed class FileAssociationService
             }
         }
 
+        // Re-registering with a smaller selection removes the formats the user unchecked.
+        foreach (var extension in AudioExtensions.Where(e =>
+                     !selected.Contains(e, StringComparer.OrdinalIgnoreCase)))
+        {
+            _store.DeleteValue($@"Software\Classes\{extension}\OpenWithProgids", ProgId);
+            _store.DeleteValue($@"{CapabilitiesPath}\FileAssociations", extension);
+        }
+
         return true;
+    }
+
+    public static IReadOnlyList<string> NormalizeExtensions(IReadOnlyList<string>? extensions)
+    {
+        if (extensions is null)
+        {
+            return AudioExtensions;
+        }
+
+        var result = new List<string>();
+        foreach (var extension in extensions)
+        {
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                continue;
+            }
+
+            var normalized = extension.Trim();
+            if (!normalized.StartsWith('.'))
+            {
+                normalized = "." + normalized;
+            }
+
+            var match = AudioExtensions.FirstOrDefault(e =>
+                string.Equals(e, normalized, StringComparison.OrdinalIgnoreCase));
+            if (match is not null && !result.Contains(match, StringComparer.OrdinalIgnoreCase))
+            {
+                result.Add(match);
+            }
+        }
+
+        return result;
     }
 
     public bool Unregister()

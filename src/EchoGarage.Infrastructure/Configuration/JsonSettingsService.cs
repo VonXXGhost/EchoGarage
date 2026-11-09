@@ -119,6 +119,11 @@ public sealed class JsonSettingsService : ISettingsService
     private AppSettings Normalize(AppSettings settings)
     {
         settings.SchemaVersion = Math.Max(1, settings.SchemaVersion);
+        if (!Enum.IsDefined(settings.Theme))
+        {
+            settings.Theme = ThemeKind.Dark;
+        }
+
         settings.Volume = Math.Clamp(settings.Volume, 0, 1);
         settings.WindowWidth = Math.Clamp(settings.WindowWidth, 960, 10000);
         settings.WindowHeight = Math.Clamp(settings.WindowHeight, 600, 10000);

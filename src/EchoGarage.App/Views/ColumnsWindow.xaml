@@ -6,8 +6,8 @@
                     Width="780" Height="600"
                     MinWidth="700" MinHeight="480"
                     WindowStartupLocation="CenterOwner"
-                    Background="{StaticResource WindowBackgroundBrush}"
-                    Foreground="{StaticResource TextPrimaryBrush}"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
                     FontFamily="{StaticResource UiFont}"
                     FontSize="12"
                     ShowInTaskbar="False"
@@ -25,11 +25,11 @@
 
         <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,12">
             <TextBlock Text="每一列都可以显示/隐藏、调整宽度和顺序；这些设置按播放列表分别保存。" FontSize="12"
-                       Foreground="{StaticResource TextSecondaryBrush}" />
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
         </StackPanel>
 
-        <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource PanelBackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,0,12,0">
+        <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource PanelBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,0,12,0">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -41,9 +41,9 @@
                         <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="70" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="显示 / 列名" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
-                    <TextBlock Grid.Column="1" Text="宽度" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
-                    <TextBlock Grid.Column="2" Text="顺序" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                    <TextBlock Grid.Column="0" Text="显示 / 列名" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" />
+                    <TextBlock Grid.Column="1" Text="宽度" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" />
+                    <TextBlock Grid.Column="2" Text="顺序" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" />
                 </Grid>
                 <ListBox x:Name="ColumnList" Grid.Row="1" Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -60,10 +60,10 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}" />
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -98,13 +98,13 @@
 
         <StackPanel Grid.Row="1" Grid.Column="1">
             <TextBlock Text="快速选择显示预设" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
-            <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+            <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1" CornerRadius="6" Height="170">
                 <ListBox x:Name="PresetList" Background="Transparent" BorderThickness="0" DisplayMemberPath="Name"
                          Padding="4">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                             <Setter Property="Padding" Value="8,6" />
                             <Setter Property="Template">
                                 <Setter.Value>
@@ -114,10 +114,10 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}" />
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -133,12 +133,12 @@
                 <Button Content="删除" Style="{StaticResource FlatButton}" Click="OnDeletePreset" />
             </StackPanel>
 
-            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,14" />
+            <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,16,0,14" />
 
             <TextBlock Text="排序" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
             <ComboBox x:Name="SortColumnBox" />
             <CheckBox x:Name="DescendingBox" Content="降序" Margin="0,10,0,0" />
-            <TextBlock Text="排序也可以在表头上点击列名切换。" Foreground="{StaticResource TextMutedBrush}"
+            <TextBlock Text="排序也可以在表头上点击列名切换。" Foreground="{DynamicResource TextMutedBrush}"
                        FontSize="11" TextWrapping="Wrap" Margin="0,12,0,0" />
         </StackPanel>
 

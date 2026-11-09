@@ -1,6 +1,6 @@
 # KB-004：性能基线与优化记录
 
-- 状态：待批准（Proposed）
+- 状态：已批准（Accepted，2026-11-09，owner）
 - 日期：2026-11-09
 - 环境：Windows 11（26200）、.NET 10、4 首测试曲目；Release/Debug 均为 Debug 构建测得的保守值
 

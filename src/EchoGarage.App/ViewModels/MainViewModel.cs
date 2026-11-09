@@ -30,6 +30,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _suppressSourceSelection;
     private bool _suppressOutputApply;
     private bool _suppressVolumeSave;
+    private bool _suppressThemeApply;
     private bool _isSeeking;
     private bool _isDisposed;
     private int _consecutiveFailures;
@@ -73,6 +74,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _suppressVolumeSave = true;
         Volume = Settings.Volume * 100;
         _suppressVolumeSave = false;
+        _suppressThemeApply = true;
+        ThemeIndex = Settings.Theme == ThemeKind.Light ? 1 : 0;
+        _suppressThemeApply = false;
         OutputDescription = _host.Player.OutputDescription;
         StatusMessage = "就绪";
     }
@@ -86,6 +90,34 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<ColumnPreset> Presets { get; }
 
     public IReadOnlyList<string> OutputModeOptions { get; } = ["共享模式", "独占模式"];
+    public IReadOnlyList<string> ThemeOptions { get; } = ["深色", "浅色"];
+
+    [ObservableProperty]
+    private int _themeIndex;
+
+    [RelayCommand]
+    private void SetTheme(string? index)
+    {
+        if (int.TryParse(index, out var value))
+        {
+            ThemeIndex = value;
+        }
+    }
+
+    partial void OnThemeIndexChanged(int value)
+    {
+        if (_suppressThemeApply)
+        {
+            return;
+        }
+
+        var theme = value == 1 ? ThemeKind.Light : ThemeKind.Dark;
+        Settings.Theme = theme;
+        ThemeManager.Apply(theme);
+        _host.Logger.Info($"Theme switched to {theme}");
+        QueueSettingsSave();
+        SetStatus($"界面主题：{(value == 1 ? "浅色" : "深色")}");
+    }
 
     [ObservableProperty]
     private PlaylistViewLayout _currentLayout = ViewLayoutFactory.CreateDefault();
@@ -1783,6 +1815,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 _suppressOutputApply = false;
             }
 
+            _suppressThemeApply = true;
+            ThemeIndex = _host.Settings.Current.Theme == ThemeKind.Light ? 1 : 0;
+            _suppressThemeApply = false;
+            ThemeManager.Apply(_host.Settings.Current.Theme);
+
             ApplyOutput();
             LayoutChanged?.Invoke(this, EventArgs.Empty);
             SortChanged?.Invoke(this, EventArgs.Empty);
@@ -1798,27 +1835,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void RegisterDefaultPlayer()
     {
-        var exe = Environment.ProcessPath;
-        if (exe is null || !_host.Associations.Register(exe))
-        {
-            _dialogs.Error("注册为默认播放器失败（无法写入注册表）。");
-            return;
-        }
-
-        SetStatus("已注册为音频文件候选播放器，可在 Windows 默认应用中设为默认");
-        if (_dialogs.Confirm("注册成功。是否打开 Windows“默认应用”设置将 EchoGarage 设为默认播放器？"))
-        {
-            FileAssociationService.OpenDefaultAppsSettings();
-        }
-    }
-
-    [RelayCommand]
-    private void UnregisterDefaultPlayer()
-    {
-        if (_host.Associations.Unregister())
-        {
-            SetStatus("已取消文件关联注册");
-        }
+        // Registration is opt-in and per-extension; nothing is registered at startup.
+        _dialogs.ShowFileAssociations(_host);
+        SetStatus("文件关联注册需要手动确认");
     }
 
     [RelayCommand]

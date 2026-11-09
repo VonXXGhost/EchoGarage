@@ -6,8 +6,8 @@
                     Width="720" Height="720"
                     MinWidth="640" MinHeight="560"
                     WindowStartupLocation="CenterOwner"
-                    Background="{StaticResource WindowBackgroundBrush}"
-                    Foreground="{StaticResource TextPrimaryBrush}"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
                     FontFamily="{StaticResource UiFont}"
                     FontSize="12"
                     ShowInTaskbar="False"
@@ -20,9 +20,30 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <!-- Appearance -->
+                <TextBlock Text="界面" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="主题" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                                      ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
+                        </Grid>
+                        <TextBlock Text="切换立即生效，并保存在配置中。深色为默认主题，浅色适合明亮环境。"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                   TextWrapping="Wrap" Margin="90,8,0,0" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Audio output -->
                 <TextBlock Text="音频输出" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14">
                     <StackPanel>
                         <Grid>
@@ -32,7 +53,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="输出设备" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
                             <ComboBox Grid.Column="1" ItemsSource="{Binding Devices}" DisplayMemberPath="FriendlyName"
                                       SelectedItem="{Binding SelectedDevice}" Height="28" Margin="0,0,10,0" />
                             <Button Grid.Column="2" Content="刷新" Style="{StaticResource FlatButton}"
@@ -44,28 +65,28 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="输出模式" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
                             <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
                                       ItemsSource="{Binding OutputModeOptions}" SelectedIndex="{Binding OutputModeIndex}" />
                         </Grid>
-                        <TextBlock Text="{Binding OutputDescription}" Foreground="{StaticResource TextMutedBrush}"
+                        <TextBlock Text="{Binding OutputDescription}" Foreground="{DynamicResource TextMutedBrush}"
                                    FontSize="11" Margin="90,10,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="独占模式绕过系统混音器，可减少处理环节；其他程序将无法同时播放声音。"
-                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                    Margin="90,6,0,0" />
                     </StackPanel>
                 </Border>
 
                 <!-- Library -->
                 <TextBlock Text="媒体库" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14">
                     <StackPanel>
                         <CheckBox x:Name="AutoScanCheck" Content="启动时自动扫描媒体库（仅处理变化的文件）"
                                   Click="OnToggleAutoScan" />
                         <CheckBox x:Name="RestoreLastCheck" Content="启动时恢复上次打开的播放列表"
                                   Margin="0,10,0,0" Click="OnToggleRestoreLast" />
-                        <TextBlock x:Name="LibrarySummaryText" Foreground="{StaticResource TextSecondaryBrush}"
+                        <TextBlock x:Name="LibrarySummaryText" Foreground="{DynamicResource TextSecondaryBrush}"
                                    Margin="0,10,0,0" />
                         <ListBox x:Name="FolderList" Margin="0,10,0,0" MaxHeight="150" Background="Transparent"
                                  BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -78,9 +99,9 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding Folder.Path}" ToolTip="{Binding Folder.Path}"
                                                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
                                         <Button Grid.Column="1" Content="移除" Style="{StaticResource FlatButton}"
-                                                Foreground="{StaticResource DangerBrush}" Click="OnRemoveFolder" />
+                                                Foreground="{DynamicResource DangerBrush}" Click="OnRemoveFolder" />
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -93,10 +114,10 @@
 
                 <!-- Cache -->
                 <TextBlock Text="缓存与数据" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14">
                     <StackPanel>
-                        <TextBlock Text="封面缓存目录" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="封面缓存目录" Foreground="{DynamicResource TextSecondaryBrush}" />
                         <Grid Margin="0,6,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -111,44 +132,43 @@
                             <Button Content="打开目录" Style="{StaticResource FlatButton}" Click="OnOpenCache" />
                             <Button Content="清空封面缓存" Style="{StaticResource FlatButton}" Click="OnClearCache" />
                         </StackPanel>
-                        <TextBlock x:Name="CacheStatusText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                        <TextBlock x:Name="CacheStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                    Margin="0,8,0,0" TextWrapping="Wrap" />
-                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,12" />
+                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
                         <StackPanel Orientation="Horizontal">
                             <Button Content="打开配置目录" Style="{StaticResource FlatButton}" Click="OnOpenConfig" />
                             <Button Content="打开数据目录" Style="{StaticResource FlatButton}" Click="OnOpenData" />
                             <Button Content="打开日志目录" Style="{StaticResource FlatButton}" Click="OnOpenLogs" />
                         </StackPanel>
-                        <TextBlock x:Name="DataDirText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                        <TextBlock x:Name="DataDirText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                    Margin="0,8,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
 
                 <!-- Associations -->
                 <TextBlock Text="文件关联" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14">
                     <StackPanel>
-                        <TextBlock x:Name="AssociationStatusText" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock x:Name="AssociationStatusText" Foreground="{DynamicResource TextSecondaryBrush}" />
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Content="注册为默认播放器" Style="{StaticResource FlatButton}" Click="OnRegister" />
-                            <Button Content="取消注册" Style="{StaticResource FlatButton}" Click="OnUnregister" />
+                            <Button Content="管理文件关联…" Style="{StaticResource FlatButton}" Click="OnManageAssociations" />
                         </StackPanel>
-                        <TextBlock Text="Windows 10/11 会保护用户已选择的默认应用：注册后需要在系统设置中选择 EchoGarage。"
-                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                        <TextBlock Text="文件关联是可选手动操作，启动时不会自动注册；注册时可以选择具体格式。Windows 10/11 会保护用户已选择的默认应用，注册后需要在系统设置中确认 EchoGarage。"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                    Margin="0,8,0,0" />
                     </StackPanel>
                 </Border>
 
                 <!-- About -->
                 <TextBlock Text="关于" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14">
                     <StackPanel>
                         <TextBlock Text="EchoGarage v0.1.0" FontWeight="SemiBold" />
-                        <TextBlock Text="本地音乐播放器 · WPF / .NET 10 · NAudio WASAPI" Foreground="{StaticResource TextSecondaryBrush}"
+                        <TextBlock Text="本地音乐播放器 · WPF / .NET 10 · NAudio WASAPI" Foreground="{DynamicResource TextSecondaryBrush}"
                                    Margin="0,4,0,0" />
-                        <TextBlock x:Name="StartupText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                        <TextBlock x:Name="StartupText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                    Margin="0,8,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>

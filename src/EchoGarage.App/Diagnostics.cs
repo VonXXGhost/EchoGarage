@@ -52,6 +52,7 @@ internal static class Diagnostics
 
         await CaptureWindowAsync(new ColumnsWindow(vm.CurrentLayout, vm.Presets.ToList()), directory, "dialog-columns.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
+        await CaptureWindowAsync(new FileAssociationWindow(host), directory, "dialog-associations.png", main);
         await CaptureWindowAsync(new PlaylistPickerWindow(
             [new Playlist { Id = 2, Name = "测试播放列表" }, new Playlist { Id = 3, Name = "另一个列表" }],
             "添加到播放列表"), directory, "dialog-picker.png", main);

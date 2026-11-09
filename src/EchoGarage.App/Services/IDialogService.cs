@@ -16,6 +16,7 @@ public interface IDialogService
     string? PickImageFile();
     string? PickSaveFile(string filter, string defaultFileName);
     string? PickOpenFile(string filter);
+    void ShowFileAssociations(AppHost host);
     bool Confirm(string message, string title = "确认");
     void Info(string message, string title = "提示");
     void Error(string message, string title = "错误");

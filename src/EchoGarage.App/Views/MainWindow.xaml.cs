@@ -41,9 +41,19 @@ public partial class MainWindow : Window
         ApplyWindowPlacement();
         Loaded += OnLoaded;
         Closing += OnClosing;
+        Closed += OnClosed;
         PreviewKeyDown += OnPreviewKeyDown;
         DragOver += OnWindowDragOver;
         Drop += OnWindowDrop;
+        ThemeManager.ThemeApplied += OnThemeApplied;
+    }
+
+    private void OnThemeApplied(object? sender, EchoGarage.Core.Models.ThemeKind theme) => TryEnableDarkTitleBar();
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        ThemeManager.ThemeApplied -= OnThemeApplied;
+        Closed -= OnClosed;
     }
 
     public MainViewModel ViewModel => _vm;
@@ -660,7 +670,12 @@ public partial class MainWindow : Window
         try
         {
             var handle = new WindowInteropHelper(this).Handle;
-            var enabled = 1;
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var enabled = ThemeManager.IsDark ? 1 : 0;
             if (DwmSetWindowAttribute(handle, 20, ref enabled, sizeof(int)) != 0)
             {
                 DwmSetWindowAttribute(handle, 19, ref enabled, sizeof(int));

@@ -1,6 +1,6 @@
 # KB-002：受限开发环境（DSH 沙箱）下的构建与测试
 
-- 状态：待批准（Proposed）
+- 状态：已批准（Accepted，2026-11-09，owner）
 - 日期：2026-11-09
 - 环境：DSH（DeepSeek Harness）Windows 主机，workspace-write 文件策略
 
@@ -88,7 +88,7 @@ $env:ECHOGARAGE_DATA_DIR = 'G:\Project\echo-garage\.testdata'
 应用 / 测试进程里抛 `UnauthorizedAccessException`，而同一会话的 PowerShell 可以写。
 
 影响：文件关联的“真实注册表”集成测试会自动跳过（`Assert.Skip`）；文件关联的键路径逻辑用内存
-`FakeRegistryStore` 做了完整覆盖（57 个测试中的 4 个），仍可发现路径 / 值写错的问题。
+`FakeRegistryStore` 做了完整覆盖（62 个测试中的 8 个），仍可发现路径 / 值写错的问题。
 
 建议：发布后由 owner 在普通桌面会话点一次“注册为默认播放器”，确认资源管理器中出现 EchoGarage。
 

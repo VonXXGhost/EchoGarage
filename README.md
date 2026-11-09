@@ -17,7 +17,16 @@ EchoGarage 是一个面向个人使用的 Windows 本地音乐播放器，目标
 | --- | --- |
 | ![智能播放列表](docs/screenshots/smart-playlist.png) | ![设置](docs/screenshots/settings.png) |
 
+| 浅色主题 | 文件关联 |
+| --- | --- |
+| ![浅色主题](docs/screenshots/light.png) | ![文件关联](docs/screenshots/association.png) |
+
 ## 功能
+
+### 界面
+- 提供**深色**（默认）与**白色基底浅色**两套主题，视图菜单或设置中切换后立即生效，并保存到配置。
+- 所有界面颜色由主题字典（`DynamicResource`）驱动，后续新增主题不需要改控件代码。
+- 深色 / 浅色都会同步调整窗口标题栏；对话框跟随当前主题。
 
 ### 播放
 - 支持 WAV、FLAC、MP3、AAC/M4A（以及系统 Media Foundation 能解码的 WMA、AIFF、MP4 音频）。
@@ -63,14 +72,15 @@ EchoGarage 是一个面向个人使用的 Windows 本地音乐播放器，目标
 - 软件配置（`settings.json`）与媒体库数据（`library.db`）分离。
 - 配置可导出 / 导入；导入不会影响媒体库与播放列表。
 - 缓存目录可配置，修改后自动迁移已有封面缓存；支持一键清空缓存。
-- 可注册为音频文件的候选打开方式（Windows 10/11 需在系统“默认应用”里确认）。
+- 文件关联是**可选的手动操作**：在“文件关联”对话框里勾选需要关联的格式后才会写入；启动时不会自动注册，
+  也不会改写现有的默认打开方式。Windows 10/11 需在系统“默认应用”里确认。
 
 ## 技术栈
 
 | 层 | 选型 |
 | --- | --- |
 | 运行时 | .NET 10（WPF，x64） |
-| UI | WPF，自绘深色主题（无第三方 UI 框架） |
+| UI | WPF，自绘多主题（深色 / 浅色），无第三方 UI 框架 |
 | 播放 | NAudio 2.2（`WasapiOut` / `AudioFileReader` / `WdlResamplingSampleProvider`） |
 | 标签 | TagLib# 2.3（`TagLibSharp`） |
 | 数据 | SQLite（`Microsoft.Data.Sqlite` + Dapper，WAL 模式） |
@@ -158,6 +168,7 @@ $env:ECHOGARAGE_DATA_DIR = "G:\EchoGarageData"
 
 - 播放队列与“下一首播放”、随机 / 循环模式、无缝播放。
 - 播放列表内搜索与过滤、按专辑 / 艺术家分组的侧栏浏览。
+- 更多界面主题（高对比度、跟随系统深浅色）。
 - 更多标签字段与批量编辑、封面批量抓取。
 - 更细的缓存策略与数据库迁移机制。
 
@@ -165,5 +176,6 @@ $env:ECHOGARAGE_DATA_DIR = "G:\EchoGarageData"
 
 - `README.md`：项目介绍与开发指引（本文件）。
 - `AGENTS.md`：面向自动化 agent 的操作规范与目录说明。
-- `docs/adr/`：架构决策记录，需 owner 批准后写入；待审提案见 `docs/proposals/`。
-- `docs/kb/`：长期知识库，需 owner 批准后写入；待审提案见 `docs/proposals/`。
+- `docs/adr/`：已批准的架构决策记录，索引见 `docs/adr/ADR-index.md`。
+- `docs/kb/`：已批准的长期知识库（NAudio、WPF、TagLib、性能基线等）。
+- `docs/proposals/`：尚未批准的 ADR / KB 提案；批准后才移入 `docs/adr/` 或 `docs/kb/`。

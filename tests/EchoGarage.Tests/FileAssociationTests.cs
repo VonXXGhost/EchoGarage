@@ -110,6 +110,49 @@ public sealed class FileAssociationLogicTests
     }
 
     [Fact]
+    public void Register_SubsetAfterFullRegistration_RemovesUncheckedFormats()
+    {
+        Assert.True(_service.Register(_exePath));
+        Assert.True(_store.HasValue(@"Software\Classes\.flac\OpenWithProgids", "EchoGarage.Test"));
+
+        Assert.True(_service.Register(_exePath, [".mp3"]));
+
+        Assert.True(_store.HasValue(@"Software\Classes\.mp3\OpenWithProgids", "EchoGarage.Test"));
+        Assert.False(_store.HasValue(@"Software\Classes\.flac\OpenWithProgids", "EchoGarage.Test"));
+        Assert.False(_store.HasValue(@"Software\EchoGarage.Test\Capabilities\FileAssociations", ".flac"));
+        Assert.True(_store.HasValue(@"Software\EchoGarage.Test\Capabilities\FileAssociations", ".mp3"));
+    }
+
+    [Fact]
+    public void Register_OnlyWritesSelectedExtensions()
+    {
+        Assert.True(_service.Register(_exePath, [".mp3", "flac"]));
+
+        Assert.True(_store.HasValue(@"Software\Classes\.mp3\OpenWithProgids", "EchoGarage.Test"));
+        Assert.True(_store.HasValue(@"Software\Classes\.flac\OpenWithProgids", "EchoGarage.Test"));
+        Assert.False(_store.HasValue(@"Software\Classes\.wav\OpenWithProgids", "EchoGarage.Test"));
+        Assert.False(_store.HasValue(@"Software\Classes\Applications\EchoGarage.Test.exe\SupportedTypes", ".m4a"));
+        Assert.True(_store.HasValue(@"Software\EchoGarage.Test\Capabilities\FileAssociations", ".mp3"));
+        Assert.False(_store.HasValue(@"Software\EchoGarage.Test\Capabilities\FileAssociations", ".aac"));
+    }
+
+    [Fact]
+    public void Register_WithoutExtensionsReturnFalse()
+    {
+        Assert.False(_service.Register(_exePath, Array.Empty<string>()));
+        Assert.False(_service.IsRegistered());
+    }
+
+    [Fact]
+    public void NormalizeExtensions_AddsDotAndFiltersUnknownValues()
+    {
+        var normalized = FileAssociationService.NormalizeExtensions(["mp3", ".FLAC", ".txt", " "]);
+
+        Assert.Equal([".mp3", ".flac"], normalized);
+        Assert.Equal(FileAssociationService.AudioExtensions, FileAssociationService.NormalizeExtensions(null));
+    }
+
+    [Fact]
     public void Register_ReturnsFalseForMissingExecutable()
     {
         Assert.False(_service.Register(_workspace.Combine("missing", "EchoGarage.exe")));

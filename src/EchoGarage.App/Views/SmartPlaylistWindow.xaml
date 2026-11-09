@@ -7,8 +7,8 @@
                     Width="720" Height="520"
                     MinWidth="620" MinHeight="420"
                     WindowStartupLocation="CenterOwner"
-                    Background="{StaticResource WindowBackgroundBrush}"
-                    Foreground="{StaticResource TextPrimaryBrush}"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
                     FontFamily="{StaticResource UiFont}"
                     FontSize="12"
                     ShowInTaskbar="False"
@@ -24,18 +24,18 @@
         <StackPanel Grid.Row="0">
             <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Text="智能播放列表会根据条件自动更新，不能手动添加或移除歌曲。"
-                       Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,4,0,0" />
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,4,0,0" />
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,14,0,10">
-            <TextBlock Text="匹配" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"
+            <TextBlock Text="匹配" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"
                        Margin="0,0,10,0" />
             <RadioButton x:Name="AllRadio" Content="全部条件" IsChecked="True" GroupName="Match" VerticalAlignment="Center" />
             <RadioButton x:Name="AnyRadio" Content="任一条件" GroupName="Match" Margin="16,0,0,0" VerticalAlignment="Center" />
             <Button Content="＋ 添加条件" Style="{StaticResource FlatButton}" Margin="24,0,0,0" Click="OnAddRule" />
         </StackPanel>
 
-        <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+        <Border Grid.Row="2" Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1" CornerRadius="6">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ItemsControl x:Name="RuleList" Margin="10">
@@ -57,7 +57,7 @@
                                 <TextBox Grid.Column="2" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                          IsEnabled="{Binding IsValueEnabled}" Margin="0,0,8,0" Height="28" />
                                 <Button Grid.Column="3" Content="✕" Style="{StaticResource FlatButton}" Padding="0"
-                                        Click="OnRemoveRule" ToolTip="删除条件" Foreground="{StaticResource TextMutedBrush}" />
+                                        Click="OnRemoveRule" ToolTip="删除条件" Foreground="{DynamicResource TextMutedBrush}" />
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

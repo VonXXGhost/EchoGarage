@@ -47,8 +47,8 @@ public partial class SettingsWindow : ThemedWindow
     private void UpdateAssociationStatus()
     {
         AssociationStatusText.Text = _host.Associations.IsRegistered()
-            ? "已注册为音频文件候选播放器。"
-            : "尚未注册为音频文件候选播放器。";
+            ? "已注册为音频文件的候选打开方式（可在上方按钮中调整格式或取消注册）。"
+            : "尚未注册。注册是可选手动操作，启动时不会自动注册。";
     }
 
     private void OnRefreshDevices(object sender, RoutedEventArgs e) => _vm.RefreshDevices();
@@ -163,26 +163,10 @@ public partial class SettingsWindow : ThemedWindow
         RefreshFolders();
     }
 
-    private async void OnRegister(object sender, RoutedEventArgs e)
+    private void OnManageAssociations(object sender, RoutedEventArgs e)
     {
-        var exe = Environment.ProcessPath;
-        if (exe is null || !_host.Associations.Register(exe))
-        {
-            MessageBox.Show(this, "注册失败：无法写入注册表。", "EchoGarage", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        UpdateAssociationStatus();
-        if (MessageBox.Show(this, "注册成功。是否打开 Windows“默认应用”设置继续选择 EchoGarage？", "EchoGarage",
-                MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK)
-        {
-            FileAssociationService.OpenDefaultAppsSettings();
-        }
-    }
-
-    private void OnUnregister(object sender, RoutedEventArgs e)
-    {
-        _host.Associations.Unregister();
+        var window = new FileAssociationWindow(_host) { Owner = this };
+        window.ShowDialog();
         UpdateAssociationStatus();
     }
 

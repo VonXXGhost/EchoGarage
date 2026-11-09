@@ -32,10 +32,10 @@ src/EchoGarage.Infrastructure/
 src/EchoGarage.App/
   App.xaml(.cs)    组合根入口、单实例、全局异常、启动计时
   AppHost.cs       手写依赖装配；生命周期与预热
-  Services/        对话框服务、封面图片解码缓存、单实例、格式化、转换器
+  Services/        对话框服务、封面图片解码缓存、单实例、主题管理、格式化、转换器
   ViewModels/      MainViewModel / TrackRowViewModel / SourceNodeViewModel
   Views/           MainWindow 与各对话框（列布局、智能播放列表、标签属性、设置…）
-  Resources/       主题与控件样式（Theme.xaml / Controls.xaml）
+  Resources/       主题字典（Themes/DarkTheme.xaml、LightTheme.xaml）与控件样式（Controls.xaml）
 
 tests/EchoGarage.Tests/   xUnit v3，覆盖布局归一化、智能查询、路径、仓储、扫描、标签、缓存、设置
 ```
@@ -72,6 +72,7 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 异步代码：IO / 解码 / 扫描不得阻塞 UI 线程；后台线程回调 UI 必须经 `Dispatcher`。
 - 不吞异常：用户可见错误要 `SetStatus(...)` 并 `Logger.Error(...)`；后台可预期失败至少 `Warn`/`Debug`。
 - 中文 UI 文案统一放 XAML / 视图模型里，代码注释用中文或英文均可，但同一文件内保持一致。
+- 所有界面颜色必须使用主题令牌（`DynamicResource` + `Resources/Themes/*.xaml`），不要在控件 / 视图里硬编码颜色；新增主题时只增加一个主题字典。
 
 ## 5. 数据与缓存规则
 

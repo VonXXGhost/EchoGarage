@@ -1,6 +1,6 @@
 # KB-001：NAudio 解码矩阵与环境依赖
 
-- 状态：待批准（Proposed）
+- 状态：已批准（Accepted，2026-11-09，owner）
 - 日期：2026-11-09
 - 关联：ADR-001、ADR-009
 - 环境：Windows 10.0.26200（Windows 11 24H2 内核版本号）、.NET 10.0.14、NAudio 2.2.1

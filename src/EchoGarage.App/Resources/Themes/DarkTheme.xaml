@@ -1,6 +1,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!-- EchoGarage dark theme ("midnight"). All UI colors live here so a theme can be
+         swapped at runtime by replacing this dictionary; controls use DynamicResource. -->
     <Color x:Key="WindowBackgroundColor">#0E1014</Color>
     <Color x:Key="PanelBackgroundColor">#151920</Color>
     <Color x:Key="PanelAltBackgroundColor">#1A1F27</Color>
@@ -32,6 +34,23 @@
     <SolidColorBrush x:Key="RowSelectedBrush" Color="{StaticResource RowSelectedColor}" />
     <SolidColorBrush x:Key="PlayingRowBrush" Color="{StaticResource PlayingRowColor}" />
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+
+    <!-- Control-level tokens -->
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#6E9BF5" />
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="#4A78D6" />
+    <SolidColorBrush x:Key="AccentContrastBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CheckGlyphBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ControlHoverBorderBrush" Color="#3D4757" />
+    <SolidColorBrush x:Key="SliderTrackBrush" Color="#2C333E" />
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#3A4351" />
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#4C5666" />
+    <SolidColorBrush x:Key="ProgressTrackBrush" Color="#232A34" />
+    <SolidColorBrush x:Key="GroupHeaderBackgroundBrush" Color="#12161C" />
+    <SolidColorBrush x:Key="CoverPlaceholderBrush" Color="#232A34" />
+    <SolidColorBrush x:Key="CoverBoxBrush" Color="#1E242D" />
+    <SolidColorBrush x:Key="EmptyGlyphBrush" Color="#2A323D" />
+    <SolidColorBrush x:Key="CoverNoteBrush" Color="#2E3742" />
+    <SolidColorBrush x:Key="RatingBrush" Color="#E0B458" />
 
     <FontFamily x:Key="UiFont">Microsoft YaHei UI, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas, Cascadia Mono, Microsoft YaHei UI</FontFamily>

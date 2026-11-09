@@ -93,6 +93,12 @@ public sealed class DialogService : IDialogService
         return dialog.ShowDialog(_owner) == true ? dialog.FileName : null;
     }
 
+    public void ShowFileAssociations(AppHost host)
+    {
+        var window = new FileAssociationWindow(host) { Owner = _owner };
+        window.ShowDialog();
+    }
+
     public bool Confirm(string message, string title = "确认") =>
         MessageBox.Show(_owner, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;
 

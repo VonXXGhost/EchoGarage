@@ -2,9 +2,16 @@ using EchoGarage.Core.Services;
 
 namespace EchoGarage.Core.Models;
 
+public enum ThemeKind
+{
+    Dark,
+    Light
+}
+
 public sealed class AppSettings
 {
     public int SchemaVersion { get; set; } = 1;
+    public ThemeKind Theme { get; set; } = ThemeKind.Dark;
     public string? OutputDeviceId { get; set; }
     public OutputMode OutputMode { get; set; } = OutputMode.Shared;
     public double Volume { get; set; } = 0.75;
@@ -15,6 +22,9 @@ public sealed class AppSettings
     public PlaylistViewLayout LibraryLayout { get; set; } = ViewLayoutFactory.CreateDefault();
     public List<ColumnPreset> ColumnPresets { get; set; } = ViewLayoutFactory.CreateBuiltInPresets();
     public bool AutoScanOnStartup { get; set; } = true;
+
+    /// <summary>Extensions the user last chose in the file-association dialog (never auto-registered).</summary>
+    public List<string> AssociationExtensions { get; set; } = [];
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 880;
     public double? WindowLeft { get; set; }

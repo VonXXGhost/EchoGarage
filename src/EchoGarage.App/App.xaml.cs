@@ -34,6 +34,8 @@ public partial class App : Application
         {
             Host = new AppHost();
             await Host.InitializeAsync();
+            ThemeManager.Apply(Host.Settings.Current.Theme);
+            Host.Logger.Info($"Theme applied: {Host.Settings.Current.Theme}");
             Timeline.Mark("host-ready");
 
             var window = new MainWindow(Host);

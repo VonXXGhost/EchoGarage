@@ -1,6 +1,6 @@
 # KB-003：WPF 深色主题实现中的坑
 
-- 状态：待批准（Proposed）
+- 状态：已批准（Accepted，2026-11-09，owner）
 - 日期：2026-11-09
 - 环境：.NET 10 WPF，PerMonitorV2 DPI
 

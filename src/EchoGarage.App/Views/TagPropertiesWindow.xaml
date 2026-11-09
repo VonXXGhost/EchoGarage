@@ -6,8 +6,8 @@
                     Width="760" Height="560"
                     MinWidth="680" MinHeight="500"
                     WindowStartupLocation="CenterOwner"
-                    Background="{StaticResource WindowBackgroundBrush}"
-                    Foreground="{StaticResource TextPrimaryBrush}"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
                     FontFamily="{StaticResource UiFont}"
                     FontSize="12"
                     ShowInTaskbar="False"
@@ -42,22 +42,22 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="标题" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <TextBox x:Name="TitleBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Height="28" />
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="艺术家" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <TextBox x:Name="ArtistBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Height="28" />
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="专辑" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <TextBox x:Name="AlbumBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Height="28" />
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="专辑艺术家" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <TextBox x:Name="AlbumArtistBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Height="28" />
                     <TextBlock Grid.Row="4" Grid.Column="0" Text="流派" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <TextBox x:Name="GenreBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Height="28" />
                     <TextBlock Grid.Row="5" Grid.Column="0" Text="年份 / 音轨" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <Grid Grid.Row="5" Grid.Column="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="90" />
@@ -71,31 +71,31 @@
                         <TextBox x:Name="DiscBox" Grid.Column="4" Height="28" ToolTip="碟号" />
                     </Grid>
                     <TextBlock Grid.Row="6" Grid.Column="0" Text="备注" VerticalAlignment="Top" Margin="0,6,0,0"
-                               Foreground="{StaticResource TextSecondaryBrush}" />
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
                     <TextBox x:Name="CommentBox" Grid.Row="6" Grid.Column="1" Height="70" AcceptsReturn="True"
                              TextWrapping="Wrap" VerticalContentAlignment="Top" />
                 </Grid>
 
                 <TextBlock Text="文件信息" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <TextBlock x:Name="FilePathText" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                <TextBlock x:Name="FilePathText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
                            FontSize="11" />
-                <TextBlock x:Name="FileInfoText" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                <TextBlock x:Name="FileInfoText" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
                            FontSize="11" />
-                <TextBlock x:Name="ModifiedText" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                <TextBlock x:Name="ModifiedText" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
                            FontSize="11" />
                 <TextBlock Text="标签会直接写入音频文件本身（MP3/FLAC/M4A/WAV 各自的标准格式），不会存到播放器数据库。"
-                           Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                            Margin="0,12,0,0" />
             </StackPanel>
         </ScrollViewer>
 
         <StackPanel Grid.Row="0" Grid.Column="1">
             <TextBlock Text="封面" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-            <Border Width="220" Height="220" CornerRadius="6" Background="#1E242D" ClipToBounds="True"
+            <Border Width="220" Height="220" CornerRadius="6" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True"
                     HorizontalAlignment="Left">
                 <Grid>
                     <Image x:Name="CoverImage" Stretch="Uniform" />
-                    <TextBlock x:Name="CoverPlaceholder" Text="无封面" Foreground="{StaticResource TextMutedBrush}"
+                    <TextBlock x:Name="CoverPlaceholder" Text="无封面" Foreground="{DynamicResource TextMutedBrush}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Grid>
             </Border>
@@ -104,7 +104,7 @@
                 <Button x:Name="RemoveCoverButton" Content="移除封面" Style="{StaticResource FlatButton}"
                         Click="OnRemoveCover" />
             </StackPanel>
-            <TextBlock Text="建议使用正方形的 JPG/PNG 图片。" Foreground="{StaticResource TextMutedBrush}"
+            <TextBlock Text="建议使用正方形的 JPG/PNG 图片。" Foreground="{DynamicResource TextMutedBrush}"
                        FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
         </StackPanel>
 

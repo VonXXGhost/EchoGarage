@@ -1,6 +1,6 @@
 # KB-005：TagLib# 使用细节与各格式差异
 
-- 状态：待批准（Proposed）
+- 状态：已批准（Accepted，2026-11-09，owner）
 - 日期：2026-11-09
 - 环境：TagLibSharp 2.3.0
 

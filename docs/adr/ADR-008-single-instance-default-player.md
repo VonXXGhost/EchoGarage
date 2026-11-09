@@ -1,6 +1,6 @@
 # ADR-008：单实例与默认播放器行为
 
-- 状态：待批准（Proposed）
+- 状态：已批准（Accepted，2026-11-09，owner）
 - 日期：2026-11-09
 
 ## 背景
@@ -17,13 +17,15 @@
    - 过滤支持的扩展名；
    - 媒体库目录内的文件正常入库，目录外的文件只作为播放列表外部条目；
    - 清空默认播放列表 → 写入新条目 → 切到默认播放列表 → 从第一首开始播放。
-3. **注册为默认播放器**：
+3. **注册为默认播放器（可选手动操作）**：
+   - 启动时**绝不自动注册**，也不修改任何文件的默认处理程序；只有用户在界面里明确点击并确认才写入。
+   - 注册对话框列出支持的扩展名（mp3、flac、wav、m4a、aac、aiff、wma、mp4），用户勾选需要关联的格式；
+     选择结果保存在配置中，下次打开对话框时恢复勾选。
    - 在 `HKCU\Software\Classes` 写入 ProgId `EchoGarage.AudioFile`、`OpenWithProgids`、
-     `Applications\EchoGarage.exe`、`RegisteredApplications` 与 `Capabilities`；
-   - 扩展名：mp3、flac、wav、m4a、aac、aiff、wma、mp4。
-   - Windows 10/11 保护用户的显式默认选择，因此注册后仍需在系统设置中确认；软件会提示并可直接打开
-     `ms-settings:defaultapps`。
-   - 提供“取消注册”，清理上述键。
+     `Applications\EchoGarage.exe`、`RegisteredApplications` 与 `Capabilities`，只针对勾选的扩展名。
+   - 重复注册时以本次勾选为准：取消勾选的格式会移除其 `OpenWithProgids` 与 `Capabilities` 条目。
+   - 覆盖写当前默认处理程序（`UserChoice` 由系统保护），注册后提示用户到 `ms-settings:defaultapps` 确认。
+   - 提供“取消注册”，清理上述键与值。
 4. 单实例失败（互斥体 / 管道不可用）时**优先保证能启动**，不阻塞用户使用。
 
 ## 理由
@@ -31,6 +33,7 @@
 - 覆盖默认播放列表符合“双击文件即播放”的直觉，也不会无限堆积临时列表。
 - 只写 HKCU，无需管理员权限，卸载时容易清理。
 - Windows 不允许静默篡改默认应用，明确提示用户是唯一合规做法。
+- 注册可选、按格式勾选，避免软件“抢”用户不想关联的格式；也满足 owner 对可选项的要求。
 
 ## 后果
 
