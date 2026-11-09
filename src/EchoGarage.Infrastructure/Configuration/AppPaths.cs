@@ -3,6 +3,81 @@ namespace EchoGarage.Infrastructure.Configuration;
 public sealed class AppPaths
 {
     public const string DataRootEnvironmentVariable = "ECHOGARAGE_DATA_DIR";
+    public const string PortableMarkerFileName = "portable";
+    public const string PortableDataFolderName = "EchoGarageData";
+
+    /// <summary>
+    /// Resolves the data root for a normal start:
+    /// 1. a <c>portable</c> marker next to the executable forces portable mode;
+    /// 2. otherwise the standard AppData folders;
+    /// 3. if those cannot be created (locked-down profile, sandbox, policy), fall back to
+    ///    <c>EchoGarageData</c> next to the executable and then to TEMP, so the app still starts.
+    /// </summary>
+    public static AppPaths CreateForStartup()
+    {
+        var exeDirectory = System.IO.Path.GetDirectoryName(Environment.ProcessPath);
+
+        if (!string.IsNullOrWhiteSpace(exeDirectory) &&
+            File.Exists(System.IO.Path.Combine(exeDirectory, PortableMarkerFileName)))
+        {
+            var portable = new AppPaths(System.IO.Path.Combine(exeDirectory, PortableDataFolderName));
+            try
+            {
+                portable.EnsureCreated();
+                return portable;
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        var defaults = new AppPaths();
+        try
+        {
+            defaults.EnsureCreated();
+            return defaults;
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        if (!string.IsNullOrWhiteSpace(exeDirectory))
+        {
+            var besideExe = new AppPaths(System.IO.Path.Combine(exeDirectory, PortableDataFolderName));
+            try
+            {
+                besideExe.EnsureCreated();
+                return besideExe;
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        var temp = new AppPaths(System.IO.Path.Combine(System.IO.Path.GetTempPath(), PortableDataFolderName));
+        try
+        {
+            temp.EnsureCreated();
+            return temp;
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        return defaults;
+    }
 
     public AppPaths(string? rootOverride = null)
     {

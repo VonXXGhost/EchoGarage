@@ -31,6 +31,9 @@ public partial class SettingsWindow : ThemedWindow
         StartupText.Text = $"启动耗时：{App.Timeline.ElapsedAt("window-shown").TotalMilliseconds:F0} ms（窗口显示） · " +
                            $"日志：{_host.Paths.LogsDirectory}";
         DataDirText.Text = $"数据库：{_host.Paths.DatabaseFile}";
+        DataPathText.Text = $"配置目录：{_host.Paths.ConfigDirectory}\n" +
+                            $"数据目录：{_host.Paths.DataDirectory}" +
+                            (_host.Paths.IsPortableOverride ? "\n（便携 / 回退模式：未使用 AppData）" : string.Empty);
         RefreshFolders();
         UpdateAssociationStatus();
     }

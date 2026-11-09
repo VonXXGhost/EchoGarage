@@ -22,9 +22,9 @@ public sealed class AppHost : IAsyncDisposable
     private readonly Stopwatch _lifetime = Stopwatch.StartNew();
     private bool _shutdown;
 
-    public AppHost()
+    public AppHost(AppPaths? paths = null)
     {
-        Paths = new AppPaths();
+        Paths = paths ?? AppPaths.CreateForStartup();
         Paths.EnsureCreated();
         Logger = new FileLogger(Paths);
         Settings = new JsonSettingsService(Paths, Logger);

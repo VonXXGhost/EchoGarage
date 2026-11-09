@@ -151,6 +151,11 @@ $env:ECHOGARAGE_DATA_DIR = "G:\EchoGarageData"
 .\artifacts\publish\win-x64\EchoGarage.exe
 ```
 
+**便携 / 回退模式**：如果默认的 `%APPDATA%` 或 `%LOCALAPPDATA%` 目录无法创建（受限账户、策略、沙箱等），
+程序会自动依次回退到 exe 旁的 `EchoGarageData`、再到 `%TEMP%\EchoGarageData`，保证仍能启动。
+也可以在 exe 旁新建一个名为 `portable` 的空文件，强制使用 exe 旁的 `EchoGarageData`；
+实际使用的配置 / 数据目录显示在“设置 → 关于”中。
+
 ### 开发诊断开关
 
 - `--screenshot <path>`：加载完成后把主窗口渲染成 PNG（高 DPI 屏幕上比外部截屏可靠）。

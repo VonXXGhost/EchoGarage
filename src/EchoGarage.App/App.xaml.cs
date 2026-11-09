@@ -92,11 +92,31 @@ public partial class App : Application
         catch (Exception ex)
         {
             Host?.Logger.Error("Fatal error during startup", ex);
+            var defaults = new EchoGarage.Infrastructure.Configuration.AppPaths();
+            try
+            {
+                var crashLog = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "EchoGarage-startup-error.log");
+                System.IO.File.AppendAllText(crashLog,
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] EchoGarage startup failed{Environment.NewLine}" +
+                    $"Process: {Environment.ProcessPath}{Environment.NewLine}" +
+                    $"User: {Environment.UserName} / {Environment.UserDomainName}{Environment.NewLine}" +
+                    $"APPDATA={Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)}{Environment.NewLine}" +
+                    $"LOCALAPPDATA={Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}{Environment.NewLine}" +
+                    $"TEMP={System.IO.Path.GetTempPath()}{Environment.NewLine}" +
+                    $"{ex}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Best effort only.
+            }
+
             MessageBox.Show(
                 $"EchoGarage 启动失败：\n{ex.Message}\n\n" +
                 $"如果这是受限环境或便携使用，请设置环境变量 {EchoGarage.Infrastructure.Configuration.AppPaths.DataRootEnvironmentVariable} " +
-                "指向一个可写目录后重试。\n\n" +
-                $"当前默认配置目录：{Host?.Paths.ConfigDirectory}\n当前默认数据目录：{Host?.Paths.DataDirectory}",
+                "指向一个可写目录后重试；也可以在 exe 旁新建名为 portable 的空文件强制便携模式（数据存到 exe 旁的 EchoGarageData）。\n\n" +
+                $"当前默认配置目录：{Host?.Paths.ConfigDirectory ?? defaults.ConfigDirectory}\n" +
+                $"当前默认数据目录：{Host?.Paths.DataDirectory ?? defaults.DataDirectory}\n\n" +
+                $"详细错误已写入：{System.IO.Path.Combine(System.IO.Path.GetTempPath(), "EchoGarage-startup-error.log")}",
                 "EchoGarage", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
