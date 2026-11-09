@@ -7,6 +7,16 @@ EchoGarage 是一个面向个人使用的 Windows 本地音乐播放器，目标
 
 ![主界面](docs/screenshots/main.png)
 
+### 界面一览
+
+| 列与布局 | 标签属性 |
+| --- | --- |
+| ![列与布局](docs/screenshots/columns.png) | ![标签属性](docs/screenshots/tags.png) |
+
+| 智能播放列表 | 设置 |
+| --- | --- |
+| ![智能播放列表](docs/screenshots/smart-playlist.png) | ![设置](docs/screenshots/settings.png) |
+
 ## 功能
 
 ### 播放
