@@ -32,7 +32,7 @@ src/EchoGarage.Infrastructure/
 src/EchoGarage.App/
   App.xaml(.cs)    组合根入口、单实例、全局异常、启动计时
   AppHost.cs       手写依赖装配；生命周期与预热
-  Services/        对话框服务、封面图片解码缓存、文件关联、单实例、格式化、转换器
+  Services/        对话框服务、封面图片解码缓存、单实例、格式化、转换器
   ViewModels/      MainViewModel / TrackRowViewModel / SourceNodeViewModel
   Views/           MainWindow 与各对话框（列布局、智能播放列表、标签属性、设置…）
   Resources/       主题与控件样式（Theme.xaml / Controls.xaml）

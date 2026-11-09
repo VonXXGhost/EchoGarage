@@ -153,9 +153,33 @@ public partial class MainWindow : Window
         ["comment"] = nameof(TrackRowViewModel.Comment)
     };
 
+    private string? _appliedLayoutSignature;
+
     private void ApplyLayout()
     {
         var layout = _vm.CurrentLayout;
+        var signature = BuildLayoutSignature(layout);
+        if (TrackGrid.Columns.Count > 0 &&
+            string.Equals(signature, _appliedLayoutSignature, StringComparison.Ordinal))
+        {
+            UpdateSortGlyphs();
+            return;
+        }
+
+        RebuildColumns(layout, signature);
+    }
+
+    private static string BuildLayoutSignature(PlaylistViewLayout layout) =>
+        string.Join("|", layout.Columns
+            .Where(c => c.Visible)
+            .Select(c => $"{c.Key}:{(int)Math.Round(c.Width)}"));
+
+    private void RebuildColumns(PlaylistViewLayout layout, string signature)
+    {
+        // Changing DataGrid.Columns while rows own cells can crash DataGridCellsPanel
+        // ("index out of range" during arrange). Detach the items first, rebuild, reattach.
+        var selectedRow = _vm.SelectedRow;
+        TrackGrid.ItemsSource = null;
         _columnKeys.Clear();
         TrackGrid.Columns.Clear();
 
@@ -197,6 +221,16 @@ public partial class MainWindow : Window
             _columnKeys[gridColumn] = descriptor.Key;
             TrackGrid.Columns.Add(gridColumn);
         }
+
+        BindingOperations.SetBinding(TrackGrid, ItemsControl.ItemsSourceProperty,
+            new Binding(nameof(MainViewModel.TracksView)) { Source = _vm });
+        if (selectedRow is not null)
+        {
+            TrackGrid.SelectedItem = selectedRow;
+        }
+
+        _appliedLayoutSignature = signature;
+        UpdateSortGlyphs();
     }
 
     private static string ToPascalCase(string key) =>

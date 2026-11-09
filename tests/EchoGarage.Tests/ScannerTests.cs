@@ -93,6 +93,23 @@ public sealed class ScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Scan_MissingFolder_DoesNotMarkEverythingMissing()
+    {
+        var folderPath = _workspace.CreateFolder("Album");
+        TestAudio.CreateWav(Path.Combine(folderPath, "keep.wav"));
+        var folder = await _library.AddFolderAsync(folderPath);
+        await _scanner.ScanFolderAsync(folder);
+
+        Directory.Delete(folderPath, recursive: true);
+
+        var result = await _scanner.ScanFolderAsync(folder);
+
+        Assert.Equal(0, result.Added);
+        Assert.Equal(0, result.Removed);
+        Assert.Single(await _library.GetLibraryTracksAsync());
+    }
+
+    [Fact]
     public async Task IndexFile_ExternalTrack_IsNotPartOfLibrary()
     {
         var path = TestAudio.CreateWav(_workspace.Combine("outside", "external.wav"));

@@ -61,3 +61,19 @@ WPF 没有内置的深色标题栏属性，需要对 HWND 调用 `DwmSetWindowAt
 
 实现上通过 `Func<PlaylistViewLayout?>` 由窗口提供“当前列布局快照”，并在
 `PersistCurrentLayout(..., captureFromView: false)` 时跳过。
+
+## 9. 运行中重建 `DataGrid.Columns` 会崩
+
+现象：切换播放列表（或应用预设）时清空并重建 `DataGrid.Columns`，偶尔抛
+`ArgumentOutOfRangeException: Index was out of range`，堆栈在
+`DataGridCellsPanel.ArrangeOverride`。这是行单元格与列集合不同步的经典问题。
+
+解决：
+
+1. 重建前先 `ItemsSource = null` 卸掉所有行，重建列后再重新绑定（本项目用
+   `BindingOperations.SetBinding` 恢复绑定）。
+2. 只在“可见列 / 顺序 / 宽度”真的变化时才重建：用列签名比较，切换播放列表但布局相同则不重建。
+3. 重建时保存并恢复 `SelectedItem`（卸载 ItemsSource 会把选中项清空）。
+
+验证方式：UI Automation 选中侧栏 9 个来源反复切换、通过“预设”菜单把列数从 7 切到 5，
+日志中不再出现 `Unhandled UI exception`，窗口保持响应。

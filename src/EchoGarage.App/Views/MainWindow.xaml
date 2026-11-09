@@ -121,6 +121,7 @@
             <Setter Property="Height" Value="30" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="ToolTip" Value="{Binding Tooltip}" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -265,6 +266,7 @@
                     </Grid.RowDefinitions>
 
                     <ListBox x:Name="SourceList" Grid.Row="0" Background="Transparent" BorderThickness="0"
+                             AutomationProperties.AutomationId="SourceList"
                              ItemsSource="{Binding SourcesView}"
                              SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
                              ItemContainerStyle="{StaticResource SourceItemStyle}"
@@ -330,6 +332,7 @@
                 </Grid>
 
                 <DataGrid x:Name="TrackGrid" Grid.Row="1"
+                          AutomationProperties.AutomationId="TrackGrid"
                           ItemsSource="{Binding TracksView}"
                           SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                           SelectionChanged="OnTrackSelectionChanged"
@@ -476,6 +479,7 @@
                     <TextBlock Grid.Column="0" Text="{Binding PositionText}" Foreground="{StaticResource TextSecondaryBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="11" VerticalAlignment="Center" />
                     <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0" Maximum="1"
+                            AutomationProperties.AutomationId="SeekSlider"
                             Value="{Binding PositionSeconds, Mode=OneWay}"
                             Thumb.DragStarted="OnSeekDragStarted"
                             Thumb.DragCompleted="OnSeekDragCompleted"

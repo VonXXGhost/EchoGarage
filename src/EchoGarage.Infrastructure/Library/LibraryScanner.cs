@@ -23,6 +23,16 @@ public sealed class LibraryScanner : ILibraryScanner
         CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+
+        if (!Directory.Exists(folder.Path))
+        {
+            // A temporarily unavailable drive or a deleted folder must not mark the whole
+            // library as missing; keep the cached metadata and let the next scan decide.
+            _logger.Warn($"Library folder is not available, skipping scan: {folder.Path}");
+            stopwatch.Stop();
+            return new ScanResult(folder.Path, 0, 0, 0, 0, 0, stopwatch.Elapsed);
+        }
+
         var existing = (await _repository.GetTrackStatesAsync(folder.Id, cancellationToken))
             .ToDictionary(s => s.Path, StringComparer.OrdinalIgnoreCase);
 

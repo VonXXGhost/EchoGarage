@@ -1439,6 +1439,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (PlaylistNameExists(name))
+        {
+            _dialogs.Info($"已经存在名为“{name}”的播放列表，请换一个名称。");
+            return;
+        }
+
         await _host.PlaylistRepository.CreatePlaylistAsync(name, PlaylistKind.Normal, null);
         await ReloadSourcesAsync();
         var node = Sources.LastOrDefault(s => s.Kind == SourceKind.Playlist && s.Playlist?.Name == name);
@@ -1449,6 +1455,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         SetStatus($"已创建播放列表：{name}");
     }
+
+    private bool PlaylistNameExists(string name, long? exceptPlaylistId = null) =>
+        Sources.Any(s => s.Kind == SourceKind.Playlist &&
+                         s.Playlist is not null &&
+                         s.Playlist.Id != exceptPlaylistId &&
+                         string.Equals(s.Playlist.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
 
     [RelayCommand]
     private async Task NewSmartPlaylistAsync()
@@ -1465,6 +1477,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var name = _dialogs.AskText("智能播放列表名称", "名称", "智能播放列表");
         if (string.IsNullOrWhiteSpace(name))
         {
+            return;
+        }
+
+        if (PlaylistNameExists(name))
+        {
+            _dialogs.Info($"已经存在名为“{name}”的播放列表，请换一个名称。");
             return;
         }
 
@@ -1511,6 +1529,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var name = _dialogs.AskText("重命名播放列表", "名称", SelectedSource.Playlist.Name);
         if (string.IsNullOrWhiteSpace(name) || name == SelectedSource.Playlist.Name)
         {
+            return;
+        }
+
+        if (PlaylistNameExists(name, SelectedSource.Playlist.Id))
+        {
+            _dialogs.Info($"已经存在名为“{name}”的播放列表，请换一个名称。");
             return;
         }
 
