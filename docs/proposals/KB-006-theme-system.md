@@ -8,8 +8,8 @@
 
 ```
 src/EchoGarage.App/Resources/
-  Themes/DarkTheme.xaml    深色（默认）
-  Themes/LightTheme.xaml   白色基底浅色
+  Themes/DarkTheme.xaml    深色
+  Themes/LightTheme.xaml   白色基底浅色（默认）
   Controls.xaml            控件样式，只引用颜色令牌
 ```
 

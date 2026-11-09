@@ -186,8 +186,8 @@
             <MenuItem Header="显示专辑信息面板" IsCheckable="False"
                       Command="{Binding ToggleAlbumPanelCommand}" />
             <MenuItem Header="按专辑分组" IsCheckable="True" IsChecked="{Binding GroupByAlbum, Mode=TwoWay}" />
-            <MenuItem Header="使用深色主题" Command="{Binding SetThemeCommand}" CommandParameter="0" />
-            <MenuItem Header="使用浅色主题" Command="{Binding SetThemeCommand}" CommandParameter="1" />
+            <MenuItem Header="使用浅色主题" Command="{Binding SetThemeCommand}" CommandParameter="0" />
+            <MenuItem Header="使用深色主题" Command="{Binding SetThemeCommand}" CommandParameter="1" />
             <MenuItem Header="列与布局…" Command="{Binding EditColumnsCommand}" />
             <Separator />
             <MenuItem Header="打开配置目录" Command="{Binding OpenConfigFolderCommand}" />

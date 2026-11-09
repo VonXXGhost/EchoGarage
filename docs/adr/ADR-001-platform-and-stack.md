@@ -16,7 +16,7 @@
 2. UI：WPF（不用第三方 UI 框架，自绘主题）。
 3. **主题**：支持多套 UI 风格，主题以独立 `ResourceDictionary` 提供，控件用 `DynamicResource`
    引用颜色令牌，可在运行时切换并持久化到配置。
-   - v0.1 提供两套：深色（默认）与白色基底的浅色主题。
+   - v0.1 提供两套：白色基底的浅色主题（默认）与深色主题。
    - 后续新增主题只需增加一个主题字典并在设置/视图菜单中暴露，不改控件代码。
 4. 音频：NAudio 2.2（`WasapiOut` + `AudioFileReader` + `WdlResamplingSampleProvider`）。
 5. 标签：TagLib#（NuGet 包 `TagLibSharp` 2.3）。

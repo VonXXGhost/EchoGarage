@@ -7,7 +7,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 
 | 编号 | 标题 | 状态 | 日期 | 一句话结论 |
 | --- | --- | --- | --- | --- |
-| [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09 | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题，v0.1 为深色 + 白色基底浅色 |
+| [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09 | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题，v0.1 为白色基底浅色（默认）+ 深色 |
 | [ADR-002](ADR-002-layered-architecture.md) | 分层架构 | Accepted | 2026-11-09 | Core / Infrastructure / App 单向依赖，能力经接口暴露，AppHost 统一装配 |
 | [ADR-003](ADR-003-files-are-truth.md) | 文件是唯一真相 | Accepted | 2026-11-09 | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数等软件状态除外 |
 | [ADR-004](ADR-004-playlist-model.md) | 播放列表模型 | Accepted | 2026-11-09 | 普通列表存显式条目，智能列表存条件；默认列表由外部打开覆盖 |

@@ -14,7 +14,7 @@ public static class ThemeManager
     private static readonly Uri LightUri =
         new("pack://application:,,,/EchoGarage;component/Resources/Themes/LightTheme.xaml", UriKind.Absolute);
 
-    public static ThemeKind Current { get; private set; } = ThemeKind.Dark;
+    public static ThemeKind Current { get; private set; } = ThemeKind.Light;
 
     public static bool IsDark => Current == ThemeKind.Dark;
 

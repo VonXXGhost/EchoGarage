@@ -35,7 +35,7 @@
                             <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
                                       ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
                         </Grid>
-                        <TextBlock Text="切换立即生效，并保存在配置中。深色为默认主题，浅色适合明亮环境。"
+                        <TextBlock Text="切换立即生效，并保存在配置中。浅色为默认主题，深色适合夜间使用。"
                                    Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                    TextWrapping="Wrap" Margin="90,8,0,0" />
                     </StackPanel>

@@ -75,7 +75,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Volume = Settings.Volume * 100;
         _suppressVolumeSave = false;
         _suppressThemeApply = true;
-        ThemeIndex = Settings.Theme == ThemeKind.Light ? 1 : 0;
+        ThemeIndex = Settings.Theme == ThemeKind.Light ? 0 : 1;
         _suppressThemeApply = false;
         OutputDescription = _host.Player.OutputDescription;
         StatusMessage = "就绪";
@@ -90,7 +90,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<ColumnPreset> Presets { get; }
 
     public IReadOnlyList<string> OutputModeOptions { get; } = ["共享模式", "独占模式"];
-    public IReadOnlyList<string> ThemeOptions { get; } = ["深色", "浅色"];
+    public IReadOnlyList<string> ThemeOptions { get; } = ["浅色", "深色"];
 
     [ObservableProperty]
     private int _themeIndex;
@@ -111,12 +111,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var theme = value == 1 ? ThemeKind.Light : ThemeKind.Dark;
+        var theme = value == 0 ? ThemeKind.Light : ThemeKind.Dark;
         Settings.Theme = theme;
         ThemeManager.Apply(theme);
         _host.Logger.Info($"Theme switched to {theme}");
         QueueSettingsSave();
-        SetStatus($"界面主题：{(value == 1 ? "浅色" : "深色")}");
+        SetStatus($"界面主题：{(value == 0 ? "浅色" : "深色")}");
     }
 
     [ObservableProperty]
@@ -1816,7 +1816,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             _suppressThemeApply = true;
-            ThemeIndex = _host.Settings.Current.Theme == ThemeKind.Light ? 1 : 0;
+            ThemeIndex = _host.Settings.Current.Theme == ThemeKind.Light ? 0 : 1;
             _suppressThemeApply = false;
             ThemeManager.Apply(_host.Settings.Current.Theme);
 

@@ -11,7 +11,7 @@ public enum ThemeKind
 public sealed class AppSettings
 {
     public int SchemaVersion { get; set; } = 1;
-    public ThemeKind Theme { get; set; } = ThemeKind.Dark;
+    public ThemeKind Theme { get; set; } = ThemeKind.Light;
     public string? OutputDeviceId { get; set; }
     public OutputMode OutputMode { get; set; } = OutputMode.Shared;
     public double Volume { get; set; } = 0.75;

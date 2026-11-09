@@ -17,14 +17,14 @@ EchoGarage 是一个面向个人使用的 Windows 本地音乐播放器，目标
 | --- | --- |
 | ![智能播放列表](docs/screenshots/smart-playlist.png) | ![设置](docs/screenshots/settings.png) |
 
-| 浅色主题 | 文件关联 |
+| 深色主题 | 文件关联 |
 | --- | --- |
-| ![浅色主题](docs/screenshots/light.png) | ![文件关联](docs/screenshots/association.png) |
+| ![深色主题](docs/screenshots/dark.png) | ![文件关联](docs/screenshots/association.png) |
 
 ## 功能
 
 ### 界面
-- 提供**深色**（默认）与**白色基底浅色**两套主题，视图菜单或设置中切换后立即生效，并保存到配置。
+- 提供**白色基底浅色**（默认）与**深色**两套主题，视图菜单或设置中切换后立即生效，并保存到配置。
 - 所有界面颜色由主题字典（`DynamicResource`）驱动，后续新增主题不需要改控件代码。
 - 深色 / 浅色都会同步调整窗口标题栏；对话框跟随当前主题。
 
