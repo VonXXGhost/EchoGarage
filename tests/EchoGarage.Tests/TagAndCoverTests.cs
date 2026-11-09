@@ -115,7 +115,8 @@ public sealed class TagAndCoverTests : IDisposable
 
         var track = TestAudio.CreateWav(_workspace.Combine("media", "changing.wav"));
         _tags.Write(track, new TagEditModel { Title = "a", NewCoverBytes = TestAudio.CoverBytes(), NewCoverMime = "image/png" });
-        var key = CoverKeyFactory.ForTrack(track, "album", "artist");
+        // Empty album => per-file cache key, which is stamped by that file's own mtime/size.
+        var key = CoverKeyFactory.ForTrack(track, string.Empty, "artist");
         var info = new FileInfo(track);
         var first = await cache.EnsureAsync(new CoverRequest(track, key, info.LastWriteTimeUtc, info.Length));
         Assert.NotNull(first);
@@ -128,6 +129,58 @@ public sealed class TagAndCoverTests : IDisposable
         Assert.Null(second);
         Assert.Null(cache.Resolve(key));
         Assert.True(File.Exists(Path.Combine(cache.CoversDirectory, key + ".none")));
+    }
+
+    [Fact]
+    public async Task CoverCache_InvalidateRemovesAlbumCover()
+    {
+        var paths = new AppPaths(_workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        var cache = new FileCoverCache(paths.DefaultCacheDirectory, logger);
+
+        var track = TestAudio.CreateWav(_workspace.Combine("media", "invalidate.wav"));
+        _tags.Write(track, new TagEditModel { Title = "x", NewCoverBytes = TestAudio.CoverBytes(), NewCoverMime = "image/png" });
+        var info = new FileInfo(track);
+        var key = CoverKeyFactory.ForTrack(track, "album", "artist");
+        Assert.NotNull(await cache.EnsureAsync(new CoverRequest(track, key, info.LastWriteTimeUtc, info.Length)));
+
+        cache.Invalidate(key);
+
+        Assert.Null(cache.Resolve(key));
+        Assert.False(File.Exists(Path.Combine(cache.CoversDirectory, key + ".stamp")));
+    }
+
+    [Fact]
+    public async Task CoverCache_AlbumKey_SurvivesDifferentTrackStamps()
+    {
+        var paths = new AppPaths(_workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        var cache = new FileCoverCache(paths.DefaultCacheDirectory, logger);
+
+        var folder = _workspace.Combine("media", "album");
+        var first = TestAudio.CreateWav(Path.Combine(folder, "01.wav"));
+        var second = TestAudio.CreateWav(Path.Combine(folder, "02.wav"));
+        _tags.Write(second, new TagEditModel { Title = "x", NewCoverBytes = TestAudio.CoverBytes(), NewCoverMime = "image/png" });
+
+        var key = CoverKeyFactory.ForTrack(first, "Same Album", "Same Artist");
+        Assert.Equal(key, CoverKeyFactory.ForTrack(second, "Same Album", "Same Artist"));
+
+        var firstInfo = new FileInfo(first);
+        var secondInfo = new FileInfo(second);
+
+        // First track has no cover: a negative marker is cached.
+        Assert.Null(await cache.EnsureAsync(new CoverRequest(first, key, firstInfo.LastWriteTimeUtc, firstInfo.Length)));
+
+        // Second track of the same album has the cover: it must replace the negative marker.
+        var image = await cache.EnsureAsync(new CoverRequest(second, key, secondInfo.LastWriteTimeUtc, secondInfo.Length));
+        Assert.NotNull(image);
+
+        // Asking again with the first track's stamp must not delete the shared album cover.
+        var again = await cache.EnsureAsync(new CoverRequest(first, key, firstInfo.LastWriteTimeUtc, firstInfo.Length));
+        Assert.NotNull(again);
+        Assert.True(File.Exists(image));
     }
 
     [Fact]

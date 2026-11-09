@@ -58,12 +58,18 @@ public sealed class FileCoverCache : ICoverCache
         var stamp = $"{request.ModifiedAtUtc.Ticks}:{request.FileSize}";
         var stampPath = System.IO.Path.Combine(_coversDirectory, request.CoverKey + ".stamp");
         var marker = System.IO.Path.Combine(_coversDirectory, request.CoverKey + ".none");
+        var isAlbumKey = request.CoverKey.StartsWith("album_", StringComparison.Ordinal);
 
         var existing = Resolve(request.CoverKey);
         var cachedStamp = await ReadTextIfExistsAsync(stampPath, cancellationToken).ConfigureAwait(false);
-        if (existing is not null && cachedStamp == stamp)
+        if (existing is not null)
         {
-            return existing;
+            // Album covers are shared by every track of the album, so an individual track's
+            // modification stamp must not invalidate artwork extracted from a sibling file.
+            if (isAlbumKey || cachedStamp == stamp)
+            {
+                return existing;
+            }
         }
 
         if (existing is null &&
@@ -77,14 +83,14 @@ public sealed class FileCoverCache : ICoverCache
         {
             existing = Resolve(request.CoverKey);
             cachedStamp = await ReadTextIfExistsAsync(stampPath, cancellationToken).ConfigureAwait(false);
-            if (existing is not null && cachedStamp == stamp)
+            if (existing is not null && (isAlbumKey || cachedStamp == stamp))
             {
                 return existing;
             }
 
-            if (cachedStamp != stamp)
+            if (!isAlbumKey && existing is not null && cachedStamp != stamp)
             {
-                // Source file changed since the cache entry was written.
+                // A per-file cover is stale: the source file changed since it was extracted.
                 DeleteCachedEntry(request.CoverKey);
             }
 
