@@ -9,6 +9,7 @@ using EchoGarage.App.Services;
 using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
+using EchoGarage.Infrastructure.Windows;
 
 namespace EchoGarage.App.ViewModels;
 

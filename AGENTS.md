@@ -25,6 +25,7 @@ src/EchoGarage.Infrastructure/
   Tagging/         TagLibTagService（读写音频文件标签）
   Caching/         FileCoverCache（封面文件缓存 + 负缓存标记）
   Audio/           WasapiAudioPlayer（共享 / 独占、重采样、跳转）
+  Windows/         FileAssociationService + IRegistryStore（HKCU 注册，可测试）
   Configuration/   AppPaths（目录与环境变量）、JsonSettingsService
   Logging/         FileLogger
 

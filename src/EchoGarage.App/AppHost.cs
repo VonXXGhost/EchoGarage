@@ -9,6 +9,7 @@ using EchoGarage.Infrastructure.Data;
 using EchoGarage.Infrastructure.Library;
 using EchoGarage.Infrastructure.Logging;
 using EchoGarage.Infrastructure.Tagging;
+using EchoGarage.Infrastructure.Windows;
 
 namespace EchoGarage.App;
 

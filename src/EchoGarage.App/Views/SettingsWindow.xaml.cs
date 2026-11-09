@@ -3,6 +3,7 @@ using System.Windows.Input;
 using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
 using EchoGarage.Core.Models;
+using EchoGarage.Infrastructure.Windows;
 
 namespace EchoGarage.App.Views;
 

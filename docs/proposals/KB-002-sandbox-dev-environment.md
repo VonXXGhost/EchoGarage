@@ -82,6 +82,16 @@ $env:ECHOGARAGE_DATA_DIR = 'G:\Project\echo-garage\.testdata'
 解决：结束残留的 `dotnet` 进程后在**沙箱外**执行一次构建（本仓库开发时使用 DSH 的 danger-full-access），
 或使用 `-p:UseSharedCompilation=false -nodeReuse:false` 并避免并发构建。
 
+### 8. HKCU 注册表写入被限制
+
+现象：`Registry.CurrentUser.CreateSubKey(@"Software\Classes\...", writable: true)` 在从工具启动的
+应用 / 测试进程里抛 `UnauthorizedAccessException`，而同一会话的 PowerShell 可以写。
+
+影响：文件关联的“真实注册表”集成测试会自动跳过（`Assert.Skip`）；文件关联的键路径逻辑用内存
+`FakeRegistryStore` 做了完整覆盖（57 个测试中的 4 个），仍可发现路径 / 值写错的问题。
+
+建议：发布后由 owner 在普通桌面会话点一次“注册为默认播放器”，确认资源管理器中出现 EchoGarage。
+
 ## 影响评估
 
 - 以上都是**开发环境**问题，不影响终端用户运行与发布产物。
