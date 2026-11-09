@@ -1,0 +1,291 @@
+using EchoGarage.Core.Abstractions;
+using EchoGarage.Core.Services;
+
+namespace EchoGarage.Infrastructure.Caching;
+
+/// <summary>
+/// Stores extracted cover art as plain image files on disk, keyed by album identity or file path.
+/// A <c>.none</c> marker records a negative result together with the source file's
+/// modification stamp so the file is not parsed again until it actually changes.
+/// </summary>
+public sealed class FileCoverCache : ICoverCache
+{
+    private static readonly string[] FolderCoverNames =
+        ["cover", "folder", "front", "album", "albumart", "folderart"];
+
+    private static readonly string[] SupportedCoverExtensions =
+        [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"];
+
+    private readonly IAppLogger _logger;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private string _coversDirectory;
+
+    public FileCoverCache(string coversDirectory, IAppLogger logger)
+    {
+        _coversDirectory = coversDirectory;
+        _logger = logger;
+        Directory.CreateDirectory(_coversDirectory);
+    }
+
+    public string CoversDirectory => _coversDirectory;
+
+    public string? Resolve(string? coverKey)
+    {
+        if (string.IsNullOrWhiteSpace(coverKey))
+        {
+            return null;
+        }
+
+        foreach (var extension in SupportedCoverExtensions)
+        {
+            var candidate = System.IO.Path.Combine(_coversDirectory, coverKey + extension);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    public async Task<string?> EnsureAsync(CoverRequest request, CancellationToken cancellationToken = default)
+    {
+        var existing = Resolve(request.CoverKey);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var marker = System.IO.Path.Combine(_coversDirectory, request.CoverKey + ".none");
+        var stamp = $"{request.ModifiedAtUtc.Ticks}:{request.FileSize}";
+        if (File.Exists(marker) && await File.ReadAllTextAsync(marker, cancellationToken).ConfigureAwait(false) == stamp)
+        {
+            return null;
+        }
+
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            existing = Resolve(request.CoverKey);
+            if (existing is not null)
+            {
+                return existing;
+            }
+
+            if (File.Exists(marker) &&
+                await File.ReadAllTextAsync(marker, cancellationToken).ConfigureAwait(false) == stamp)
+            {
+                return null;
+            }
+
+            var (bytes, mime) = ExtractFromFile(request.TrackPath);
+            if (bytes is null)
+            {
+                var folderCover = FindFolderCover(request.TrackPath);
+                if (folderCover is not null)
+                {
+                    bytes = await File.ReadAllBytesAsync(folderCover, cancellationToken).ConfigureAwait(false);
+                    mime = MimeFromExtension(folderCover);
+                }
+            }
+
+            var path = bytes is null ? null : await WriteAsync(request.CoverKey, bytes, mime, cancellationToken);
+            if (path is null)
+            {
+                await File.WriteAllTextAsync(marker, stamp, cancellationToken);
+                return null;
+            }
+
+            if (File.Exists(marker))
+            {
+                File.Delete(marker);
+            }
+
+            return path;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Warn($"Cover extraction failed for {request.TrackPath}: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    public async Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        await Task.Run(() =>
+        {
+            if (!Directory.Exists(_coversDirectory))
+            {
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(_coversDirectory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"Could not delete cached cover {file}: {ex.Message}");
+                }
+            }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task RelocateAsync(string newRoot, CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(newRoot);
+        var oldRoot = _coversDirectory;
+        _coversDirectory = newRoot;
+
+        if (string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase) || !Directory.Exists(oldRoot))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Task.Run(() =>
+        {
+            foreach (var file in Directory.EnumerateFiles(oldRoot))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    File.Move(file, System.IO.Path.Combine(newRoot, System.IO.Path.GetFileName(file)), false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"Could not move cached cover {file}: {ex.Message}");
+                }
+            }
+        }, cancellationToken);
+    }
+
+    private (byte[]? Bytes, string? Mime) ExtractFromFile(string trackPath)
+    {
+        try
+        {
+            using var file = TagLib.File.Create(trackPath, TagLib.ReadStyle.None);
+            var pictures = file.Tag.Pictures;
+            if (pictures is { Length: > 0 })
+            {
+                var picture = pictures.FirstOrDefault(p => p.Type == TagLib.PictureType.FrontCover) ?? pictures[0];
+                if (picture.Data.Count > 0)
+                {
+                    return (picture.Data.Data, picture.MimeType ?? GuessMime(picture.Data.Data));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"TagLib cover read failed for {trackPath}: {ex.Message}");
+        }
+
+        return (null, null);
+    }
+
+    private static string? FindFolderCover(string trackPath)
+    {
+        try
+        {
+            var directory = System.IO.Path.GetDirectoryName(trackPath);
+            if (directory is null || !Directory.Exists(directory))
+            {
+                return null;
+            }
+
+            var candidates = Directory.EnumerateFiles(directory)
+                .Where(f => SupportedCoverExtensions.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()))
+                .ToList();
+
+            foreach (var name in FolderCoverNames)
+            {
+                var match = candidates.FirstOrDefault(f =>
+                    string.Equals(System.IO.Path.GetFileNameWithoutExtension(f), name, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    return match;
+                }
+            }
+
+            return candidates.Count == 1 ? candidates[0] : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<string?> WriteAsync(string coverKey, byte[] bytes, string? mime, CancellationToken cancellationToken)
+    {
+        var extension = ExtensionFor(mime, bytes);
+        if (extension is null)
+        {
+            return null;
+        }
+
+        var path = System.IO.Path.Combine(_coversDirectory, coverKey + extension);
+        Directory.CreateDirectory(_coversDirectory);
+        await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
+        return path;
+    }
+
+    private static string? ExtensionFor(string? mime, byte[] bytes)
+    {
+        switch (mime?.ToLowerInvariant())
+        {
+            case "image/jpeg" or "image/jpg":
+                return ".jpg";
+            case "image/png":
+                return ".png";
+            case "image/webp":
+                return ".webp";
+            case "image/bmp":
+                return ".bmp";
+            case "image/gif":
+                return ".gif";
+        }
+
+        if (bytes.Length > 3 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+        {
+            return ".png";
+        }
+
+        if (bytes.Length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)
+        {
+            return ".jpg";
+        }
+
+        if (bytes.Length > 11 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F')
+        {
+            return ".webp";
+        }
+
+        return null;
+    }
+
+    private static string? MimeFromExtension(string path) => System.IO.Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".png" => "image/png",
+        ".webp" => "image/webp",
+        ".bmp" => "image/bmp",
+        ".gif" => "image/gif",
+        _ => null
+    };
+
+    private static string? GuessMime(byte[] bytes)
+    {
+        if (bytes.Length > 3 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+        {
+            return "image/png";
+        }
+
+        return "image/jpeg";
+    }
+}

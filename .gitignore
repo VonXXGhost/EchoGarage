@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+artifacts/
+publish/
+
+# Local tooling, package cache, temp and demo data (kept inside the workspace in this environment)
+.dotnet/
+.nuget/
+.scratch/
+.tmp/
+.testmedia/
+.testdata/
+.devdata/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.DotSettings.user
+
+# Logs and local runtime data
+logs/
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+Thumbs.db
+desktop.ini

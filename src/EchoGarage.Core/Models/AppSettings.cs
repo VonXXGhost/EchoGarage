@@ -1,0 +1,31 @@
+using EchoGarage.Core.Services;
+
+namespace EchoGarage.Core.Models;
+
+public sealed class AppSettings
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string? OutputDeviceId { get; set; }
+    public OutputMode OutputMode { get; set; } = OutputMode.Shared;
+    public double Volume { get; set; } = 0.75;
+    public bool ShowAlbumPanel { get; set; } = true;
+    public bool RestoreLastPlaylist { get; set; } = true;
+    public long? LastPlaylistId { get; set; }
+    public string CacheDirectory { get; set; } = string.Empty;
+    public PlaylistViewLayout LibraryLayout { get; set; } = ViewLayoutFactory.CreateDefault();
+    public List<ColumnPreset> ColumnPresets { get; set; } = ViewLayoutFactory.CreateBuiltInPresets();
+    public bool AutoScanOnStartup { get; set; } = true;
+    public double WindowWidth { get; set; } = 1440;
+    public double WindowHeight { get; set; } = 880;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+    public bool WindowMaximized { get; set; }
+    public double SidebarWidth { get; set; } = 236;
+    public double AlbumPanelWidth { get; set; } = 320;
+
+    public AppSettings Clone()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(this, JsonDefaults.Options);
+        return System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json, JsonDefaults.Options) ?? new AppSettings();
+    }
+}

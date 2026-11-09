@@ -1,0 +1,162 @@
+<views:ThemedWindow x:Class="EchoGarage.App.Views.SettingsWindow"
+                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="clr-namespace:EchoGarage.App.Views"
+                    Title="设置"
+                    Width="720" Height="720"
+                    MinWidth="640" MinHeight="560"
+                    WindowStartupLocation="CenterOwner"
+                    Background="{StaticResource WindowBackgroundBrush}"
+                    Foreground="{StaticResource TextPrimaryBrush}"
+                    FontFamily="{StaticResource UiFont}"
+                    FontSize="12"
+                    ShowInTaskbar="False"
+                    KeyDown="OnWindowKeyDown">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Audio output -->
+                <TextBlock Text="音频输出" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="输出设备" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox Grid.Column="1" ItemsSource="{Binding Devices}" DisplayMemberPath="FriendlyName"
+                                      SelectedItem="{Binding SelectedDevice}" Height="28" Margin="0,0,10,0" />
+                            <Button Grid.Column="2" Content="刷新" Style="{StaticResource FlatButton}"
+                                    Click="OnRefreshDevices" />
+                        </Grid>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="输出模式" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                                      ItemsSource="{Binding OutputModeOptions}" SelectedIndex="{Binding OutputModeIndex}" />
+                        </Grid>
+                        <TextBlock Text="{Binding OutputDescription}" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="11" Margin="90,10,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="独占模式绕过系统混音器，可减少处理环节；其他程序将无法同时播放声音。"
+                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Margin="90,6,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Library -->
+                <TextBlock Text="媒体库" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <CheckBox x:Name="AutoScanCheck" Content="启动时自动扫描媒体库（仅处理变化的文件）"
+                                  Click="OnToggleAutoScan" />
+                        <CheckBox x:Name="RestoreLastCheck" Content="启动时恢复上次打开的播放列表"
+                                  Margin="0,10,0,0" Click="OnToggleRestoreLast" />
+                        <TextBlock x:Name="LibrarySummaryText" Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,10,0,0" />
+                        <ListBox x:Name="FolderList" Margin="0,10,0,0" MaxHeight="150" Background="Transparent"
+                                 BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Folder.Path}" ToolTip="{Binding Folder.Path}"
+                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <Button Grid.Column="1" Content="移除" Style="{StaticResource FlatButton}"
+                                                Foreground="{StaticResource DangerBrush}" Click="OnRemoveFolder" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="扫描媒体库" Style="{StaticResource FlatButton}" Click="OnRescan" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Cache -->
+                <TextBlock Text="缓存与数据" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="封面缓存目录" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="CacheDirBox" Grid.Column="0" Height="28" />
+                            <Button Grid.Column="1" Content="浏览…" Style="{StaticResource FlatButton}"
+                                    Margin="8,0,0,0" Click="OnBrowseCache" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="应用目录" Style="{StaticResource FlatButton}" Click="OnApplyCache" />
+                            <Button Content="打开目录" Style="{StaticResource FlatButton}" Click="OnOpenCache" />
+                            <Button Content="清空封面缓存" Style="{StaticResource FlatButton}" Click="OnClearCache" />
+                        </StackPanel>
+                        <TextBlock x:Name="CacheStatusText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                   Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,12" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="打开配置目录" Style="{StaticResource FlatButton}" Click="OnOpenConfig" />
+                            <Button Content="打开数据目录" Style="{StaticResource FlatButton}" Click="OnOpenData" />
+                            <Button Content="打开日志目录" Style="{StaticResource FlatButton}" Click="OnOpenLogs" />
+                        </StackPanel>
+                        <TextBlock x:Name="DataDirText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                   Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Associations -->
+                <TextBlock Text="文件关联" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock x:Name="AssociationStatusText" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="注册为默认播放器" Style="{StaticResource FlatButton}" Click="OnRegister" />
+                            <Button Content="取消注册" Style="{StaticResource FlatButton}" Click="OnUnregister" />
+                        </StackPanel>
+                        <TextBlock Text="Windows 10/11 会保护用户已选择的默认应用：注册后需要在系统设置中选择 EchoGarage。"
+                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- About -->
+                <TextBlock Text="关于" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="EchoGarage v0.1.0" FontWeight="SemiBold" />
+                        <TextBlock Text="本地音乐播放器 · WPF / .NET 10 · NAudio WASAPI" Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,4,0,0" />
+                        <TextBlock x:Name="StartupText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                   Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="关闭" Style="{StaticResource AccentButton}" Click="OnClose" IsDefault="True" />
+        </StackPanel>
+    </Grid>
+</views:ThemedWindow>

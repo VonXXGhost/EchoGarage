@@ -1,0 +1,62 @@
+# KB-002：受限开发环境（DSH 沙箱）下的构建与测试
+
+- 状态：待批准（Proposed）
+- 日期：2026-11-09
+- 环境：DSH（DeepSeek Harness）Windows 主机，workspace-write 文件策略
+
+## 现象与解决
+
+### 1. `dotnet build` 显示“0 错误”但返回失败
+
+原因：MSBuild 编译器服务器 / 节点复用依赖命名管道，沙箱禁止；服务器连接失败后某些目标静默失败。
+
+解决：
+
+```powershell
+dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
+# 或设置环境变量
+$env:DOTNET_CLI_USE_MSBUILD_SERVER='0'; $env:MSBUILDDISABLENODEREUSE='1'
+```
+
+### 2. `dotnet test` 的 TestHost 启动失败：`OpenProcess ... 拒绝访问`
+
+VSTest 宿主会尝试监视父进程，被沙箱拒绝；即使提升权限也可能失败（父进程属于不同的作业/完整性上下文）。
+
+解决：测试项目改为 **xUnit v3 进程内 runner**（`xunit.v3` + `OutputType=Exe`），直接执行测试可执行文件：
+
+```powershell
+dotnet build tests/EchoGarage.Tests
+.\tests\EchoGarage.Tests\bin\Debug\net10.0-windows\EchoGarage.Tests.exe
+```
+
+### 3. NuGet 还原报“无法获取锁定文件访问权限”
+
+原因：`%TEMP%\NuGetScratch\lock\...` 被之前的沙箱进程占用 / 权限异常。
+
+解决：设置 `TEMP` / `TMP` 到工作区内目录后还原，或清理 `%TEMP%\NuGetScratch\lock` 并结束残留 `dotnet` 进程。
+
+```powershell
+$env:TEMP='G:\Project\echo-garage\.tmp'; $env:TMP=$env:TEMP
+dotnet restore EchoGarage.sln
+```
+
+### 4. `%APPDATA%` / `%USERPROFILE%\.dotnet` 不可写
+
+原因：DSH 只允许写工作区。
+
+解决：
+
+```powershell
+$env:DOTNET_CLI_HOME='<repo>\.dotnet'
+$env:NUGET_PACKAGES='<repo>\.nuget'
+```
+
+### 5. 工作区目录 ACL 损坏（`SetNamedSecurityInfoW failed: 5`）
+
+DSH 的 `diagnose-windows-sandbox-acl` 技能命令可诊断并修复：给当前用户补完全控制 ACE、清理外来应用包条目，
+并生成可撤销的恢复脚本。
+
+## 影响评估
+
+- 以上都是**开发环境**问题，不影响终端用户运行与发布产物。
+- 但会导致“看似编译成功其实失败”“测试跑不起来”，所以必须写进 KB，避免下次重复排查。
