@@ -106,6 +106,31 @@ public sealed class TagAndCoverTests : IDisposable
     }
 
     [Fact]
+    public async Task CoverCache_InvalidatesWhenSourceFileChanges()
+    {
+        var paths = new AppPaths(_workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        var cache = new FileCoverCache(paths.DefaultCacheDirectory, logger);
+
+        var track = TestAudio.CreateWav(_workspace.Combine("media", "changing.wav"));
+        _tags.Write(track, new TagEditModel { Title = "a", NewCoverBytes = TestAudio.CoverBytes(), NewCoverMime = "image/png" });
+        var key = CoverKeyFactory.ForTrack(track, "album", "artist");
+        var info = new FileInfo(track);
+        var first = await cache.EnsureAsync(new CoverRequest(track, key, info.LastWriteTimeUtc, info.Length));
+        Assert.NotNull(first);
+
+        // Removing the embedded cover must invalidate the previously cached image.
+        _tags.Write(track, new TagEditModel { Title = "b", RemoveCover = true });
+        var info2 = new FileInfo(track);
+        var second = await cache.EnsureAsync(new CoverRequest(track, key, info2.LastWriteTimeUtc, info2.Length));
+
+        Assert.Null(second);
+        Assert.Null(cache.Resolve(key));
+        Assert.True(File.Exists(Path.Combine(cache.CoversDirectory, key + ".none")));
+    }
+
+    [Fact]
     public async Task CoverCache_RelocateMovesFiles()
     {
         var paths = new AppPaths(_workspace.Combine("state"));

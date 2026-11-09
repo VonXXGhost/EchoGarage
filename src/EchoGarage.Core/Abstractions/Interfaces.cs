@@ -57,6 +57,7 @@ public interface ICoverCache
     string CoversDirectory { get; }
     string? Resolve(string? coverKey);
     Task<string?> EnsureAsync(CoverRequest request, CancellationToken cancellationToken = default);
+    void Invalidate(string? coverKey);
     Task ClearAsync(CancellationToken cancellationToken = default);
     Task RelocateAsync(string newRoot, CancellationToken cancellationToken = default);
 }

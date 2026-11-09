@@ -1549,6 +1549,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (updated is not null)
             {
                 row.UpdateTrack(updated);
+                _host.Covers?.Invalidate(oldCover);
+                _host.Covers?.Invalidate(updated.CoverKey);
                 _host.CoverImages.Invalidate(oldCover);
                 _host.CoverImages.Invalidate(updated.CoverKey);
                 await LoadRowCoverAsync(row, force: true);

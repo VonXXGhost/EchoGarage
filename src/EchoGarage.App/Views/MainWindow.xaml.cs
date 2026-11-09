@@ -487,8 +487,10 @@ public partial class MainWindow : Window
         {
             if (Directory.Exists(item))
             {
-                files.AddRange(Directory.EnumerateFiles(item, "*", SearchOption.AllDirectories)
-                    .Where(PathUtil.IsSupportedAudio));
+                var directory = item;
+                files.AddRange(await Task.Run(() => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                    .Where(PathUtil.IsSupportedAudio)
+                    .ToList()));
             }
             else if (File.Exists(item) && PathUtil.IsSupportedAudio(item))
             {

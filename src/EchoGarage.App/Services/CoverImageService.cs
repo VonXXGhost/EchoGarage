@@ -71,11 +71,7 @@ public sealed class CoverImageService : IDisposable
                 return cached;
             }
 
-            var path = _cache.Resolve(request.CoverKey);
-            if (path is null)
-            {
-                path = await _cache.EnsureAsync(request, cancellationToken).ConfigureAwait(false);
-            }
+            var path = await _cache.EnsureAsync(request, cancellationToken).ConfigureAwait(false);
 
             BitmapSource? bitmap = null;
             if (path is not null)

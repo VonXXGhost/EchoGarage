@@ -50,15 +50,24 @@ public sealed class FileCoverCache : ICoverCache
 
     public async Task<string?> EnsureAsync(CoverRequest request, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(request.CoverKey))
+        {
+            return null;
+        }
+
+        var stamp = $"{request.ModifiedAtUtc.Ticks}:{request.FileSize}";
+        var stampPath = System.IO.Path.Combine(_coversDirectory, request.CoverKey + ".stamp");
+        var marker = System.IO.Path.Combine(_coversDirectory, request.CoverKey + ".none");
+
         var existing = Resolve(request.CoverKey);
-        if (existing is not null)
+        var cachedStamp = await ReadTextIfExistsAsync(stampPath, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && cachedStamp == stamp)
         {
             return existing;
         }
 
-        var marker = System.IO.Path.Combine(_coversDirectory, request.CoverKey + ".none");
-        var stamp = $"{request.ModifiedAtUtc.Ticks}:{request.FileSize}";
-        if (File.Exists(marker) && await File.ReadAllTextAsync(marker, cancellationToken).ConfigureAwait(false) == stamp)
+        if (existing is null &&
+            await ReadTextIfExistsAsync(marker, cancellationToken).ConfigureAwait(false) == stamp)
         {
             return null;
         }
@@ -67,9 +76,16 @@ public sealed class FileCoverCache : ICoverCache
         try
         {
             existing = Resolve(request.CoverKey);
-            if (existing is not null)
+            cachedStamp = await ReadTextIfExistsAsync(stampPath, cancellationToken).ConfigureAwait(false);
+            if (existing is not null && cachedStamp == stamp)
             {
                 return existing;
+            }
+
+            if (cachedStamp != stamp)
+            {
+                // Source file changed since the cache entry was written.
+                DeleteCachedEntry(request.CoverKey);
             }
 
             if (File.Exists(marker) &&
@@ -101,6 +117,7 @@ public sealed class FileCoverCache : ICoverCache
                 File.Delete(marker);
             }
 
+            await File.WriteAllTextAsync(stampPath, stamp, cancellationToken);
             return path;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -111,6 +128,59 @@ public sealed class FileCoverCache : ICoverCache
         finally
         {
             _writeGate.Release();
+        }
+    }
+
+    public void Invalidate(string? coverKey)
+    {
+        if (string.IsNullOrWhiteSpace(coverKey))
+        {
+            return;
+        }
+
+        DeleteCachedEntry(coverKey);
+    }
+
+    private void DeleteCachedEntry(string coverKey)
+    {
+        foreach (var extension in SupportedCoverExtensions)
+        {
+            TryDelete(System.IO.Path.Combine(_coversDirectory, coverKey + extension));
+        }
+
+        TryDelete(System.IO.Path.Combine(_coversDirectory, coverKey + ".none"));
+        TryDelete(System.IO.Path.Combine(_coversDirectory, coverKey + ".stamp"));
+    }
+
+    private void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Could not delete cached file {path}: {ex.Message}");
+        }
+    }
+
+    private static async Task<string?> ReadTextIfExistsAsync(string path, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            return null;
         }
     }
 
