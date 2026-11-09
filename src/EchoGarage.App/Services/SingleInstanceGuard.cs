@@ -176,7 +176,8 @@ public static class FileArgumentParser
             {
                 skipNext = string.Equals(arg, "--screenshot", StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(arg, "--screenshot-all", StringComparison.OrdinalIgnoreCase) ||
-                           string.Equals(arg, "--play-file", StringComparison.OrdinalIgnoreCase);
+                           string.Equals(arg, "--play-file", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(arg, "--seek-seconds", StringComparison.OrdinalIgnoreCase);
                 continue;
             }
 

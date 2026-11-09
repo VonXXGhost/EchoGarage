@@ -30,6 +30,10 @@
   正式运行（普通用户会话）正常。
 - `WasapiOut` 的共享 / 独占初始化是“第一次慢、之后快”，因此启动预热（ADR-009）很有价值。
 - 不要在 UI 线程同步构造 `AudioFileReader`：大文件 / 首次 MF 初始化会卡住界面；播放器实现里用 `Task.Run` 包住 Load。
+- **`WasapiOut` 会接管传入的 `MMDevice` 并在 `Dispose` 时释放它**。如果缓存了 `MMDevice` 以便“跳转时复用”，
+  跳转（重建输出链路）后再次访问 `device.AudioClient` 会抛
+  `InvalidCastException ... E_NOINTERFACE`。正确做法：销毁输出链路时同时丢弃缓存的设备，下次启动输出时重新获取。
+  本项目实测跳转失败一次后按此修复，日志出现 `Seeked to 00:06.000 (playing=True)` 即正常。
 
 ## 复现方式
 

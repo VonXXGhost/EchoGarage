@@ -97,7 +97,8 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 
 - 日志目录：`%LOCALAPPDATA%\EchoGarage\Logs\echogarage-YYYYMMDD.log`（可用 `ECHOGARAGE_DATA_DIR` 重定向）。
 - 日志级别：`[INFO]` 生命周期与关键操作、`[WARN]` 可恢复问题、`[ERROR]` 需要用户/开发介入、`[DEBUG]` 高频细节。
-- 内置诊断开关：`--screenshot <png>`、`--screenshot-all <dir>`（用于高 DPI 下检查 UI）。
+- 内置诊断开关：`--screenshot <png>`、`--screenshot-all <dir>`、`--play-file <file>`、`--seek-seconds <n>`
+  （用于高 DPI / 无 UI 交互时检查界面与跳转行为）。
 - 用户反馈问题时，优先索取：日志文件、`settings.json`、问题歌曲的格式与时长。
 
 ## 9. 提交与文档

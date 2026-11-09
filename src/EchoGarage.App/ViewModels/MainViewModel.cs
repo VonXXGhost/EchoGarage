@@ -179,6 +179,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public event EventHandler? SettingsRequested;
     public event EventHandler? CurrentRowChanged;
 
+    /// <summary>
+    /// Set by the main window so layout changes can capture the live DataGrid column
+    /// widths/order even when the switch is initiated from the view model.
+    /// </summary>
+    public Func<PlaylistViewLayout?>? LayoutProvider { get; set; }
+
     public string PlayGlyph => IsPlaying ? "⏸" : "▶";
 
     public bool HasCurrentTrack => CurrentRow is not null || !string.IsNullOrEmpty(CurrentTitle) && CurrentTitle != "未在播放";
@@ -275,6 +281,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             await PlayRowAsync(row);
         }
     }
+
+    /// <summary>Used by the developer diagnostics to verify seek behavior without UI input.</summary>
+    public void SeekForDiagnostics(double seconds) => CommitSeek(seconds);
 
     private async Task ReloadSourcesAsync()
     {
@@ -528,10 +537,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // =====================================================================
     // Layout and presets
     // =====================================================================
-    public void PersistCurrentLayout() => PersistCurrentLayout(null);
+    public void PersistCurrentLayout() => PersistCurrentLayout(null, captureFromView: true);
 
-    public void PersistCurrentLayout(PlaylistViewLayout? capturedLayout)
+    /// <param name="capturedLayout">布局快照；为空且 <paramref name="captureFromView"/> 为真时向窗口取当前列宽/顺序。</param>
+    /// <param name="captureFromView">
+    /// 应用预设或列设置后必须为 false：此时界面还是旧列，抓取会把旧宽度覆盖回新布局。
+    /// </param>
+    public void PersistCurrentLayout(PlaylistViewLayout? capturedLayout, bool captureFromView = true)
     {
+        if (capturedLayout is null && captureFromView)
+        {
+            capturedLayout = LayoutProvider?.Invoke();
+        }
+
         if (capturedLayout is not null)
         {
             CurrentLayout = ViewLayoutFactory.Normalize(capturedLayout);
@@ -577,7 +595,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Presets.Add(preset);
         }
 
-        PersistCurrentLayout();
+        PersistCurrentLayout(null, captureFromView: false);
         ApplySortAndGrouping();
         LayoutChanged?.Invoke(this, EventArgs.Empty);
         QueueSettingsSave();
@@ -587,8 +605,37 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         CurrentLayout = ViewLayoutFactory.Normalize(preset.ToLayout());
         ApplySortAndGrouping();
-        PersistCurrentLayout();
+        PersistCurrentLayout(null, captureFromView: false);
         LayoutChanged?.Invoke(this, EventArgs.Empty);
+        SetStatus($"已应用显示预设：{preset.Name}");
+    }
+
+    public void SaveCurrentLayoutAsPreset(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        CurrentLayout.PresetName = name;
+        var preset = ColumnPreset.FromLayout(name, CurrentLayout);
+        var existing = Settings.ColumnPresets.FirstOrDefault(p =>
+            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            Settings.ColumnPresets.Remove(existing);
+        }
+
+        Settings.ColumnPresets.Add(preset);
+        Presets.Clear();
+        foreach (var item in Settings.ColumnPresets)
+        {
+            Presets.Add(item);
+        }
+
+        PersistCurrentLayout(null, captureFromView: false);
+        QueueSettingsSave();
+        SetStatus($"已保存显示预设：{name}");
     }
 
     // =====================================================================
@@ -608,6 +655,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (_host.Player.State == AudioPlaybackState.Paused)
             {
                 _host.Player.Play();
+                return;
+            }
+
+            // Stopped (either by the user or by reaching the end): restart the current track.
+            if (CurrentRow is not null && CurrentRow.IsPlayable)
+            {
+                await PlayRowAsync(CurrentRow);
                 return;
             }
 
@@ -998,6 +1052,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         try
         {
+            var existingFolders = await _host.LibraryRepository.GetFoldersAsync();
+            var overlapping = existingFolders.FirstOrDefault(f => PathUtil.FoldersOverlap(f.Path, folder));
+            if (overlapping is not null &&
+                !_dialogs.Confirm($"该文件夹与媒体库中已有的目录重叠：\n{overlapping.Path}\n\n重叠会导致同一批文件被重复扫描，仍要添加吗？"))
+            {
+                return;
+            }
+
             var added = await _host.LibraryRepository.AddFolderAsync(folder);
             await ReloadSourcesAsync();
             var node = Sources.FirstOrDefault(s => s.Kind == SourceKind.Folder && s.Folder?.Id == added.Id);
@@ -1520,9 +1582,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await _host.PlaylistRepository.AddPlaylistItemsAsync(playlistId.Value, Tracks.Where(IsRowSelected).Select(t => t.Track).ToList());
+        var selected = Tracks.Where(IsRowSelected).ToList();
+        if (selected.Count == 0 && SelectedRow is not null)
+        {
+            selected.Add(SelectedRow);
+        }
+
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        await _host.PlaylistRepository.AddPlaylistItemsAsync(playlistId.Value, selected.Select(t => t.Track).ToList());
         await ReloadSourcesAsync();
-        SetStatus("已添加到播放列表");
+        SetStatus($"已添加 {selected.Count} 首歌曲到播放列表");
     }
 
     [RelayCommand]

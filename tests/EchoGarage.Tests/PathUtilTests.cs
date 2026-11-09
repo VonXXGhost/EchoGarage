@@ -33,6 +33,16 @@ public sealed class PathUtilTests
     }
 
     [Fact]
+    public void FoldersOverlap_DetectsSameNestedAndSeparateFolders()
+    {
+        Assert.True(PathUtil.FoldersOverlap(@"G:\Music", @"G:\Music\"));
+        Assert.True(PathUtil.FoldersOverlap(@"G:\Music", @"G:\Music\Rock"));
+        Assert.True(PathUtil.FoldersOverlap(@"g:\music\rock", @"G:\Music"));
+        Assert.False(PathUtil.FoldersOverlap(@"G:\Music", @"G:\Musicology"));
+        Assert.False(PathUtil.FoldersOverlap(@"G:\Music", @"D:\Music"));
+    }
+
+    [Fact]
     public void CoverKey_GroupsTracksOfSameAlbum()
     {
         var a = CoverKeyFactory.ForTrack(@"G:\a\1.flac", "Album", "Artist");

@@ -48,3 +48,16 @@ WPF 没有内置的深色标题栏属性，需要对 HWND 调用 `DwmSetWindowAt
 
 `Window.Width/Height` 是 DIP；保存 / 恢复时要与 `SystemParameters.WorkArea`（也是 DIP）比较并夹取，
 否则换到小屏后窗口会出现在屏幕外。恢复位置时若越界，回退到居中。
+
+## 8. “保存列宽”必须在正确时机读 DataGrid
+
+自绘列时，列宽只存在于 `DataGridColumn.Width/ActualWidth`。如果用“切换列表前保存”的思路，
+要区分三种情况：
+
+- **启动早期**：Grid 尚未构建列（`Columns.Count == 0`），此时抓取会把所有列标成隐藏，
+  下次加载就只剩一列。必须直接返回 `null`，保留原布局。
+- **应用预设 / 列设置后**：界面仍是旧列，若抓取实际宽度会覆盖新预设的宽度。应显式跳过抓取。
+- **正常切换 / 排序 / 关闭**：此时抓取是安全的，且能保存用户拖动的宽度和列顺序。
+
+实现上通过 `Func<PlaylistViewLayout?>` 由窗口提供“当前列布局快照”，并在
+`PersistCurrentLayout(..., captureFromView: false)` 时跳过。

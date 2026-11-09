@@ -30,3 +30,7 @@ logs/
 # OS
 Thumbs.db
 desktop.ini
+
+# JetBrains IDE
+.idea/
+

@@ -60,6 +60,15 @@ public partial class App : Application
                 await window.ViewModel.PlayPathForDiagnosticsAsync(e.Args[playIndex + 1]);
             }
 
+            var seekIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--seek-seconds", StringComparison.OrdinalIgnoreCase));
+            if (seekIndex >= 0 && seekIndex + 1 < e.Args.Length &&
+                double.TryParse(e.Args[seekIndex + 1], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var seekSeconds))
+            {
+                await Task.Delay(1200);
+                window.ViewModel.SeekForDiagnostics(seekSeconds);
+            }
+
             var screenshotIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--screenshot", StringComparison.OrdinalIgnoreCase));
             if (screenshotIndex >= 0 && screenshotIndex + 1 < e.Args.Length)
             {

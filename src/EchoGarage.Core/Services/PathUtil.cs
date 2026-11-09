@@ -57,6 +57,13 @@ public static class PathUtil
         }
     }
 
+    /// <summary>
+    /// True when two library folders are the same directory or one contains the other.
+    /// Overlapping folders would index the same files twice, so the UI warns before adding.
+    /// </summary>
+    public static bool FoldersOverlap(string folderA, string folderB) =>
+        IsUnderFolder(folderA, folderB) || IsUnderFolder(folderB, folderA);
+
     public static string ExtensionDisplay(string path) =>
         System.IO.Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
 

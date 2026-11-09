@@ -30,6 +30,7 @@ public partial class MainWindow : Window
 
         _dialogs = new DialogService(this);
         _vm = new MainViewModel(host, _dialogs);
+        _vm.LayoutProvider = CaptureLayoutFromGrid;
         DataContext = _vm;
 
         _vm.LayoutChanged += (_, _) => ApplyLayout();
@@ -201,8 +202,15 @@ public partial class MainWindow : Window
     private static string ToPascalCase(string key) =>
         string.IsNullOrEmpty(key) ? key : char.ToUpperInvariant(key[0]) + key[1..];
 
-    private PlaylistViewLayout CaptureLayoutFromGrid()
+    private PlaylistViewLayout? CaptureLayoutFromGrid()
     {
+        // Before the first layout pass the grid has no columns; capturing then would
+        // mark every column as hidden and destroy the saved layout.
+        if (TrackGrid.Columns.Count == 0)
+        {
+            return null;
+        }
+
         var layout = _vm.CurrentLayout.Clone();
         var ordered = new List<PlaylistColumn>();
         foreach (var gridColumn in TrackGrid.Columns)
@@ -223,19 +231,13 @@ public partial class MainWindow : Window
             ordered.Add(new PlaylistColumn { Key = stored.Key, Width = width, Visible = true });
         }
 
-        foreach (var hidden in layout.Columns.Where(c => c.Visible &&
-                                                          ordered.All(o => !string.Equals(o.Key, c.Key, StringComparison.OrdinalIgnoreCase))))
+        // Columns that exist in the layout but are not rendered right now keep their
+        // stored visibility (hidden columns stay hidden; a missing visible column is kept
+        // visible so a later layout pass can restore it).
+        foreach (var remaining in layout.Columns.Where(c =>
+                     ordered.All(o => !string.Equals(o.Key, c.Key, StringComparison.OrdinalIgnoreCase))))
         {
-            // Columns that exist in the layout but are not on screen stay hidden.
-            ordered.Add(new PlaylistColumn { Key = hidden.Key, Width = hidden.Width, Visible = false });
-        }
-
-        foreach (var hidden in layout.Columns.Where(c => !c.Visible))
-        {
-            if (ordered.All(o => !string.Equals(o.Key, hidden.Key, StringComparison.OrdinalIgnoreCase)))
-            {
-                ordered.Add(hidden.Clone());
-            }
+            ordered.Add(remaining.Clone());
         }
 
         layout.Columns = ordered;
@@ -379,6 +381,45 @@ public partial class MainWindow : Window
         {
             await _vm.EditTagsCommand.ExecuteAsync(row);
         }
+    }
+
+    private void OnPresetButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu { DataContext = _vm };
+        foreach (var preset in _vm.Presets.ToList())
+        {
+            var item = new MenuItem { Header = preset.Name };
+            var captured = preset;
+            item.Click += (_, _) => _vm.ApplyPreset(captured);
+            menu.Items.Add(item);
+        }
+
+        menu.Items.Add(new Separator());
+
+        var saveItem = new MenuItem { Header = "保存当前布局为预设…" };
+        saveItem.Click += (_, _) =>
+        {
+            var name = _dialogs.AskText("保存显示预设", "预设名称", _vm.CurrentLayout.PresetName ?? "我的布局");
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                _vm.SaveCurrentLayoutAsPreset(name);
+            }
+        };
+        menu.Items.Add(saveItem);
+
+        var manageItem = new MenuItem { Header = "列与布局…" };
+        manageItem.Click += (_, _) => _vm.EditColumnsCommand.Execute(null);
+        menu.Items.Add(manageItem);
+
+        menu.PlacementTarget = button;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+        e.Handled = true;
     }
 
     private async void OnAddToPlaylistClick(object sender, RoutedEventArgs e) =>
@@ -535,7 +576,15 @@ public partial class MainWindow : Window
         _closing = true;
         try
         {
-            _vm.PersistCurrentLayout(CaptureLayoutFromGrid());
+            var captured = CaptureLayoutFromGrid();
+            if (captured is not null)
+            {
+                _vm.PersistCurrentLayout(captured);
+            }
+            else
+            {
+                _vm.PersistCurrentLayout();
+            }
             var settings = _host.Settings.Current;
             settings.WindowMaximized = WindowState == WindowState.Maximized;
             if (WindowState == WindowState.Normal)

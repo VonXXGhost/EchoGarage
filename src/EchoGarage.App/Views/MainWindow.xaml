@@ -310,6 +310,8 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button Content="添加文件" Style="{StaticResource ToolbarButton}" Command="{Binding AddFilesCommand}" />
+                        <Button Content="预设" Style="{StaticResource ToolbarButton}" Click="OnPresetButtonClick"
+                                ToolTip="快速切换播放列表的列显示预设" />
                         <Button Content="列与布局" Style="{StaticResource ToolbarButton}" Command="{Binding EditColumnsCommand}" />
                         <Button Content="扫描媒体库" Style="{StaticResource ToolbarButton}" Command="{Binding RescanCommand}" />
                         <Button Content="智能条件" Command="{Binding EditSmartRulesCommand}">

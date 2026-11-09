@@ -288,6 +288,8 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                     StartOutput(_reader, target, keepReaderPosition: true);
                     SetState(AudioPlaybackState.Playing, CurrentTrackPath);
                 }
+
+                _logger.Info($"Seeked to {target:mm\\:ss\\.fff} (playing={wasPlaying}).");
             }
             catch (Exception ex)
             {
@@ -512,6 +514,10 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                 // Ignore dispose errors during teardown.
             }
         }
+
+        // NAudio's WasapiOut takes ownership of the MMDevice and releases it on Dispose;
+        // a cached device would throw E_NOINTERFACE on the next AudioClient access.
+        DisposeDevice();
     }
 
     private void DisposeReader()
