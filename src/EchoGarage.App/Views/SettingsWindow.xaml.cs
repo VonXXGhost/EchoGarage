@@ -32,8 +32,10 @@ public partial class SettingsWindow : ThemedWindow
                            $"日志：{_host.Paths.LogsDirectory}";
         DataDirText.Text = $"数据库：{_host.Paths.DatabaseFile}";
         DataPathText.Text = $"配置目录：{_host.Paths.ConfigDirectory}\n" +
-                            $"数据目录：{_host.Paths.DataDirectory}" +
-                            (_host.Paths.IsPortableOverride ? "\n（便携 / 回退模式：未使用 AppData）" : string.Empty);
+                            $"数据目录：{_host.Paths.DataDirectory}\n" +
+                            (_host.Paths.IsPortable
+                                ? "（便携模式：数据保存在程序目录）"
+                                : "（自定义目录：ECHOGARAGE_DATA_DIR）");
         RefreshFolders();
         UpdateAssociationStatus();
     }

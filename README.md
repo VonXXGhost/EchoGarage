@@ -138,23 +138,22 @@ dotnet build tests/EchoGarage.Tests
 
 ### 目录与环境变量
 
+EchoGarage 默认是**便携软件**：所有状态都放在 exe 所在目录，不读取 `%APPDATA%` / `%LOCALAPPDATA%`。
+
 | 内容 | 默认位置 |
 | --- | --- |
-| 配置 | `%APPDATA%\EchoGarage\settings.json` |
-| 数据库 / 日志 / 默认缓存 | `%LOCALAPPDATA%\EchoGarage\` |
-| 缓存目录 | 默认 `%LOCALAPPDATA%\EchoGarage\Cache`，可在设置中修改 |
+| 配置 | `<exe 目录>\EchoGarageData\config\settings.json` |
+| 数据库 / 日志 / 默认缓存 | `<exe 目录>\EchoGarageData\data\` |
+| 缓存目录 | 默认 `<exe 目录>\EchoGarageData\data\Cache`，可在设置中修改 |
 
-设置环境变量 `ECHOGARAGE_DATA_DIR` 可以把以上全部内容重定向到指定目录（适合便携使用、隔离测试）：
+因此程序文件夹需要可写（不要放在 `C:\Program Files` 之类受保护的位置）。实际使用的目录显示在“设置 → 关于”中。
+
+设置环境变量 `ECHOGARAGE_DATA_DIR` 可以把以上全部内容重定向到指定目录（适合测试、共享盘或程序目录只读的情况）：
 
 ```powershell
 $env:ECHOGARAGE_DATA_DIR = "G:\EchoGarageData"
 .\artifacts\publish\win-x64\EchoGarage.exe
 ```
-
-**便携 / 回退模式**：如果默认的 `%APPDATA%` 或 `%LOCALAPPDATA%` 目录无法创建（受限账户、策略、沙箱等），
-程序会自动依次回退到 exe 旁的 `EchoGarageData`、再到 `%TEMP%\EchoGarageData`，保证仍能启动。
-也可以在 exe 旁新建一个名为 `portable` 的空文件，强制使用 exe 旁的 `EchoGarageData`；
-实际使用的配置 / 数据目录显示在“设置 → 关于”中。
 
 ### 开发诊断开关
 

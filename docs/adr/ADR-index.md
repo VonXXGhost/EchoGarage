@@ -12,7 +12,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-003](ADR-003-files-are-truth.md) | 文件是唯一真相 | Accepted | 2026-11-09 | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数等软件状态除外 |
 | [ADR-004](ADR-004-playlist-model.md) | 播放列表模型 | Accepted | 2026-11-09 | 普通列表存显式条目，智能列表存条件；默认列表由外部打开覆盖 |
 | [ADR-005](ADR-005-playlist-view-layouts.md) | 播放列表显示格式 | Accepted | 2026-11-09 | 每个播放列表独立记忆列显示 / 宽度 / 顺序 / 排序，全局预设可复用 |
-| [ADR-006](ADR-006-settings-vs-library.md) | 配置与媒体库分离 | Accepted | 2026-11-09 | `settings.json` 与 `library.db` 分离；导出配置不含媒体库内容 |
+| [ADR-006](ADR-006-settings-vs-library.md) | 配置与媒体库分离 | Accepted | 2026-11-09 | `settings.json` 与 `library.db` 分离；默认便携到 exe 旁 `EchoGarageData`；导出配置不含媒体库内容 |
 | [ADR-007](ADR-007-file-watching.md) | 文件变更跟踪 | Accepted | 2026-11-09 | FileSystemWatcher + 去抖，增量比对大小与修改时间，失败可回退全量扫描 |
 | [ADR-008](ADR-008-single-instance-default-player.md) | 单实例与默认播放器 | Accepted | 2026-11-09 | 命名互斥体 + 管道转发；文件关联是可选、手动、按格式勾选的操作，启动不自动注册 |
 | [ADR-009](ADR-009-wasapi-audio-pipeline.md) | WASAPI 播放管线 | Accepted | 2026-11-09 | 共享模式走混音格式；独占模式按设备格式阶梯重采样，失败回退共享 |

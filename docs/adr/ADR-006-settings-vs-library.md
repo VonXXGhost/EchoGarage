@@ -9,14 +9,18 @@
 
 ## 决策
 
-1. 软件配置：`%APPDATA%\EchoGarage\settings.json`（`JsonSettingsService`，原子写入：临时文件 + 替换）。
-2. 媒体库：`%LOCALAPPDATA%\EchoGarage\library.db`（SQLite，WAL）。
-3. 日志：`%LOCALAPPDATA%\EchoGarage\Logs`，按天滚动，保留 30 天。
-4. 封面缓存：默认 `%LOCALAPPDATA%\EchoGarage\Cache`，可在设置中修改：
-   - 修改时先保存配置，再迁移已有封面文件，最后清空内存缓存；
-   - 目录不可用时回退到默认目录并记录警告。
-5. 环境变量 `ECHOGARAGE_DATA_DIR` 可将以上全部重定向到一个根目录（便携 / 隔离测试）。
-6. 导出只包含 `AppSettings`（含列预设与媒体库布局），不包含曲目、播放列表条目或缓存文件。
+1. **默认便携**：所有状态放在 exe 旁的 `EchoGarageData`，不读写 `%APPDATA%` / `%LOCALAPPDATA%`。
+   - 软件配置：`<exe 目录>\EchoGarageData\config\settings.json`（`JsonSettingsService`，原子写入：临时文件 + 替换）。
+   - 媒体库：`<exe 目录>\EchoGarageData\data\library.db`（SQLite，WAL）。
+   - 日志：`<exe 目录>\EchoGarageData\data\Logs`，按天滚动，保留 30 天。
+   - 封面缓存：默认 `<exe 目录>\EchoGarageData\data\Cache`，可在设置中修改：
+     - 修改时先保存配置，再迁移已有封面文件，最后清空内存缓存；
+     - 目录不可用时回退到默认目录并记录警告。
+2. 环境变量 `ECHOGARAGE_DATA_DIR` 可将以上全部重定向到一个根目录（测试、共享盘、程序目录只读时）。
+3. 导出只包含 `AppSettings`（含列预设与媒体库布局），不包含曲目、播放列表条目或缓存文件。
+
+> 2026-11-09 owner 修订：原先使用 `%APPDATA%` / `%LOCALAPPDATA%`，现改为默认便携（数据在 exe 旁），
+> 避免受限账户 / 权限策略下无法启动；程序目录需要可写。
 
 ## 理由
 
@@ -26,7 +30,8 @@
 
 ## 后果
 
-- 配置与数据分开后，用户迁移电脑需要分别处理两处路径（文档已说明）。
+- 程序目录必须可写；放到 `C:\Program Files` 等受保护目录会无法创建数据目录（文档已提示）。
+- 迁移电脑时直接复制整个程序文件夹即可带走配置、媒体库与缓存。
 - 数据库没有内置备份机制（v0.1）；后续可加“导出媒体库”。
 
 ## 备选方案

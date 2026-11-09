@@ -107,7 +107,8 @@ public sealed class SettingsTests : IDisposable
         Assert.StartsWith(root, paths.ConfigDirectory, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(root, paths.DataDirectory, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(root, paths.LogsDirectory, StringComparison.OrdinalIgnoreCase);
-        Assert.True(paths.IsPortableOverride);
+        Assert.True(paths.IsCustomRoot);
+        Assert.False(paths.IsPortable);
     }
 
     public void Dispose() => _workspace.Dispose();

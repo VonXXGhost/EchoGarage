@@ -97,7 +97,8 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 
 ## 8. 诊断与日志
 
-- 日志目录：`%LOCALAPPDATA%\EchoGarage\Logs\echogarage-YYYYMMDD.log`（可用 `ECHOGARAGE_DATA_DIR` 重定向）。
+- 日志目录：`<exe目录>\EchoGarageData\data\Logs\echogarage-YYYYMMDD.log`（可用 `ECHOGARAGE_DATA_DIR` 重定向）。
+- 默认是便携模式：配置与媒体库都在 exe 旁的 `EchoGarageData`，不要读写 `%APPDATA%` / `%LOCALAPPDATA%`。
 - 日志级别：`[INFO]` 生命周期与关键操作、`[WARN]` 可恢复问题、`[ERROR]` 需要用户/开发介入、`[DEBUG]` 高频细节。
 - 内置诊断开关：`--screenshot <png>`、`--screenshot-all <dir>`、`--play-file <file>`、`--seek-seconds <n>`
   （用于高 DPI / 无 UI 交互时检查界面与跳转行为）。

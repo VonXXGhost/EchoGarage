@@ -24,7 +24,7 @@ public sealed class AppHost : IAsyncDisposable
 
     public AppHost(AppPaths? paths = null)
     {
-        Paths = paths ?? AppPaths.CreateForStartup();
+        Paths = paths ?? new AppPaths();
         Paths.EnsureCreated();
         Logger = new FileLogger(Paths);
         Settings = new JsonSettingsService(Paths, Logger);

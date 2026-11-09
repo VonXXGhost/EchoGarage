@@ -112,8 +112,9 @@ public partial class App : Application
 
             MessageBox.Show(
                 $"EchoGarage 启动失败：\n{ex.Message}\n\n" +
-                $"如果这是受限环境或便携使用，请设置环境变量 {EchoGarage.Infrastructure.Configuration.AppPaths.DataRootEnvironmentVariable} " +
-                "指向一个可写目录后重试；也可以在 exe 旁新建名为 portable 的空文件强制便携模式（数据存到 exe 旁的 EchoGarageData）。\n\n" +
+                "EchoGarage 默认把配置和数据放在 exe 旁的 EchoGarageData 目录。" +
+                "当前程序目录不可写（例如放在 Program Files 下）时，请把整个程序文件夹移动到可写目录（如 D:\\Apps\\EchoGarage），" +
+                $"或设置环境变量 {EchoGarage.Infrastructure.Configuration.AppPaths.DataRootEnvironmentVariable} 指向一个可写目录后重试。\n\n" +
                 $"当前默认配置目录：{Host?.Paths.ConfigDirectory ?? defaults.ConfigDirectory}\n" +
                 $"当前默认数据目录：{Host?.Paths.DataDirectory ?? defaults.DataDirectory}\n\n" +
                 $"详细错误已写入：{System.IO.Path.Combine(System.IO.Path.GetTempPath(), "EchoGarage-startup-error.log")}",
