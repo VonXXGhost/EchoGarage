@@ -1666,6 +1666,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             await ReloadSourcesAsync();
+            _host.Logger.Info($"Tags saved: {row.Track.Path}");
             SetStatus("标签已保存");
         }
         catch (Exception ex)

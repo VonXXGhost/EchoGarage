@@ -511,6 +511,11 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await _vm.PlayPauseCommand.ExecuteAsync(null);
                 break;
+            case Key.Enter when Keyboard.Modifiers == ModifierKeys.Alt && !isTextInput &&
+                                TrackGrid.SelectedItem is TrackRowViewModel propertiesRow:
+                e.Handled = true;
+                await _vm.EditTagsCommand.ExecuteAsync(propertiesRow);
+                break;
             case Key.Enter when !isTextInput && TrackGrid.SelectedItem is TrackRowViewModel row:
                 e.Handled = true;
                 await _vm.PlayRowCommand.ExecuteAsync(row);

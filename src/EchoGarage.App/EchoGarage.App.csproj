@@ -7,6 +7,7 @@
     <RootNamespace>EchoGarage.App</RootNamespace>
     <AssemblyName>EchoGarage</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\echogarage.ico</ApplicationIcon>
     <ApplicationTitle>EchoGarage</ApplicationTitle>
     <AssemblyTitle>EchoGarage</AssemblyTitle>
     <Description>EchoGarage — a fast, personal local music player for Windows.</Description>
@@ -19,6 +20,10 @@
   <ItemGroup>
     <ProjectReference Include="..\EchoGarage.Core\EchoGarage.Core.csproj" />
     <ProjectReference Include="..\EchoGarage.Infrastructure\EchoGarage.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\echogarage.ico" />
   </ItemGroup>
 
 </Project>

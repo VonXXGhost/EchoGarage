@@ -5,6 +5,7 @@
         xmlns:core="clr-namespace:EchoGarage.Core.Models;assembly=EchoGarage.Core"
         xmlns:svc="clr-namespace:EchoGarage.App.Services"
         Title="EchoGarage"
+        Icon="/EchoGarage;component/Resources/echogarage.ico"
         Height="880" Width="1440" MinHeight="600" MinWidth="980"
         Background="{StaticResource WindowBackgroundBrush}"
         Foreground="{StaticResource TextPrimaryBrush}"
