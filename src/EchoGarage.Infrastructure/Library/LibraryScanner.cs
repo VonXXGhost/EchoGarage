@@ -204,7 +204,7 @@ public sealed class LibraryScanner : ILibraryScanner
         AudioTagData? tags = null;
         try
         {
-            tags = _tagService.Read(path);
+            tags = _tagService.Read(path, includeCover: false);
         }
         catch (Exception ex)
         {

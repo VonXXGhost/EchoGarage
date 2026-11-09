@@ -549,6 +549,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnGroupByAlbumChanged(bool value)
     {
         ApplySortAndGrouping();
+        LayoutChanged?.Invoke(this, EventArgs.Empty);
         SortChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -893,7 +894,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             var image = await _host.CoverImages.GetAsync(new CoverRequest(track.Path, track.CoverKey,
-                track.ModifiedAtUtc, track.FileSize), 56);
+                track.ModifiedAtUtc, track.FileSize), 128);
             if (image is not null)
             {
                 row.CoverImage = image;

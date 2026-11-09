@@ -12,12 +12,12 @@ public sealed class TagLibTagService : ITagService
         _logger = logger;
     }
 
-    public AudioTagData Read(string path)
+    public AudioTagData Read(string path, bool includeCover = true)
     {
-        using var file = TagLib.File.Create(path, TagLib.ReadStyle.Average);
+        using var file = TagLib.File.Create(path, includeCover ? TagLib.ReadStyle.Average : TagLib.ReadStyle.PictureLazy);
         var tag = file.Tag;
         var properties = file.Properties;
-        var picture = SelectCover(tag.Pictures);
+        var picture = includeCover ? SelectCover(tag.Pictures) : null;
 
         var title = tag.Title ?? string.Empty;
         var artist = FirstNonEmpty(tag.JoinedPerformers, tag.FirstPerformer);

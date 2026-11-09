@@ -4,14 +4,14 @@
     <!-- ============ Text ============ -->
     <Style x:Key="SectionLabel" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="11.5" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Margin" Value="12,10,8,6" />
     </Style>
 
     <Style x:Key="MutedText" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
     </Style>
 
     <!-- ============ Buttons ============ -->
@@ -20,7 +20,7 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Padding" Value="10,6" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">
@@ -125,7 +125,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="8,0" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -178,7 +178,7 @@
     <Style x:Key="DarkComboBoxItem" TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="Padding" Value="9,6" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBoxItem">
@@ -200,8 +200,8 @@
 
     <Style TargetType="ComboBox">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="FontSize" Value="12" />
-        <Setter Property="Height" Value="28" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Height" Value="30" />
         <Setter Property="MinWidth" Value="120" />
         <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboBoxItem}" />
         <Setter Property="Template">
@@ -241,7 +241,7 @@
     <!-- ============ CheckBox / RadioButton ============ -->
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -276,7 +276,7 @@
 
     <Style TargetType="RadioButton">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -450,7 +450,7 @@
 
     <Style TargetType="MenuItem">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
@@ -496,7 +496,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="8,5" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="12.5" />
     </Style>
 
     <!-- ============ ProgressBar ============ -->
@@ -535,9 +535,9 @@
     <Style TargetType="DataGridColumnHeader">
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
         <Setter Property="Background" Value="{DynamicResource HeaderBackgroundBrush}" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="Padding" Value="8,0" />
-        <Setter Property="Height" Value="28" />
+        <Setter Property="Height" Value="30" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -577,7 +577,7 @@
     <Style TargetType="DataGridRow">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="Height" Value="28" />
+        <Setter Property="Height" Value="32" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="ToolTip" Value="{Binding RowToolTip}" />
         <Style.Triggers>

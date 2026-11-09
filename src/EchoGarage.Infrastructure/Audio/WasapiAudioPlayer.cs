@@ -275,9 +275,14 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
             var wasPlaying = _state == AudioPlaybackState.Playing;
             try
             {
-                if (wasPlaying)
+                // Pause/resume keeps the output alive: rebuilding WasapiOut on every seek costs
+                // about a second and makes the jump feel like a restart.
+                if (wasPlaying && _output is not null)
                 {
-                    // Rebuild the graph so already-buffered audio does not replay after the jump.
+                    _output.Pause();
+                }
+                else if (wasPlaying)
+                {
                     TeardownOutput();
                 }
 
@@ -285,7 +290,15 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 
                 if (wasPlaying)
                 {
-                    StartOutput(_reader, target, keepReaderPosition: true);
+                    if (_output is not null)
+                    {
+                        _output.Play();
+                    }
+                    else
+                    {
+                        StartOutput(_reader, target, keepReaderPosition: true);
+                    }
+
                     SetState(AudioPlaybackState.Playing, CurrentTrackPath);
                 }
 

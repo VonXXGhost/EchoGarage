@@ -34,3 +34,7 @@ desktop.ini
 # JetBrains IDE
 .idea/
 
+
+# local test data copies
+.testdata-*/
+

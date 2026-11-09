@@ -10,7 +10,7 @@
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
         FontFamily="{StaticResource UiFont}"
-        FontSize="12"
+        FontSize="13.5"
         AllowDrop="True"
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True"
@@ -21,7 +21,9 @@
 
         <!-- ================= Cell templates ================= -->
         <DataTemplate x:Key="Cell.Cover">
-            <Border Width="22" Height="22" CornerRadius="3" Background="{DynamicResource CoverPlaceholderBrush}" ClipToBounds="True">
+            <Border Width="24" Height="24" CornerRadius="3" Background="{DynamicResource CoverPlaceholderBrush}" ClipToBounds="True"
+                    Visibility="{Binding DataContext.GroupByAlbum, RelativeSource={RelativeSource AncestorType=Window},
+                                         Converter={StaticResource InverseBoolToVisibility}}">
                 <Image Source="{Binding CoverImage}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" />
             </Border>
         </DataTemplate>
@@ -119,7 +121,8 @@
         <!-- ================= Sidebar item ================= -->
         <Style x:Key="SourceItemStyle" TargetType="ListBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-            <Setter Property="Height" Value="30" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="ToolTip" Value="{Binding Tooltip}" />
             <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
@@ -134,7 +137,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="{Binding Glyph}" Foreground="{DynamicResource TextMutedBrush}"
-                                           VerticalAlignment="Center" FontSize="11" />
+                                           VerticalAlignment="Center" FontSize="12" />
                                 <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
                                            VerticalAlignment="Center" Margin="2,0,6,0" />
                                 <TextBlock Grid.Column="2" Text="{Binding CountText}" Foreground="{DynamicResource TextMutedBrush}"
@@ -213,7 +216,7 @@
         </Grid.RowDefinitions>
 
         <!-- ===================== Top bar ===================== -->
-        <Border Grid.Row="0" Height="44" Background="{DynamicResource HeaderBackgroundBrush}"
+        <Border Grid.Row="0" Height="48" Background="{DynamicResource HeaderBackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <Grid Margin="12,0">
                 <Grid.ColumnDefinitions>
@@ -240,7 +243,7 @@
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="输出" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"
-                               Margin="0,0,6,0" FontSize="11" />
+                               Margin="0,0,6,0" FontSize="12" />
                     <ComboBox Width="250" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
                               DisplayMemberPath="FriendlyName" ToolTip="{Binding OutputDescription}" />
                     <ComboBox Width="92" Margin="6,0,0,0" ItemsSource="{Binding OutputModeOptions}"
@@ -309,9 +312,9 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding PlaylistTitle}" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding PlaylistTitle}" FontSize="20" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding PlaylistSubtitle}" Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                                   FontSize="12" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button Content="添加文件" Style="{StaticResource ToolbarButton}" Command="{Binding AddFilesCommand}" />
@@ -352,21 +355,23 @@
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
                                     <Border Background="{DynamicResource GroupHeaderBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,0,0,1" Padding="8,6" Loaded="OnGroupHeaderLoaded">
+                                            BorderThickness="0,0,0,1" Padding="12,10" Loaded="OnGroupHeaderLoaded">
                                         <StackPanel Orientation="Horizontal">
-                                            <Border Width="30" Height="30" CornerRadius="3" Background="{DynamicResource CoverPlaceholderBrush}"
-                                                    ClipToBounds="True" Margin="0,0,10,0">
+                                            <Border Width="96" Height="96" CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
+                                                    ClipToBounds="True" Margin="0,0,14,0">
                                                 <Image Source="{Binding Items[0].CoverImage}" Stretch="UniformToFill"
                                                        RenderOptions.BitmapScalingMode="HighQuality" />
                                             </Border>
-                                            <TextBlock Text="{Binding Items[0].AlbumGroupTitle}" FontSize="13"
-                                                       FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Items[0].AlbumGroupArtist}"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       Margin="10,0,0,0" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Items[0].AlbumGroupYear}"
-                                                       Foreground="{DynamicResource TextMutedBrush}"
-                                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Items[0].AlbumGroupTitle}" FontSize="18"
+                                                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Items[0].AlbumGroupArtist}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13"
+                                                           Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Items[0].AlbumGroupYear}"
+                                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                                                           Margin="0,2,0,0" />
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
@@ -395,15 +400,15 @@
                     <StackPanel Margin="18,16,18,18">
                         <TextBlock Text="正在播放" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
                         <StackPanel Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
-                            <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True" Height="264">
+                            <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True" Height="300">
                                 <Grid>
                                     <Image Source="{Binding CurrentCover}" Stretch="Uniform" />
                                     <TextBlock Text="♪" FontSize="54" Foreground="{DynamicResource CoverNoteBrush}" HorizontalAlignment="Center"
                                                VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
-                            <TextBlock Text="{Binding CurrentTitle}" FontSize="16" FontWeight="SemiBold" Margin="0,16,0,0"
-                                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="48" />
+                            <TextBlock Text="{Binding CurrentTitle}" FontSize="18" FontWeight="SemiBold" Margin="0,16,0,0"
+                                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="52" />
                             <TextBlock Text="{Binding CurrentSubtitle}" Foreground="{DynamicResource TextSecondaryBrush}"
                                        Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding CurrentInfo}" Foreground="{DynamicResource TextMutedBrush}"
@@ -433,7 +438,7 @@
         </Grid>
 
         <!-- ===================== Status bar ===================== -->
-        <Border Grid.Row="2" Height="26" Background="{DynamicResource HeaderBackgroundBrush}"
+        <Border Grid.Row="2" Height="30" Background="{DynamicResource HeaderBackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
             <Grid Margin="12,0">
                 <Grid.ColumnDefinitions>
@@ -443,17 +448,17 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Foreground="{DynamicResource TextSecondaryBrush}"
-                           VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="620" />
+                           VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="620" />
                 <ProgressBar Grid.Column="1" Width="120" Height="3" Margin="12,0,0,0" VerticalAlignment="Center"
                              Value="{Binding ScanProgress}" Maximum="100"
                              Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisibility}}" />
                 <TextBlock Grid.Column="3" Text="{Binding LibrarySummary}" Foreground="{DynamicResource TextMutedBrush}"
-                           VerticalAlignment="Center" FontSize="11" />
+                           VerticalAlignment="Center" FontSize="12" />
             </Grid>
         </Border>
 
         <!-- ===================== Transport ===================== -->
-        <Border Grid.Row="3" Height="66" Background="{DynamicResource PanelBackgroundBrush}"
+        <Border Grid.Row="3" Height="72" Background="{DynamicResource PanelBackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
             <Grid Margin="16,0">
                 <Grid.ColumnDefinitions>
@@ -480,22 +485,21 @@
                         <ColumnDefinition Width="46" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{Binding PositionText}" Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontFamily="{StaticResource MonoFont}" FontSize="11" VerticalAlignment="Center" />
+                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
                     <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0" Maximum="{Binding DurationSeconds}"
                             AutomationProperties.AutomationId="SeekSlider"
                             Value="{Binding PositionSeconds, Mode=OneWay}"
-                            Thumb.DragStarted="OnSeekDragStarted"
-                            Thumb.DragCompleted="OnSeekDragCompleted"
                             PreviewMouseLeftButtonDown="OnSeekClick"
                             PreviewMouseLeftButtonUp="OnSeekMouseUp"
+                            LostMouseCapture="OnSeekLostCapture"
                             IsMoveToPointEnabled="True" />
                     <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="{DynamicResource TextMutedBrush}"
-                               FontFamily="{StaticResource MonoFont}" FontSize="11" VerticalAlignment="Center"
+                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
                                HorizontalAlignment="Right" />
                 </Grid>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="音量" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                    <TextBlock Text="音量" Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                                VerticalAlignment="Center" />
                     <Slider Width="120" Margin="8,0,4,0" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" />
                     <Button Content="🔇" Style="{StaticResource TransportButton}" Command="{Binding ToggleMuteCommand}"

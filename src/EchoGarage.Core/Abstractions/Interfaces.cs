@@ -48,7 +48,11 @@ public interface IPlaylistRepository
 
 public interface ITagService
 {
-    AudioTagData Read(string path);
+    /// <summary>
+    /// Reads tags and audio properties. Set <paramref name="includeCover"/> to false while
+    /// scanning the library: loading embedded pictures for every file is the dominant scan cost.
+    /// </summary>
+    AudioTagData Read(string path, bool includeCover = true);
     void Write(string path, TagEditModel edit);
 }
 

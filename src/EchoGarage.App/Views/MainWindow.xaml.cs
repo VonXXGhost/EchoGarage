@@ -168,7 +168,7 @@ public partial class MainWindow : Window
     private void ApplyLayout()
     {
         var layout = _vm.CurrentLayout;
-        var signature = BuildLayoutSignature(layout);
+        var signature = BuildLayoutSignature(layout, _vm.GroupByAlbum);
         if (TrackGrid.Columns.Count > 0 &&
             string.Equals(signature, _appliedLayoutSignature, StringComparison.Ordinal))
         {
@@ -179,10 +179,10 @@ public partial class MainWindow : Window
         RebuildColumns(layout, signature);
     }
 
-    private static string BuildLayoutSignature(PlaylistViewLayout layout) =>
-        string.Join("|", layout.Columns
+    private static string BuildLayoutSignature(PlaylistViewLayout layout, bool grouped) =>
+        (grouped ? "g|" : "u|") + string.Join("|", layout.Columns
             .Where(c => c.Visible)
-            .Select(c => $"{c.Key}:{(int)Math.Round(c.Width)}"));
+            .Select(c => $"{c.Key}:{(grouped && c.Key == "cover" ? 96 : (int)Math.Round(c.Width))}"));
 
     private void RebuildColumns(PlaylistViewLayout layout, string signature)
     {
@@ -208,11 +208,19 @@ public partial class MainWindow : Window
             }
 
             SortPropertyMap.TryGetValue(column.Key, out var sortProperty);
+            var width = Math.Max(descriptor.MinWidth, column.Width);
+            if (_vm.GroupByAlbum && string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase))
+            {
+                // Group headers show a 96px album cover; leave the same gutter on rows so
+                // tracks line up under the album title, as in foobar2000.
+                width = 96;
+            }
+
             var gridColumn = new DataGridTemplateColumn
             {
                 Header = descriptor.Header,
                 CellTemplate = cellTemplate,
-                Width = new DataGridLength(Math.Max(descriptor.MinWidth, column.Width), DataGridLengthUnitType.Pixel),
+                Width = new DataGridLength(width, DataGridLengthUnitType.Pixel),
                 MinWidth = descriptor.MinWidth,
                 MaxWidth = 1400,
                 SortMemberPath = sortProperty,
@@ -272,6 +280,12 @@ public partial class MainWindow : Window
             }
 
             var width = gridColumn.ActualWidth > 10 ? gridColumn.ActualWidth : stored.Width;
+            if (_vm.GroupByAlbum && string.Equals(key, "cover", StringComparison.OrdinalIgnoreCase))
+            {
+                // The 96px cover gutter is a display detail of grouped mode, not a user width.
+                width = stored.Width;
+            }
+
             ordered.Add(new PlaylistColumn { Key = stored.Key, Width = width, Visible = true });
         }
 
@@ -477,26 +491,30 @@ public partial class MainWindow : Window
     // =====================================================================
     // Seek / volume
     // =====================================================================
-    private void OnSeekDragStarted(object sender, DragStartedEventArgs e)
-    {
-        _seekInteracting = true;
-        _vm.BeginSeek();
-    }
-
-    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e)
-    {
-        _seekInteracting = false;
-        _vm.CommitSeek(SeekSlider.Value);
-    }
-
     private void OnSeekClick(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         _seekInteracting = true;
         _vm.BeginSeek();
+
+        // Make a click jump to the exact clicked position regardless of the Track template
+        // (SetCurrentValue keeps the OneWay binding to PositionSeconds intact).
+        var ratio = Math.Clamp(e.GetPosition(SeekSlider).X / Math.Max(SeekSlider.ActualWidth, 1), 0, 1);
+        var target = SeekSlider.Minimum + ratio * (SeekSlider.Maximum - SeekSlider.Minimum);
+        SeekSlider.SetCurrentValue(System.Windows.Controls.Primitives.RangeBase.ValueProperty, target);
     }
 
-    private void OnSeekMouseUp(object sender, MouseButtonEventArgs e)
+    private void OnSeekMouseUp(object sender, MouseButtonEventArgs e) => CommitSeekInteraction();
+
+    private void OnSeekLostCapture(object sender, MouseEventArgs e) => CommitSeekInteraction();
+
+    private void CommitSeekInteraction()
     {
+        // DragCompleted + MouseUp + LostCapture can all fire for one gesture; commit once.
         if (!_seekInteracting)
         {
             return;
