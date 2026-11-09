@@ -81,7 +81,11 @@ public partial class App : Application
         catch (Exception ex)
         {
             Host?.Logger.Error("Fatal error during startup", ex);
-            MessageBox.Show($"EchoGarage 启动失败：\n{ex.Message}\n\n日志目录：{Host?.Paths.LogsDirectory}",
+            MessageBox.Show(
+                $"EchoGarage 启动失败：\n{ex.Message}\n\n" +
+                $"如果这是受限环境或便携使用，请设置环境变量 {EchoGarage.Infrastructure.Configuration.AppPaths.DataRootEnvironmentVariable} " +
+                "指向一个可写目录后重试。\n\n" +
+                $"当前默认配置目录：{Host?.Paths.ConfigDirectory}\n当前默认数据目录：{Host?.Paths.DataDirectory}",
                 "EchoGarage", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }

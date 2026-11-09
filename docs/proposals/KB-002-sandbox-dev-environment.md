@@ -56,6 +56,32 @@ $env:NUGET_PACKAGES='<repo>\.nuget'
 DSH 的 `diagnose-windows-sandbox-acl` 技能命令可诊断并修复：给当前用户补完全控制 ACE、清理外来应用包条目，
 并生成可撤销的恢复脚本。
 
+### 6. 从工具进程启动的应用无法写 `%APPDATA%` / `%LOCALAPPDATA%`
+
+现象：`Start-Process` 启动编译/发布后的 `EchoGarage.exe` 时，启动即报
+`Access to the path 'C:\Users\<user>\AppData\Roaming\EchoGarage' is denied.`；
+同一会话里的 PowerShell / cmd 却能正常创建目录。
+
+判断：这是 DSH 沙箱对该可执行文件的限制，而非程序权限问题（应用用同样的 API 写入工作区路径完全正常）。
+
+解决：给应用设置 `ECHOGARAGE_DATA_DIR` 指向工作区内目录再启动，例如：
+
+```powershell
+$env:ECHOGARAGE_DATA_DIR = 'G:\Project\echo-garage\.testdata'
+.\artifacts\publish\win-x64\EchoGarage.exe
+```
+
+终端用户在自己的桌面会话中运行不受此限制。启动失败时应用也会提示这一环境变量。
+
+### 7. 大量 `dotnet` 子进程堆积导致构建中断
+
+现象：构建一会儿就“失败但 0 错误”，反复出现大量 `dotnet.exe`（每个约 35 MB）。
+
+原因：SDK 的 workload 解析器在受限环境下反复启动子进程并失败。
+
+解决：结束残留的 `dotnet` 进程后在**沙箱外**执行一次构建（本仓库开发时使用 DSH 的 danger-full-access），
+或使用 `-p:UseSharedCompilation=false -nodeReuse:false` 并避免并发构建。
+
 ## 影响评估
 
 - 以上都是**开发环境**问题，不影响终端用户运行与发布产物。
