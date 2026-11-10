@@ -21,6 +21,11 @@ public partial class MainWindow : Window
     private readonly DialogService _dialogs;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
     private bool _seekInteracting;
+    private double _seekTargetSeconds;
+    private double _seekStartX;
+    private double _seekStartPosition;
+    private bool _seekDragged;
+    private long _lastSeekLogTimestamp;
     private bool _closing;
 
     public MainWindow(AppHost host)
@@ -39,6 +44,7 @@ public partial class MainWindow : Window
         _vm.CurrentRowChanged += (_, _) => ScrollToCurrentRow();
 
         ApplyWindowPlacement();
+        HookSeekSlider();
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -491,37 +497,142 @@ public partial class MainWindow : Window
     // =====================================================================
     // Seek / volume
     // =====================================================================
-    private void OnSeekClick(object sender, MouseButtonEventArgs e)
+    // The Slider itself handles PreviewMouseLeftButtonDown when IsMoveToPointEnabled is
+    // true, and that class handler both marks the event handled (so XAML handlers never
+    // ran) and assigns Value directly (which drops the OneWay binding). We therefore
+    // implement click + drag ourselves and listen with handledEventsToo so nothing can
+    // swallow the gesture.
+    private void HookSeekSlider()
+    {
+        SeekSlider.AddHandler(PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnSeekMouseDown), handledEventsToo: true);
+        SeekSlider.AddHandler(PreviewMouseMoveEvent,
+            new MouseEventHandler(OnSeekMouseMove), handledEventsToo: true);
+        SeekSlider.AddHandler(PreviewMouseLeftButtonUpEvent,
+            new MouseButtonEventHandler(OnSeekMouseUp), handledEventsToo: true);
+        SeekSlider.LostMouseCapture += OnSeekLostCapture;
+    }
+
+    private void OnSeekMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left)
         {
             return;
         }
 
-        _seekInteracting = true;
-        _vm.BeginSeek();
+        _host.Logger.Debug(
+            $"Seek pointer down: x={e.GetPosition(SeekSlider).X:F1} width={SeekSlider.ActualWidth:F1} " +
+            $"sliderValue={SeekSlider.Value:F2}s position={_vm.PositionSeconds:F2}s duration={_vm.DurationSeconds:F2}s " +
+            $"source={e.OriginalSource?.GetType().Name}");
 
-        // Make a click jump to the exact clicked position regardless of the Track template
-        // (SetCurrentValue keeps the OneWay binding to PositionSeconds intact).
-        var ratio = Math.Clamp(e.GetPosition(SeekSlider).X / Math.Max(SeekSlider.ActualWidth, 1), 0, 1);
-        var target = SeekSlider.Minimum + ratio * (SeekSlider.Maximum - SeekSlider.Minimum);
-        SeekSlider.SetCurrentValue(System.Windows.Controls.Primitives.RangeBase.ValueProperty, target);
+        if (_vm.DurationSeconds <= 0)
+        {
+            return;
+        }
+
+        _seekStartX = e.GetPosition(SeekSlider).X;
+        _seekStartPosition = _vm.PositionSeconds;
+        _seekDragged = false;
+        _vm.BeginSeek();
+        // CaptureMouse can synchronously deliver a synthetic MouseMove; keep the gesture
+        // flag false until it has settled so the log contains exactly one "down" entry.
+        SeekSlider.CaptureMouse();
+        _seekInteracting = true;
+        ApplySeekTarget(ComputeSeekValue(e), "down");
+        e.Handled = true;
     }
 
-    private void OnSeekMouseUp(object sender, MouseButtonEventArgs e) => CommitSeekInteraction();
+    private void OnSeekMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_seekInteracting || e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
 
-    private void OnSeekLostCapture(object sender, MouseEventArgs e) => CommitSeekInteraction();
+        if (Math.Abs(e.GetPosition(SeekSlider).X - _seekStartX) >= 2)
+        {
+            _seekDragged = true;
+        }
+
+        ApplySeekTarget(ComputeSeekValue(e), "move");
+        e.Handled = true;
+    }
+
+    private void OnSeekMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_seekInteracting || e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
+        ApplySeekTarget(ComputeSeekValue(e), "up");
+        e.Handled = true;
+        CommitSeekInteraction();
+        SeekSlider.ReleaseMouseCapture();
+    }
+
+    private void OnSeekLostCapture(object sender, MouseEventArgs e)
+    {
+        if (!_seekInteracting)
+        {
+            return;
+        }
+
+        _host.Logger.Debug("Seek lost mouse capture before mouse-up; committing current target.");
+        CommitSeekInteraction();
+    }
+
+    private double ComputeSeekValue(MouseEventArgs e)
+    {
+        // Ratio against the whole slider is deterministic and independent of the template's
+        // track/thumb sizing (which is only a few pixels of difference at any duration).
+        var position = e.GetPosition(SeekSlider);
+        var ratio = Math.Clamp(position.X / Math.Max(SeekSlider.ActualWidth, 1), 0, 1);
+        var value = SeekSlider.Minimum + ratio * (SeekSlider.Maximum - SeekSlider.Minimum);
+        _host.Logger.Debug(
+            $"Seek point: x={position.X:F1} width={SeekSlider.ActualWidth:F1} ratio={ratio:F3} value={value:F2}s");
+        return value;
+    }
+
+    private void ApplySeekTarget(double value, string phase)
+    {
+        _seekTargetSeconds = value;
+        // SetCurrentValue keeps the OneWay binding to PositionSeconds alive.
+        SeekSlider.SetCurrentValue(System.Windows.Controls.Primitives.RangeBase.ValueProperty, value);
+
+        var now = Environment.TickCount64;
+        if (phase != "move" || now - _lastSeekLogTimestamp >= 120)
+        {
+            _lastSeekLogTimestamp = now;
+            _host.Logger.Debug($"Seek target ({phase}): {value:F2}s");
+        }
+    }
 
     private void CommitSeekInteraction()
     {
-        // DragCompleted + MouseUp + LostCapture can all fire for one gesture; commit once.
+        // MouseUp, LostCapture and double-clicks can all end up here; commit only once.
         if (!_seekInteracting)
         {
             return;
         }
 
         _seekInteracting = false;
-        _vm.CommitSeek(SeekSlider.Value);
+        var target = _seekTargetSeconds;
+        var delta = Math.Abs(target - _seekStartPosition);
+        var shouldSeek = _seekDragged || delta >= 0.75;
+        _host.Logger.Debug(
+            $"Seek gesture end: target={target:F2}s startPosition={_seekStartPosition:F2}s delta={delta:F2}s " +
+            $"dragged={_seekDragged} performSeek={shouldSeek}");
+
+        if (shouldSeek)
+        {
+            _vm.CommitSeek(target);
+        }
+        else
+        {
+            // A plain click on the thumb is not a seek request; just resume position updates.
+            _vm.CancelSeek();
+        }
     }
 
     // =====================================================================

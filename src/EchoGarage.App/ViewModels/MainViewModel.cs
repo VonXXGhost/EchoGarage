@@ -277,9 +277,28 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         await SelectSourceAsync(ResolveStartupSource());
         _host.Logger.Info($"Initial playlist loaded in {stopwatch.ElapsedMilliseconds} ms total.");
-        if (Settings.AutoScanOnStartup)
+
+        // Older scans could cache rows whose tag read failed (no duration, no album/artist).
+        // Those rows are marked stale by the scanner, so a single background scan repairs
+        // them even when the user has disabled automatic startup scanning.
+        var incomplete = 0;
+        try
         {
-            _ = ScanLibraryAsync(silent: true);
+            incomplete = await _host.LibraryRepository.GetIncompleteTrackCountAsync();
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Warn($"Checking cached metadata quality failed: {ex.Message}");
+        }
+
+        if (incomplete > 0)
+        {
+            _host.Logger.Info($"Metadata repair required for {incomplete} tracks; starting background scan.");
+        }
+
+        if (incomplete > 0 || Settings.AutoScanOnStartup)
+        {
+            _ = ScanLibraryAsync(silent: true, repair: incomplete > 0);
         }
     }
 
@@ -487,6 +506,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 row.IsPlaying = true;
                 CurrentRow = row;
+                // The row was rebuilt (for example after a metadata repair scan), so refresh
+                // the now-playing panel from the new track data instead of the stale row.
+                UpdateNowPlayingMetadata(row);
+                _ = LoadNowPlayingCoverAsync(tracks[i]);
             }
 
             Tracks.Add(row);
@@ -970,15 +993,38 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public void BeginSeek() => _isSeeking = true;
+    public void BeginSeek()
+    {
+        _isSeeking = true;
+        _host.Logger.Debug(
+            $"Seek begin: playerPosition={_host.Player.Position.TotalSeconds:F3}s playerDuration={_host.Player.Duration.TotalSeconds:F3}s " +
+            $"uiDuration={DurationSeconds:F3}s state={_host.Player.State}");
+    }
+
+    public void CancelSeek()
+    {
+        _isSeeking = false;
+        _host.Logger.Debug(
+            $"Seek cancelled: playerPosition={_host.Player.Position.TotalSeconds:F3}s state={_host.Player.State}");
+        // Repaint the thumb from the real player position instead of the abandoned target.
+        OnPositionTick(null, EventArgs.Empty);
+    }
 
     public void CommitSeek(double seconds)
     {
         _isSeeking = false;
         var duration = DurationSeconds;
-        _host.Player.Seek(TimeSpan.FromSeconds(Math.Clamp(seconds, 0, Math.Max(duration, 0))));
-        PositionSeconds = seconds;
-        PositionText = DisplayFormatter.Duration(TimeSpan.FromSeconds(seconds));
+        var target = Math.Clamp(seconds, 0, Math.Max(duration, 0));
+        _host.Logger.Debug(
+            $"Seek commit: requested={seconds:F3}s target={target:F3}s duration={duration:F3}s " +
+            $"playerPosition={_host.Player.Position.TotalSeconds:F3}s state={_host.Player.State}");
+
+        _host.Player.Seek(TimeSpan.FromSeconds(target));
+        PositionSeconds = target;
+        PositionText = DisplayFormatter.Duration(TimeSpan.FromSeconds(target));
+
+        _host.Logger.Debug(
+            $"Seek applied: playerPosition={_host.Player.Position.TotalSeconds:F3}s state={_host.Player.State}");
     }
 
     partial void OnVolumeChanged(double value)
@@ -1125,7 +1171,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await ScanLibraryAsync(silent: false);
     }
 
-    private async Task ScanLibraryAsync(bool silent)
+    private async Task ScanLibraryAsync(bool silent, bool repair = false)
     {
         if (IsScanning)
         {
@@ -1145,6 +1191,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         IsScanning = true;
         IsBusy = true;
+        if (repair)
+        {
+            SetStatus("正在修复媒体库标签…");
+        }
+
         _scanCts?.Dispose();
         _scanCts = new CancellationTokenSource();
         var token = _scanCts.Token;
@@ -1168,7 +1219,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
             await ReloadSourcesAsync();
             await RefreshCurrentSourceAsync(preserveSelection: true);
-            SetStatus("媒体库扫描完成");
+            SetStatus(repair ? "媒体库标签已修复" : "媒体库扫描完成");
+            if (repair)
+            {
+                _host.Logger.Info("Metadata repair scan completed.");
+            }
         }
         catch (OperationCanceledException)
         {

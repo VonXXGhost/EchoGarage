@@ -273,6 +273,10 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
             }
 
             var wasPlaying = _state == AudioPlaybackState.Playing;
+            _logger.Debug(
+                $"Seek request: target={target:mm\\:ss\\.fff} reader={_reader.CurrentTime:mm\\:ss\\.fff} " +
+                $"total={_reader.TotalTime:mm\\:ss\\.fff} wasPlaying={wasPlaying} " +
+                $"output={(_output is null ? "none" : _output.PlaybackState.ToString())}");
             try
             {
                 // Pause/resume keeps the output alive: rebuilding WasapiOut on every seek costs
@@ -287,6 +291,9 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                 }
 
                 _reader.CurrentTime = target;
+                _logger.Debug(
+                    $"Seek reader repositioned: reader={_reader.CurrentTime:mm\\:ss\\.fff} " +
+                    $"output={(_output?.PlaybackState.ToString() ?? "none")}");
 
                 if (wasPlaying)
                 {
@@ -300,6 +307,9 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                     }
 
                     SetState(AudioPlaybackState.Playing, CurrentTrackPath);
+                    _logger.Debug(
+                        $"Seek resume: output={(_output?.PlaybackState.ToString() ?? "none")} " +
+                        $"reader={_reader.CurrentTime:mm\\:ss\\.fff}");
                 }
 
                 _logger.Info($"Seeked to {target:mm\\:ss\\.fff} (playing={wasPlaying}).");

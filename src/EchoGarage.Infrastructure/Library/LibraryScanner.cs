@@ -259,7 +259,11 @@ public sealed class LibraryScanner : ILibraryScanner
         try
         {
             var info = new FileInfo(path);
+            // A cached row without a duration means its tag read failed at some point
+            // (for example because of a broken reader in an older build). Treat it as
+            // stale so the next scan repairs the title/artist/album from the file.
             return info.Exists &&
+                   state.DurationMs > 0 &&
                    info.Length == state.FileSize &&
                    info.LastWriteTimeUtc == state.ModifiedAtUtc;
         }

@@ -11,6 +11,8 @@ public interface ILibraryRepository
     Task RemoveFolderAsync(long folderId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Track>> GetLibraryTracksAsync(long? folderId = null, CancellationToken cancellationToken = default);
     Task<int> GetLibraryTrackCountAsync(CancellationToken cancellationToken = default);
+    /// <summary>Number of library tracks whose cached metadata is unusable (currently zero duration).</summary>
+    Task<int> GetIncompleteTrackCountAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Track>> GetTracksInFolderAsync(string folderPath, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Track>> GetTracksInDirectoryAsync(string directoryPath, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TrackState>> GetTrackStatesAsync(long? folderId = null, CancellationToken cancellationToken = default);

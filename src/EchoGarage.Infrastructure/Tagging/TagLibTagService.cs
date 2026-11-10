@@ -14,17 +14,26 @@ public sealed class TagLibTagService : ITagService
 
     public AudioTagData Read(string path, bool includeCover = true)
     {
-        using var file = TagLib.File.Create(path, includeCover ? TagLib.ReadStyle.Average : TagLib.ReadStyle.PictureLazy);
+        // TagLibSharp treats PictureLazy as a flag that is combined with a quality level.
+        // Passing PictureLazy alone also skips the audio properties (file.Properties stays
+        // null), which used to throw a NullReferenceException here and made every scanned
+        // track fall back to its file name. Average|PictureLazy keeps duration/bitrate while
+        // leaving embedded cover bytes on disk.
+        var readStyle = includeCover
+            ? TagLib.ReadStyle.Average
+            : TagLib.ReadStyle.Average | TagLib.ReadStyle.PictureLazy;
+
+        using var file = TagLib.File.Create(path, readStyle);
         var tag = file.Tag;
         var properties = file.Properties;
-        var picture = includeCover ? SelectCover(tag.Pictures) : null;
+        var picture = includeCover && tag is not null ? SelectCover(tag.Pictures) : null;
 
-        var title = tag.Title ?? string.Empty;
-        var artist = FirstNonEmpty(tag.JoinedPerformers, tag.FirstPerformer);
-        var albumArtist = FirstNonEmpty(tag.JoinedAlbumArtists, tag.FirstAlbumArtist);
-        var album = tag.Album ?? string.Empty;
-        var genre = tag.JoinedGenres ?? string.Empty;
-        var comment = tag.Comment ?? string.Empty;
+        var title = tag?.Title ?? string.Empty;
+        var artist = FirstNonEmpty(tag?.JoinedPerformers, tag?.FirstPerformer);
+        var albumArtist = FirstNonEmpty(tag?.JoinedAlbumArtists, tag?.FirstAlbumArtist);
+        var album = tag?.Album ?? string.Empty;
+        var genre = tag?.JoinedGenres ?? string.Empty;
+        var comment = tag?.Comment ?? string.Empty;
 
         return new AudioTagData(
             title,
@@ -33,13 +42,13 @@ public sealed class TagLibTagService : ITagService
             albumArtist,
             genre,
             comment,
-            tag.Year == 0 ? null : (int)tag.Year,
-            (int)tag.Track,
-            (int)tag.Disc,
-            (long)Math.Round(properties.Duration.TotalMilliseconds),
-            properties.AudioBitrate,
-            properties.AudioSampleRate,
-            properties.AudioChannels,
+            tag?.Year is { } year && year != 0 ? (int)year : null,
+            (int)(tag?.Track ?? 0),
+            (int)(tag?.Disc ?? 0),
+            properties is null ? 0 : (long)Math.Round(properties.Duration.TotalMilliseconds),
+            properties?.AudioBitrate ?? 0,
+            properties?.AudioSampleRate ?? 0,
+            properties?.AudioChannels ?? 0,
             DetectCodec(file.MimeType, path),
             picture?.Data.Data,
             picture?.MimeType);

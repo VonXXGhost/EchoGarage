@@ -13,6 +13,7 @@ public sealed class TrackState
     public DateTime ModifiedAtUtc { get; set; }
     public long FileSize { get; set; }
     public bool IsMissing { get; set; }
+    public long DurationMs { get; set; }
 }
 
 /// <summary>

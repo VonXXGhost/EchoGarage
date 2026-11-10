@@ -55,6 +55,26 @@ public sealed class TagAndCoverTests : IDisposable
     }
 
     [Fact]
+    public void ReadWithoutCover_StillReturnsTagsAndDuration()
+    {
+        var path = TestAudio.CreateWav(_workspace.Combine("media", "scan.wav"), seconds: 2);
+        _tags.Write(path, new TagEditModel
+        {
+            Title = "扫描标题",
+            Artist = "扫描艺术家",
+            Album = "扫描专辑"
+        });
+
+        var tag = _tags.Read(path, includeCover: false);
+
+        Assert.Equal("扫描标题", tag.Title);
+        Assert.Equal("扫描艺术家", tag.Artist);
+        Assert.Equal("扫描专辑", tag.Album);
+        Assert.InRange(tag.DurationMs, 1800, 2200);
+        Assert.Null(tag.CoverBytes);
+    }
+
+    [Fact]
     public void Write_CanReplaceAndRemoveCover()
     {
         var path = TestAudio.CreateWav(_workspace.Combine("media", "cover.wav"));

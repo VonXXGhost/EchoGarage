@@ -118,6 +118,13 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             "SELECT COUNT(*) FROM tracks WHERE IsInLibrary = 1 AND IsMissing = 0;");
     }
 
+    public async Task<int> GetIncompleteTrackCountAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM tracks WHERE FolderId IS NOT NULL AND IsMissing = 0 AND DurationMs <= 0;");
+    }
+
     public async Task<IReadOnlyList<Track>> GetTracksInFolderAsync(string folderPath, CancellationToken cancellationToken = default)
     {
         await using var connection = await _database.OpenConnectionAsync(cancellationToken);
@@ -141,7 +148,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
     {
         await using var connection = await _database.OpenConnectionAsync(cancellationToken);
         var sql = """
-            SELECT Path, ModifiedAtUtc, FileSize, IsMissing FROM tracks
+            SELECT Path, ModifiedAtUtc, FileSize, IsMissing, DurationMs FROM tracks
             WHERE FolderId IS NOT NULL
             """ + (folderId.HasValue ? " AND FolderId = @folderId" : string.Empty) + ";";
         var rows = await connection.QueryAsync<TrackState>(sql, new { folderId });

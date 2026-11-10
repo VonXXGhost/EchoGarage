@@ -11,6 +11,7 @@ public sealed class ScannerTests : IDisposable
 {
     private readonly TempWorkspace _workspace = new();
     private readonly SqliteLibraryRepository _library;
+    private readonly SqliteDatabase _database;
     private readonly LibraryScanner _scanner;
 
     public ScannerTests()
@@ -18,8 +19,8 @@ public sealed class ScannerTests : IDisposable
         var paths = new AppPaths(_workspace.Combine("state"));
         paths.EnsureCreated();
         var logger = new FileLogger(paths);
-        var database = new SqliteDatabase(paths, logger);
-        _library = new SqliteLibraryRepository(database, logger);
+        _database = new SqliteDatabase(paths, logger);
+        _library = new SqliteLibraryRepository(_database, logger);
         _library.InitializeAsync().GetAwaiter().GetResult();
         _scanner = new LibraryScanner(_library, new TagLibTagService(logger), logger);
     }
@@ -120,6 +121,35 @@ public sealed class ScannerTests : IDisposable
         Assert.False(track!.IsInLibrary);
         Assert.Null(track.FolderId);
         Assert.Equal(0, await _library.GetLibraryTrackCountAsync());
+    }
+
+    [Fact]
+    public async Task Rescan_RepairsCachedRowsWithoutDuration()
+    {
+        var folderPath = _workspace.CreateFolder("Album");
+        var file = TestAudio.CreateWav(Path.Combine(folderPath, "broken.wav"), seconds: 2);
+        var folder = await _library.AddFolderAsync(folderPath);
+        await _scanner.ScanFolderAsync(folder);
+        Assert.Equal(0, await _library.GetIncompleteTrackCountAsync());
+
+        // Simulate a row cached by an older build whose tag reader failed: the file is
+        // unchanged but the metadata is unusable.
+        await using (var connection = await _database.OpenConnectionAsync())
+        {
+            await Dapper.SqlMapper.ExecuteAsync(connection,
+                "UPDATE tracks SET Title = 'stale', Artist = '', Album = '', DurationMs = 0;");
+        }
+
+        Assert.Equal(1, await _library.GetIncompleteTrackCountAsync());
+
+        var result = await _scanner.ScanFolderAsync(folder);
+
+        Assert.Equal(1, result.Added);
+        Assert.Equal(0, result.Skipped);
+        Assert.Equal(0, await _library.GetIncompleteTrackCountAsync());
+        var repaired = await _library.GetTrackByPathAsync(file);
+        Assert.NotNull(repaired);
+        Assert.InRange(repaired!.DurationMs, 1500, 2500);
     }
 
     [Fact]

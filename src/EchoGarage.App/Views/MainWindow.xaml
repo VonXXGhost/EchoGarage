@@ -489,10 +489,7 @@
                     <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0" Maximum="{Binding DurationSeconds}"
                             AutomationProperties.AutomationId="SeekSlider"
                             Value="{Binding PositionSeconds, Mode=OneWay}"
-                            PreviewMouseLeftButtonDown="OnSeekClick"
-                            PreviewMouseLeftButtonUp="OnSeekMouseUp"
-                            LostMouseCapture="OnSeekLostCapture"
-                            IsMoveToPointEnabled="True" />
+                            IsMoveToPointEnabled="False" />
                     <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="{DynamicResource TextMutedBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
                                HorizontalAlignment="Right" />
