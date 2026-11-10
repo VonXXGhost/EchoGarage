@@ -1,26 +1,28 @@
-# KB-008：分组封面尺寸、布局持久化与音量/静音状态
+# KB-008：分组封面尺寸、布局持久化、进度条空状态与音量/静音
 
-- 状态：已批准（Accepted，2026-11-10，owner 指示记录为 KB，不需要 ADR）
+- 状态：已批准（Accepted，2026-11-10，owner 指示记录为 KB，不需要 ADR；2026-11-11 更新）
 - 日期：2026-11-10
 - 关联：ADR-005（播放列表显示格式）、ADR-006（配置与媒体库分离）
-- 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建与分组头、底部音量区
+- 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建与分组头、底部进度条与音量区
 
 ## 1. 分组封面尺寸（GroupCoverSize）
 
-- `PlaylistViewLayout` 增加 `GroupCoverSize`（double，默认 96，范围 48–320），随布局一起
-  序列化：媒体库视图存 `settings.json` 的 `libraryLayout`，普通播放列表存各自
-  `ViewLayoutJson`；旧 JSON 没有该字段时按 96 处理（`ViewLayoutFactory.Normalize` 里
+- `PlaylistViewLayout` 增加 `GroupCoverSize`（double，默认 96，范围 48–320），表示**实际显示的
+  封面边长**，随布局一起序列化：媒体库视图存 `settings.json` 的 `libraryLayout`，普通播放列表
+  存各自 `ViewLayoutJson`；旧 JSON 没有该字段时按 96 处理（`ViewLayoutFactory.Normalize` 里
   `<= 0` 视为缺失，超出范围则 clamp）。
-- 分组模式下“封面”列宽就是 `GroupCoverSize`：列的最小 / 最大宽度也限制为 48 / 320，
-  因此拖动表头右缘即可实时改变分组头封面；该值**不写回**普通模式下的封面列宽，
+- 分组模式下封面列宽 = `GroupCoverSize + 16`（左右各 8px 内边距）；列的最小 / 最大宽度相应为
+  64 / 336。拖动表头右缘时 `GroupCoverSize = 列宽 - 16`。该值**不写回**普通模式下的封面列宽，
   取消分组后逐行封面仍用原列宽（行内图片固定 24px，与行高 32px 匹配）。
+- 对齐：分组头模板 `Padding="8,10"`，与 `DataGridColumnHeader` 的 `Padding="8,0"` 一致，因此
+  封面在封面列内的左右留白相等，正好和“封面”表头文字对齐，右缘不会越过分栏线。
 - 实时联动：`MainWindow` 用 `DependencyPropertyDescriptor.FromProperty(DataGridColumn.WidthProperty, ...)`
   监听封面列的宽度变化，写入 `MainViewModel.GroupCoverSize`（ObservableProperty）；
   分组头模板的封面 `Border` 通过
   `{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}`
   绑定宽高，所以拖动时封面跟手变化。
 - 持久化：拖动停下后 600ms 防抖调用 `PersistCurrentLayout(CaptureLayoutFromGrid())`；
-  `CaptureLayoutFromGrid` 在分组模式下把封面列 `ActualWidth` 写进 `GroupCoverSize`，
+  `CaptureLayoutFromGrid` 在分组模式下把 `封面列 ActualWidth - 16` 写进 `GroupCoverSize`，
   普通列宽照旧。关闭窗口 / 切换播放列表仍走原有保存路径。
 - 列与布局对话框只编辑列，`GroupCoverSize` 原样透传；应用预设时保留当前值（预设不包含
   封面尺寸，`ColumnPreset` 未增加字段）。
@@ -42,7 +44,19 @@
 - 相关日志：`Persist layout: captured=... selected=...`、`Persist layout skipped: ...`、
   `Layout changed: groupCoverSize=...`、`Applying layout: ...`（均为 `[DEBUG]`）。
 
-## 3. 音量百分比与静音状态
+## 3. 无播放时的进度条空状态
+
+- 现象：启动后未播放时，进度条看起来“已满”、Thumb 停在最右侧。
+- 原因：滑块 `Minimum=0`、`Maximum` 绑定 `DurationSeconds`，无歌曲时两者都是 0；WPF `Track`
+  在 `Minimum == Maximum` 时把 Thumb 放在右端、把 Decrease 区画满，所以像已播放完。
+- 修复：`MainViewModel.SeekMaximum => DurationSeconds > 0 ? DurationSeconds : 1`，`Maximum`
+  绑定它；空闲时 `Maximum=1, Value=0`，Thumb 在最左侧、轨道为空。`DurationSeconds` 变化时
+  手动通知 `SeekMaximum`。
+- 同时把进度条 `IsEnabled` 绑定到 `HasCurrentTrack`，无播放时不可拖动（避免拖动 Thumb 把
+  `Value` 的 OneWay 绑定顶掉）；Slider 样式补了 `IsEnabled=False` 时 `Opacity=0.45`，
+  空状态一眼可辨。
+
+## 4. 音量百分比与静音状态
 
 - 滑块右侧显示 `VolumeText`：未静音显示四舍五入百分比（如 `70%`），静音时显示“静音”。
 - 静音按钮：`Content` 绑定 `MuteGlyph`（🔊 / 🔇）、`ToolTip` 绑定 `MuteToolTip`
@@ -52,11 +66,12 @@
   `Player.Volume=0`，取消静音恢复 `Volume/100`。
 - 相关 `AutomationId`：`VolumeSlider`、`VolumeText`、`MuteButton`，方便 UI 自动化验证。
 
-## 4. 验证
+## 5. 验证
 
 - 单元测试：`ViewLayoutTests.Normalize_ClampsGroupedCoverSize_AndRoundTrips`（默认值 / clamp /
   序列化 / Clone）。
-- UI：`--screenshot` 分别截默认 96px 和拖动后 176px 的分组封面；静音状态截图确认
-  “静音”文字 + 高亮按钮；重启后 `libraryLayout.groupCoverSize` 保持 176。
+- UI：`--screenshot` 分别截默认 96px 和拖动后 176px 的分组封面，检查封面左右留白相等、
+  与“封面”表头对齐且不越过分栏线；截无播放时的进度条，确认 Thumb 在最左侧、轨道为空。
+- 静音状态截图确认“静音”文字 + 高亮按钮；重启后 `libraryLayout.groupCoverSize` 保持。
 - 鼠标拖拽用 UI Automation 定位表头 `Thumb` 后 `SetCursorPos + mouse_event` 模拟，
   拖完读 `settings.json` 确认保存。

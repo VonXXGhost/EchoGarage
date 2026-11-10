@@ -1,6 +1,6 @@
 # KB-007：扫描读取标签与进度条点击的两个 WPF / TagLib 坑
 
-- 状态：提案（待 owner 批准）
+- 状态：已批准（Accepted，2026-11-11，owner）
 - 日期：2026-11-10
 - 关联：KB-005（TagLib# 使用细节）、ADR-009（WASAPI 播放管线）、ADR-010（缓存可用性失效）
 - 环境：TagLibSharp 2.3.0、.NET 10 WPF
