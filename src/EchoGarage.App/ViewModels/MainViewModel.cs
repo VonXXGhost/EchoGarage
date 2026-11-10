@@ -182,6 +182,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _durationText = "0:00";
 
+    /// <summary>
+    /// Slider maximum. Never zero: a Slider with Minimum == Maximum renders its thumb at
+    /// the right edge (looks like a full progress bar) even when nothing is playing.
+    /// </summary>
+    public double SeekMaximum => DurationSeconds > 0 ? DurationSeconds : 1;
+
+    partial void OnDurationSecondsChanged(double value) =>
+        OnPropertyChanged(nameof(SeekMaximum));
+
     [ObservableProperty]
     private double _volume = 75;
 

@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly MainViewModel _vm;
     private readonly DialogService _dialogs;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
+    private const double GroupCoverInset = 8;
     private readonly DispatcherTimer _coverPersistTimer = new(DispatcherPriority.Background)
     {
         Interval = TimeSpan.FromMilliseconds(600)
@@ -229,9 +230,12 @@ public partial class MainWindow : Window
             SortPropertyMap.TryGetValue(column.Key, out var sortProperty);
             var isGroupedCover = _vm.GroupByAlbum &&
                                  string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase);
+            // The cover column carries the album cover plus equal left/right insets so the
+            // cover lines up with the column header padding instead of spilling over the
+            // column divider.
             var width = isGroupedCover
                 ? Math.Clamp(_vm.GroupCoverSize, PlaylistViewLayout.MinGroupCoverSize,
-                    PlaylistViewLayout.MaxGroupCoverSize)
+                    PlaylistViewLayout.MaxGroupCoverSize) + GroupCoverInset * 2
                 : Math.Max(descriptor.MinWidth, column.Width);
 
             var gridColumn = new DataGridTemplateColumn
@@ -239,8 +243,12 @@ public partial class MainWindow : Window
                 Header = descriptor.Header,
                 CellTemplate = cellTemplate,
                 Width = new DataGridLength(width, DataGridLengthUnitType.Pixel),
-                MinWidth = isGroupedCover ? PlaylistViewLayout.MinGroupCoverSize : descriptor.MinWidth,
-                MaxWidth = isGroupedCover ? PlaylistViewLayout.MaxGroupCoverSize : 1400,
+                MinWidth = isGroupedCover
+                    ? PlaylistViewLayout.MinGroupCoverSize + GroupCoverInset * 2
+                    : descriptor.MinWidth,
+                MaxWidth = isGroupedCover
+                    ? PlaylistViewLayout.MaxGroupCoverSize + GroupCoverInset * 2
+                    : 1400,
                 SortMemberPath = sortProperty,
                 CanUserSort = descriptor.Sortable && sortProperty is not null,
                 IsReadOnly = true
@@ -305,9 +313,10 @@ public partial class MainWindow : Window
             var width = gridColumn.ActualWidth > 10 ? gridColumn.ActualWidth : stored.Width;
             if (_vm.GroupByAlbum && string.Equals(key, "cover", StringComparison.OrdinalIgnoreCase))
             {
-                // In grouped mode the cover column is the resize handle for the album cover.
-                layout.GroupCoverSize = Math.Clamp(width, PlaylistViewLayout.MinGroupCoverSize,
-                    PlaylistViewLayout.MaxGroupCoverSize);
+                // In grouped mode the cover column is the resize handle for the album cover;
+                // subtract the equal left/right insets to get the displayed cover size.
+                layout.GroupCoverSize = Math.Clamp(width - GroupCoverInset * 2,
+                    PlaylistViewLayout.MinGroupCoverSize, PlaylistViewLayout.MaxGroupCoverSize);
                 // Keep the stored width for the per-row cover used when grouping is off.
                 width = stored.Width;
             }
@@ -354,7 +363,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            _vm.GroupCoverSize = Math.Clamp(width, PlaylistViewLayout.MinGroupCoverSize,
+            _vm.GroupCoverSize = Math.Clamp(width - GroupCoverInset * 2, PlaylistViewLayout.MinGroupCoverSize,
                 PlaylistViewLayout.MaxGroupCoverSize);
             // Keep the layout signature in sync with the live drag so a later ApplyLayout
             // (theme, settings dialog) does not needlessly rebuild the columns.

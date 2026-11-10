@@ -355,7 +355,7 @@
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
                                     <Border Background="{DynamicResource GroupHeaderBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,0,0,1" Padding="12,10" Loaded="OnGroupHeaderLoaded"
+                                            BorderThickness="0,0,0,1" Padding="8,10" Loaded="OnGroupHeaderLoaded"
                                             Unloaded="OnGroupHeaderUnloaded">
                                         <StackPanel Orientation="Horizontal">
                                             <Border Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -489,9 +489,10 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{Binding PositionText}" Foreground="{DynamicResource TextSecondaryBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
-                    <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0" Maximum="{Binding DurationSeconds}"
+                    <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0" Maximum="{Binding SeekMaximum}"
                             AutomationProperties.AutomationId="SeekSlider"
                             Value="{Binding PositionSeconds, Mode=OneWay}"
+                            IsEnabled="{Binding HasCurrentTrack}"
                             IsMoveToPointEnabled="False" />
                     <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="{DynamicResource TextMutedBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
