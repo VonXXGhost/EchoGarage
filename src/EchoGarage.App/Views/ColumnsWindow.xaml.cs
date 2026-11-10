@@ -43,11 +43,13 @@ public partial class ColumnsWindow : ThemedWindow
 {
     private readonly ObservableCollection<ColumnEditRow> _rows = [];
     private readonly ObservableCollection<ColumnPreset> _presets = [];
+    private readonly double _groupCoverSize;
 
     public ColumnsWindow(PlaylistViewLayout layout, IReadOnlyList<ColumnPreset> presets)
     {
         InitializeComponent();
         var normalized = ViewLayoutFactory.Normalize(layout);
+        _groupCoverSize = normalized.GroupCoverSize;
         foreach (var column in normalized.Columns)
         {
             var descriptor = ColumnCatalog.Find(column.Key);
@@ -164,7 +166,9 @@ public partial class ColumnsWindow : ThemedWindow
 
     private PlaylistViewLayout BuildLayout()
     {
-        var layout = new PlaylistViewLayout();
+        // The dialog edits columns only; the grouped album-cover size is adjusted by
+        // dragging the cover column and must survive a round-trip through this dialog.
+        var layout = new PlaylistViewLayout { GroupCoverSize = _groupCoverSize };
         foreach (var row in _rows)
         {
             layout.Columns.Add(new PlaylistColumn

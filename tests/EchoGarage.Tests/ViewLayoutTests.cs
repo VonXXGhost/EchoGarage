@@ -78,6 +78,26 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
+    public void Normalize_ClampsGroupedCoverSize_AndRoundTrips()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.GroupCoverSize = 220;
+
+        var json = ViewLayoutFactory.Serialize(layout);
+        var restored = ViewLayoutFactory.Deserialize(json);
+        Assert.Equal(220, restored.GroupCoverSize, 3);
+        Assert.Equal(220, restored.Clone().GroupCoverSize, 3);
+
+        layout.GroupCoverSize = 10;
+        Assert.Equal(PlaylistViewLayout.MinGroupCoverSize,
+            ViewLayoutFactory.Normalize(layout).GroupCoverSize);
+
+        layout.GroupCoverSize = 1000;
+        Assert.Equal(PlaylistViewLayout.MaxGroupCoverSize,
+            ViewLayoutFactory.Normalize(layout).GroupCoverSize);
+    }
+
+    [Fact]
     public void SmartDefinition_RoundTrips()
     {
         var definition = new SmartPlaylistDefinition

@@ -355,11 +355,14 @@
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
                                     <Border Background="{DynamicResource GroupHeaderBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,0,0,1" Padding="12,10" Loaded="OnGroupHeaderLoaded">
+                                            BorderThickness="0,0,0,1" Padding="12,10" Loaded="OnGroupHeaderLoaded"
+                                            Unloaded="OnGroupHeaderUnloaded">
                                         <StackPanel Orientation="Horizontal">
-                                            <Border Width="96" Height="96" CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
+                                            <Border Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Height="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
                                                     ClipToBounds="True" Margin="0,0,14,0">
-                                                <Image Source="{Binding Items[0].CoverImage}" Stretch="UniformToFill"
+                                                <Image Source="{Binding Items[0].GroupCoverImage}" Stretch="UniformToFill"
                                                        RenderOptions.BitmapScalingMode="HighQuality" />
                                             </Border>
                                             <StackPanel VerticalAlignment="Center">
@@ -498,9 +501,27 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="音量" Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                                VerticalAlignment="Center" />
-                    <Slider Width="120" Margin="8,0,4,0" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" />
-                    <Button Content="🔇" Style="{StaticResource TransportButton}" Command="{Binding ToggleMuteCommand}"
-                            ToolTip="静音" FontSize="12" />
+                    <Slider Width="120" Margin="8,0,6,0" Minimum="0" Maximum="100"
+                            AutomationProperties.AutomationId="VolumeSlider"
+                            Value="{Binding Volume, Mode=TwoWay}" />
+                    <TextBlock Text="{Binding VolumeText}" Width="38" TextAlignment="Right"
+                               VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                               AutomationProperties.AutomationId="VolumeText" />
+                    <Button Content="{Binding MuteGlyph}" Command="{Binding ToggleMuteCommand}"
+                            ToolTip="{Binding MuteToolTip}" FontSize="12" Margin="4,0,0,0"
+                            AutomationProperties.AutomationId="MuteButton">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource TransportButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMuted}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>

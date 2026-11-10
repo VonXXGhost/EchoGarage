@@ -20,6 +20,13 @@ public partial class MainWindow : Window
     private readonly MainViewModel _vm;
     private readonly DialogService _dialogs;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
+    private readonly DispatcherTimer _coverPersistTimer = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromMilliseconds(600)
+    };
+    private DataGridColumn? _coverColumn;
+    private DependencyPropertyDescriptor? _coverWidthDescriptor;
+    private EventHandler? _coverWidthChangedHandler;
     private bool _seekInteracting;
     private double _seekTargetSeconds;
     private double _seekStartX;
@@ -45,6 +52,7 @@ public partial class MainWindow : Window
 
         ApplyWindowPlacement();
         HookSeekSlider();
+        _coverPersistTimer.Tick += OnCoverPersistTick;
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -182,19 +190,24 @@ public partial class MainWindow : Window
             return;
         }
 
+        _host.Logger.Debug($"Applying layout: grouped={_vm.GroupByAlbum} groupCoverSize={_vm.GroupCoverSize:F1} " +
+                           $"signature={signature}");
         RebuildColumns(layout, signature);
     }
 
-    private static string BuildLayoutSignature(PlaylistViewLayout layout, bool grouped) =>
+    private string BuildLayoutSignature(PlaylistViewLayout layout, bool grouped) =>
         (grouped ? "g|" : "u|") + string.Join("|", layout.Columns
             .Where(c => c.Visible)
-            .Select(c => $"{c.Key}:{(grouped && c.Key == "cover" ? 96 : (int)Math.Round(c.Width))}"));
+            .Select(c => $"{c.Key}:{(grouped && c.Key == "cover"
+                ? (int)Math.Round(_vm.GroupCoverSize)
+                : (int)Math.Round(c.Width))}"));
 
     private void RebuildColumns(PlaylistViewLayout layout, string signature)
     {
         // Changing DataGrid.Columns while rows own cells can crash DataGridCellsPanel
         // ("index out of range" during arrange). Detach the items first, rebuild, reattach.
         var selectedRow = _vm.SelectedRow;
+        DetachCoverWidthListener();
         TrackGrid.ItemsSource = null;
         _columnKeys.Clear();
         TrackGrid.Columns.Clear();
@@ -214,21 +227,20 @@ public partial class MainWindow : Window
             }
 
             SortPropertyMap.TryGetValue(column.Key, out var sortProperty);
-            var width = Math.Max(descriptor.MinWidth, column.Width);
-            if (_vm.GroupByAlbum && string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase))
-            {
-                // Group headers show a 96px album cover; leave the same gutter on rows so
-                // tracks line up under the album title, as in foobar2000.
-                width = 96;
-            }
+            var isGroupedCover = _vm.GroupByAlbum &&
+                                 string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase);
+            var width = isGroupedCover
+                ? Math.Clamp(_vm.GroupCoverSize, PlaylistViewLayout.MinGroupCoverSize,
+                    PlaylistViewLayout.MaxGroupCoverSize)
+                : Math.Max(descriptor.MinWidth, column.Width);
 
             var gridColumn = new DataGridTemplateColumn
             {
                 Header = descriptor.Header,
                 CellTemplate = cellTemplate,
                 Width = new DataGridLength(width, DataGridLengthUnitType.Pixel),
-                MinWidth = descriptor.MinWidth,
-                MaxWidth = 1400,
+                MinWidth = isGroupedCover ? PlaylistViewLayout.MinGroupCoverSize : descriptor.MinWidth,
+                MaxWidth = isGroupedCover ? PlaylistViewLayout.MaxGroupCoverSize : 1400,
                 SortMemberPath = sortProperty,
                 CanUserSort = descriptor.Sortable && sortProperty is not null,
                 IsReadOnly = true
@@ -244,6 +256,11 @@ public partial class MainWindow : Window
 
             _columnKeys[gridColumn] = descriptor.Key;
             TrackGrid.Columns.Add(gridColumn);
+
+            if (isGroupedCover)
+            {
+                AttachCoverWidthListener(gridColumn);
+            }
         }
 
         BindingOperations.SetBinding(TrackGrid, ItemsControl.ItemsSourceProperty,
@@ -288,7 +305,10 @@ public partial class MainWindow : Window
             var width = gridColumn.ActualWidth > 10 ? gridColumn.ActualWidth : stored.Width;
             if (_vm.GroupByAlbum && string.Equals(key, "cover", StringComparison.OrdinalIgnoreCase))
             {
-                // The 96px cover gutter is a display detail of grouped mode, not a user width.
+                // In grouped mode the cover column is the resize handle for the album cover.
+                layout.GroupCoverSize = Math.Clamp(width, PlaylistViewLayout.MinGroupCoverSize,
+                    PlaylistViewLayout.MaxGroupCoverSize);
+                // Keep the stored width for the per-row cover used when grouping is off.
                 width = stored.Width;
             }
 
@@ -306,6 +326,72 @@ public partial class MainWindow : Window
 
         layout.Columns = ordered;
         return layout;
+    }
+
+    // =====================================================================
+    // Grouped album cover resizing
+    // =====================================================================
+    private void AttachCoverWidthListener(DataGridColumn column)
+    {
+        _coverColumn = column;
+        _coverWidthDescriptor = DependencyPropertyDescriptor.FromProperty(
+            DataGridColumn.WidthProperty, typeof(DataGridColumn));
+        _coverWidthChangedHandler = (_, _) =>
+        {
+            if (!_vm.GroupByAlbum || _coverColumn is null)
+            {
+                return;
+            }
+
+            var width = _coverColumn.Width.DisplayValue;
+            if (double.IsNaN(width) || width <= 0)
+            {
+                width = _coverColumn.ActualWidth;
+            }
+
+            if (!double.IsFinite(width) || width <= 0)
+            {
+                return;
+            }
+
+            _vm.GroupCoverSize = Math.Clamp(width, PlaylistViewLayout.MinGroupCoverSize,
+                PlaylistViewLayout.MaxGroupCoverSize);
+            // Keep the layout signature in sync with the live drag so a later ApplyLayout
+            // (theme, settings dialog) does not needlessly rebuild the columns.
+            _appliedLayoutSignature = BuildLayoutSignature(_vm.CurrentLayout, grouped: true);
+            // Persist once the user pauses; closing without switching playlists would be the
+            // only other chance to save this width.
+            _coverPersistTimer.Stop();
+            _coverPersistTimer.Start();
+        };
+        _coverWidthDescriptor.AddValueChanged(column, _coverWidthChangedHandler);
+    }
+
+    private void OnCoverPersistTick(object? sender, EventArgs e)
+    {
+        _coverPersistTimer.Stop();
+        if (!_vm.GroupByAlbum)
+        {
+            return;
+        }
+
+        var captured = CaptureLayoutFromGrid();
+        if (captured is not null)
+        {
+            _vm.PersistCurrentLayout(captured);
+        }
+    }
+
+    private void DetachCoverWidthListener()
+    {
+        if (_coverColumn is not null && _coverWidthDescriptor is not null && _coverWidthChangedHandler is not null)
+        {
+            _coverWidthDescriptor.RemoveValueChanged(_coverColumn, _coverWidthChangedHandler);
+        }
+
+        _coverColumn = null;
+        _coverWidthDescriptor = null;
+        _coverWidthChangedHandler = null;
     }
 
     private void UpdateSortGlyphs()
@@ -343,7 +429,11 @@ public partial class MainWindow : Window
         if (e.Row.DataContext is TrackRowViewModel row)
         {
             row.IsSelected = TrackGrid.SelectedItems.Contains(row);
-            _ = _vm.LoadRowCoverAsync(row);
+            if (!_vm.GroupByAlbum)
+            {
+                // Grouped mode shows one large album cover and hides the per-row cover.
+                _ = _vm.LoadRowCoverAsync(row);
+            }
         }
     }
 
@@ -362,7 +452,21 @@ public partial class MainWindow : Window
             var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
             if (first is not null)
             {
-                _ = _vm.LoadRowCoverAsync(first);
+                _ = _vm.LoadGroupCoverAsync(first);
+            }
+        }
+    }
+
+    private void OnGroupHeaderUnloaded(object sender, RoutedEventArgs e)
+    {
+        // Release the large header cover while the group is virtualized away; it will be
+        // reloaded from the bounded image cache when the header becomes visible again.
+        if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
+        {
+            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
+            if (first is not null)
+            {
+                first.GroupCoverImage = null;
             }
         }
     }

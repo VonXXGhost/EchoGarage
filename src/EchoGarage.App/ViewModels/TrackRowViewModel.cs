@@ -21,6 +21,10 @@ public sealed partial class TrackRowViewModel : ObservableObject
     [ObservableProperty]
     private BitmapSource? _coverImage;
 
+    /// <summary>Larger cover used only by the album group header (cleared when it unloads).</summary>
+    [ObservableProperty]
+    private BitmapSource? _groupCoverImage;
+
     [ObservableProperty]
     private bool _isSelected;
 

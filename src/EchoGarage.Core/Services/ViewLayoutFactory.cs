@@ -28,11 +28,20 @@ public static class ViewLayoutFactory
         }
 
         var byKey = ColumnCatalog.All.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
+        var groupCoverSize = layout.GroupCoverSize;
+        if (!double.IsFinite(groupCoverSize) || groupCoverSize <= 0)
+        {
+            // Older JSON has no value; fall back to the historical 96px group cover.
+            groupCoverSize = PlaylistViewLayout.DefaultGroupCoverSize;
+        }
+
         var normalized = new PlaylistViewLayout
         {
             PresetName = layout.PresetName,
             SortColumn = layout.SortColumn,
-            SortDescending = layout.SortDescending
+            SortDescending = layout.SortDescending,
+            GroupCoverSize = Math.Clamp(groupCoverSize, PlaylistViewLayout.MinGroupCoverSize,
+                PlaylistViewLayout.MaxGroupCoverSize)
         };
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

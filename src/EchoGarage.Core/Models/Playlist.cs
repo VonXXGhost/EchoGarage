@@ -54,17 +54,28 @@ public sealed class PlaylistColumn
 
 public sealed class PlaylistViewLayout
 {
+    public const double DefaultGroupCoverSize = 96;
+    public const double MinGroupCoverSize = 48;
+    public const double MaxGroupCoverSize = 320;
+
     public string? PresetName { get; set; }
     public List<PlaylistColumn> Columns { get; set; } = [];
     public string? SortColumn { get; set; }
     public bool SortDescending { get; set; }
+
+    /// <summary>
+    /// Size (in DIPs) of the album cover shown in group headers when grouping by album.
+    /// The cover column acts as the resize handle for it in grouped mode.
+    /// </summary>
+    public double GroupCoverSize { get; set; } = 96;
 
     public PlaylistViewLayout Clone() => new()
     {
         PresetName = PresetName,
         Columns = Columns.Select(c => c.Clone()).ToList(),
         SortColumn = SortColumn,
-        SortDescending = SortDescending
+        SortDescending = SortDescending,
+        GroupCoverSize = GroupCoverSize
     };
 }
 

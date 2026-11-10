@@ -122,6 +122,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private PlaylistViewLayout _currentLayout = ViewLayoutFactory.CreateDefault();
 
+    /// <summary>Album cover size used by the grouped header; the cover column resizes it.</summary>
+    [ObservableProperty]
+    private double _groupCoverSize = PlaylistViewLayout.DefaultGroupCoverSize;
+
+    partial void OnGroupCoverSizeChanged(double value) =>
+        _host.Logger.Debug($"Group cover size: {value:F1}");
+
+    partial void OnCurrentLayoutChanged(PlaylistViewLayout value)
+    {
+        GroupCoverSize = value.GroupCoverSize;
+        _host.Logger.Debug($"Layout changed: groupCoverSize={value.GroupCoverSize:F1}, " +
+                           $"coverWidth={value.Columns.FirstOrDefault(c => c.Key == "cover")?.Width:F1}");
+    }
+
     [ObservableProperty]
     private SourceNodeViewModel? _selectedSource;
 
@@ -173,6 +187,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isMuted;
+
+    public string VolumeText => IsMuted ? "静音" : $"{Math.Round(Volume)}%";
+
+    public string MuteGlyph => IsMuted ? "🔇" : "🔊";
+
+    public string MuteToolTip => IsMuted ? "取消静音" : "静音";
 
     [ObservableProperty]
     private bool _showAlbumPanel = true;
@@ -456,7 +476,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await _selectionGate.WaitAsync();
         try
         {
-            PersistCurrentLayout();
+            // On the very first selection there is no previous source/grid layout to persist;
+            // doing it anyway would overwrite the saved library layout with the default one
+            // (the window has not built its columns yet, so CaptureLayoutFromGrid returns null).
+            if (SelectedSource is not null)
+            {
+                PersistCurrentLayout();
+            }
+
             SetSelectedSourceSilently(source);
 
             var tracks = await LoadTracksForSourceAsync(source);
@@ -602,9 +629,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// </param>
     public void PersistCurrentLayout(PlaylistViewLayout? capturedLayout, bool captureFromView = true)
     {
+        _host.Logger.Debug(
+            $"Persist layout: captured={(capturedLayout is null ? "null" : "provided")} captureFromView={captureFromView} " +
+            $"selected={SelectedSource?.Kind.ToString() ?? "null"} currentGroupCoverSize={CurrentLayout.GroupCoverSize:F1}");
+
         if (capturedLayout is null && captureFromView)
         {
             capturedLayout = LayoutProvider?.Invoke();
+            if (capturedLayout is null)
+            {
+                // The grid has not been built yet; persisting now would overwrite the saved
+                // layout with the in-memory default.
+                _host.Logger.Debug("Persist layout skipped: the view has no columns yet.");
+                return;
+            }
         }
 
         if (capturedLayout is not null)
@@ -660,7 +698,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void ApplyPreset(ColumnPreset preset)
     {
-        CurrentLayout = ViewLayoutFactory.Normalize(preset.ToLayout());
+        // Presets describe columns only; keep the user's current grouped-cover size.
+        var applied = preset.ToLayout();
+        applied.GroupCoverSize = CurrentLayout.GroupCoverSize;
+        CurrentLayout = ViewLayoutFactory.Normalize(applied);
         ApplySortAndGrouping();
         PersistCurrentLayout(null, captureFromView: false);
         LayoutChanged?.Invoke(this, EventArgs.Empty);
@@ -901,6 +942,38 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Loads the larger cover used by album group headers. 512px keeps the art sharp at
+    /// the maximum grouped cover size (320 DIP) even on 150% DPI, and the cache is bounded.
+    /// </summary>
+    public async Task LoadGroupCoverAsync(TrackRowViewModel row)
+    {
+        if (row.GroupCoverImage is not null)
+        {
+            return;
+        }
+
+        var track = row.Track;
+        if (string.IsNullOrWhiteSpace(track.CoverKey))
+        {
+            return;
+        }
+
+        try
+        {
+            var image = await _host.CoverImages.GetAsync(new CoverRequest(track.Path, track.CoverKey,
+                track.ModifiedAtUtc, track.FileSize), 512);
+            if (image is not null)
+            {
+                row.GroupCoverImage = image;
+            }
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"Group cover failed for {track.Path}: {ex.Message}");
+        }
+    }
+
     public async Task LoadRowCoverAsync(TrackRowViewModel row, bool force = false)
     {
         if (!force && row.CoverImage is not null)
@@ -1029,6 +1102,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnVolumeChanged(double value)
     {
+        OnPropertyChanged(nameof(VolumeText));
+
         if (_suppressVolumeSave)
         {
             return;
@@ -1043,6 +1118,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnIsMutedChanged(bool value)
     {
         _host.Player.Volume = value ? 0 : Math.Clamp(Volume / 100.0, 0, 1);
+        OnPropertyChanged(nameof(VolumeText));
+        OnPropertyChanged(nameof(MuteGlyph));
+        OnPropertyChanged(nameof(MuteToolTip));
     }
 
     [RelayCommand]
