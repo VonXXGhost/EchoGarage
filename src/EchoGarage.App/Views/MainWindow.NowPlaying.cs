@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using EchoGarage.App.ViewModels;
@@ -13,6 +15,9 @@ namespace EchoGarage.App.Views;
 /// </summary>
 public partial class MainWindow
 {
+    private const int MaxCenterDeferAttempts = 30;
+    private const int MaxCenterCorrectionAttempts = 5;
+
     private bool _centerCurrentRowPending;
 
     /// <summary>
@@ -20,20 +25,90 @@ public partial class MainWindow
     /// turn because the row container does not exist before the list has laid out (playback
     /// start, playlist switch and layout rebuild all raise the request right away).
     /// </summary>
+    /// <remarks>
+    /// While the user is dragging the scrollbar (or holding one of its buttons) the centering
+    /// is postponed instead of fighting the gesture: forcing a scroll offset in the middle of
+    /// a scrollbar drag can make the ScrollViewer's internal anchoring retry forever, which is
+    /// experienced as a list that jitters by a few pixels and no longer follows the mouse wheel.
+    /// </remarks>
     private void ScheduleCenterCurrentRow()
     {
+        if (_centerCurrentRowPending)
+        {
+            return;
+        }
+
         var row = _vm.CurrentRow;
-        if (row is null || _centerCurrentRowPending || !IsCurrentRowBrowsable(row))
+        if (row is null || !IsCurrentRowBrowsable(row))
         {
             return;
         }
 
         _centerCurrentRowPending = true;
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => ScheduleCenterAttemptAsync(0)));
+    }
+
+    private async void ScheduleCenterAttemptAsync(int attempt)
+    {
+        try
         {
+            if (!_centerCurrentRowPending)
+            {
+                return;
+            }
+
+            if (IsScrollbarInteractionActive())
+            {
+                if (attempt < MaxCenterDeferAttempts)
+                {
+                    _host.Logger.Debug($"Auto-center deferred: user is scrolling (attempt {attempt + 1}).");
+                    await Task.Delay(200);
+                    ScheduleCenterAttemptAsync(attempt + 1);
+                    return;
+                }
+
+                _centerCurrentRowPending = false;
+                _host.Logger.Debug("Auto-center skipped: the user kept interacting with the scrollbar.");
+                return;
+            }
+
             _centerCurrentRowPending = false;
             CenterCurrentRow();
-        }));
+        }
+        catch (Exception ex)
+        {
+            _centerCurrentRowPending = false;
+            _host.Logger.Debug($"Auto-center attempt failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>True while the left mouse button is held on a scrollbar (thumb drag or page button).</summary>
+    private static bool IsScrollbarInteractionActive()
+    {
+        if (Mouse.LeftButton != MouseButtonState.Pressed)
+        {
+            return false;
+        }
+
+        if (Mouse.Captured is not DependencyObject captured)
+        {
+            return false;
+        }
+
+        for (var node = captured; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is ScrollBar)
+            {
+                return true;
+            }
+
+            if (node is Window)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>True when the current row belongs to the list that is being browsed.</summary>
@@ -68,9 +143,12 @@ public partial class MainWindow
     /// <summary>
     /// Scrolls <paramref name="item"/> to the vertical center of the list viewport.
     /// <para>
-    /// ScrollIntoView is only guaranteed to make the row visible (often at the top or bottom
-    /// edge), so it is followed by a centered BringIntoView rect and, when the list scrolls in
-    /// item units (grouped ListView), a pixel-based correction of the remaining offset.
+    /// ScrollIntoView only guarantees that the row becomes visible (often at the top or bottom
+    /// edge); the remaining distance to the viewport center is then corrected by setting the
+    /// pixel offset directly. Deliberately no synthetic <see cref="FrameworkElement.BringIntoView(Rect)"/>
+    /// call with an oversized rectangle: it makes ScrollViewer/VirtualizingStackPanel re-post
+    /// MakeVisible requests while their layout estimates change, which can turn into a
+    /// scrollbar that keeps fighting the user.
     /// </para>
     /// </summary>
     private void CenterItem(ItemsControl items, object item, Func<FrameworkElement?> containerLookup,
@@ -82,6 +160,14 @@ public partial class MainWindow
             items.UpdateLayout();
 
             var container = containerLookup();
+            if (container is null)
+            {
+                // One more layout turn: virtualized containers are sometimes generated only
+                // after the first arrange pass that ScrollIntoView triggered.
+                items.UpdateLayout();
+                container = containerLookup();
+            }
+
             var scrollViewer = FindScrollViewer(items);
             var presenter = scrollViewer is null ? null : FindScrollContentPresenter(scrollViewer);
             if (container is null || scrollViewer is null || presenter is null)
@@ -89,23 +175,17 @@ public partial class MainWindow
                 return;
             }
 
-            var viewportPx = presenter.ActualHeight;
-            if (viewportPx <= 0 || container.ActualHeight <= 0 || scrollViewer.ViewportHeight <= 0)
+            if (presenter.ActualHeight <= 0 || container.ActualHeight <= 0 || scrollViewer.ViewportHeight <= 0)
             {
                 return;
             }
 
-            // A rect that reaches half a viewport above the row makes BringIntoView center it
-            // instead of just making it visible (rect coordinates are relative to the row).
-            var rectTop = -(viewportPx - container.ActualHeight) / 2;
-            container.BringIntoView(
-                new Rect(0, rectTop, Math.Max(1, container.ActualWidth), container.ActualHeight));
-            items.UpdateLayout();
-
-            // Scroll units are pixels for the DataGrid (ScrollUnit=Pixel) but items for the
-            // grouped ListView; derive the pixel size of one scroll unit from the viewport.
-            var pixelsPerUnit = viewportPx / scrollViewer.ViewportHeight;
             var offsetBefore = scrollViewer.VerticalOffset;
+
+            // Scroll units are pixels for both lists (VirtualizingPanel.ScrollUnit=Pixel on the
+            // flat DataGrid and the grouped ListView); derive the size of one unit from the
+            // viewport anyway so the math stays correct if a unit ever changes.
+            var pixelsPerUnit = presenter.ActualHeight / scrollViewer.ViewportHeight;
 
             // Container positions are measured against the ScrollContentPresenter (the viewport)
             // because virtualizing panels lay their realized children out relative to it.
@@ -122,10 +202,10 @@ public partial class MainWindow
             }
 
             var errorBefore = MeasureCenterErrorPx();
-            for (var attempt = 0; attempt < 3; attempt++)
+            for (var attempt = 0; attempt < MaxCenterCorrectionAttempts; attempt++)
             {
                 var centerErrorPx = MeasureCenterErrorPx();
-                if (double.IsNaN(centerErrorPx) || Math.Abs(centerErrorPx) <= 2)
+                if (double.IsNaN(centerErrorPx) || Math.Abs(centerErrorPx) <= 1.0)
                 {
                     break;
                 }
@@ -149,7 +229,7 @@ public partial class MainWindow
                 $"Centered now-playing row: view={(_vm.IsGroupedViewActive ? "grouped" : "flat")} " +
                 $"offset={offsetBefore:F1}->{scrollViewer.VerticalOffset:F1} " +
                 $"error={errorBefore:F1}->{errorAfter:F1}px " +
-                $"viewport={viewportPx:F0}px unit={pixelsPerUnit:F1}px " +
+                $"viewport={presenter.ActualHeight:F0}px unit={pixelsPerUnit:F1}px " +
                 $"extent={scrollViewer.ExtentHeight:F1} viewportUnits={scrollViewer.ViewportHeight:F1}");
         }
         catch (Exception ex)

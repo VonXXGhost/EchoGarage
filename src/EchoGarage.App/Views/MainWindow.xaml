@@ -541,7 +541,9 @@
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling"
-                              VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                              VirtualizingPanel.CacheLength="2"
+                              VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                              UseLayoutRounding="True">
                         <ListView.GroupStyle>
                             <GroupStyle ContainerStyle="{StaticResource AlbumGroupContainer}" />
                         </ListView.GroupStyle>

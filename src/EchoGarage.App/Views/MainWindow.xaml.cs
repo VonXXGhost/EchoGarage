@@ -28,6 +28,11 @@ public partial class MainWindow : Window
     private bool _seekDragged;
     private long _lastSeekLogTimestamp;
     private bool _closing;
+    private DateTime _scrollBurstWindow = DateTime.MinValue;
+    private int _scrollBurstEvents;
+    private double _scrollBurstTravel;
+    private double _scrollBurstLastOffset;
+    private DateTime _scrollBurstLastLog = DateTime.MinValue;
 
     public MainWindow(AppHost host)
     {
@@ -44,6 +49,13 @@ public partial class MainWindow : Window
         _vm.SortChanged += (_, _) => UpdateSortGlyphs();
         _vm.SettingsRequested += (_, _) => OpenSettings();
         _vm.CurrentRowChanged += (_, _) => ScrollToCurrentRow();
+
+        // Watch for scroll feedback loops: a huge number of ScrollChanged events with almost no
+        // movement means the ScrollViewer's anchoring is re-posting itself instead of scrolling.
+        GroupedList.AddHandler(ScrollViewer.ScrollChangedEvent,
+            new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
+        TrackGrid.AddHandler(ScrollViewer.ScrollChangedEvent,
+            new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
 
         ApplyWindowPlacement();
         HookSeekSlider();
@@ -441,11 +453,19 @@ public partial class MainWindow : Window
         if (nowVisible)
         {
             RequestGroupCover(group);
+            return;
         }
-        else
+
+        // Releasing the image mutates a binding, which invalidates measure. Defer it until the
+        // current layout pass is over so container recycling/visibility changes cannot feed
+        // back into the measure pass that produced this event.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
-            ReleaseGroupCover(group);
-        }
+            if (!element.IsVisible && ReferenceEquals(element.DataContext, group))
+            {
+                ReleaseGroupCover(group);
+            }
+        }));
     }
 
     private void OnGroupCoverDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -501,6 +521,46 @@ public partial class MainWindow : Window
         // right after playback starts or a playlist/view switch the row containers are usually
         // not generated yet, and WPF's ScrollIntoView only makes a row barely visible.
         ScheduleCenterCurrentRow();
+    }
+
+    /// <summary>
+    /// Detects a scroll feedback loop (ScrollViewer anchoring re-posting itself instead of
+    /// scrolling) and tries to break it by snapping the offset to a whole pixel value.
+    /// </summary>
+    private void OnListScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _scrollBurstWindow).TotalSeconds >= 1.0)
+        {
+            _scrollBurstWindow = now;
+            _scrollBurstEvents = 0;
+            _scrollBurstTravel = 0;
+            _scrollBurstLastOffset = e.VerticalOffset;
+        }
+
+        _scrollBurstEvents++;
+        _scrollBurstTravel += Math.Abs(e.VerticalOffset - _scrollBurstLastOffset);
+        _scrollBurstLastOffset = e.VerticalOffset;
+
+        if (_scrollBurstEvents < 200 || (now - _scrollBurstLastLog).TotalSeconds < 5.0)
+        {
+            return;
+        }
+
+        _scrollBurstLastLog = now;
+        _host.Logger.Warn(
+            $"Suspicious scroll burst: events={_scrollBurstEvents} travel={_scrollBurstTravel:F1}px " +
+            $"offset={e.VerticalOffset:F1} extent={e.ExtentHeight:F1} viewport={e.ViewportHeight:F1} " +
+            $"source={(sender as FrameworkElement)?.Name ?? sender?.GetType().Name}");
+
+        // A fractional offset that the anchoring logic can never reach is one of the ways the
+        // ScrollViewer can keep re-posting scroll operations. Snapping to a whole pixel value
+        // gives the loop a fixed point; this is a no-op when no loop is running.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            var viewer = sender is DependencyObject root ? FindScrollViewer(root) : null;
+            viewer?.ScrollToVerticalOffset(Math.Round(viewer.VerticalOffset));
+        }));
     }
 
     // =====================================================================
