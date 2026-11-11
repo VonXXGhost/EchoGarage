@@ -37,6 +37,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int _consecutiveFailures;
     private CancellationTokenSource? _scanCts;
 
+    // Monotonic token so a slow cover decode cannot overwrite a newer track's artwork.
+    private int _nowPlayingCoverVersion;
+    private string? _currentCoverPath;
+
     public MainViewModel(AppHost host, IDialogService dialogs)
     {
         _host = host;
@@ -144,6 +148,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnCurrentLayoutChanged(PlaylistViewLayout value)
     {
         GroupCoverSize = value.GroupCoverSize;
+        OnPropertyChanged(nameof(IsGroupedViewActive));
         _host.Logger.Debug($"Layout changed: groupCoverSize={value.GroupCoverSize:F1}, " +
                            $"coverWidth={value.Columns.FirstOrDefault(c => c.Key == "cover")?.Width:F1}");
         RebuildGroupedView();
@@ -169,6 +174,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private System.Windows.Media.Imaging.BitmapSource? _currentCover;
+
+    /// <summary>True while the large now-playing cover is being loaded for the panel.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCoverPlaceholder))]
+    private bool _isNowPlayingCoverLoading;
+
+    /// <summary>Shows the note placeholder when a track is playing but no artwork exists.</summary>
+    public bool ShowCoverPlaceholder =>
+        HasCurrentTrack && !IsNowPlayingCoverLoading && CurrentCover is null;
+
+    partial void OnCurrentCoverChanged(System.Windows.Media.Imaging.BitmapSource? value) =>
+        OnPropertyChanged(nameof(ShowCoverPlaceholder));
 
     [ObservableProperty]
     private string _playlistTitle = "媒体库";
@@ -221,6 +238,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _groupByAlbum = true;
+
+    /// <summary>
+    /// True when the album-grouped list is actually shown. Grouping only makes sense for
+    /// an album-oriented sort; any other sort order must stay a faithful flat list
+    /// instead of merging songs whose albums are not contiguous.
+    /// </summary>
+    public bool IsGroupedViewActive =>
+        GroupByAlbum && PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn);
 
     [ObservableProperty]
     private string _statusMessage = "就绪";
@@ -306,6 +331,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CurrentFormatText));
         OnPropertyChanged(nameof(CurrentFilePath));
         OnPropertyChanged(nameof(HasCurrentTrack));
+        OnPropertyChanged(nameof(ShowCoverPlaceholder));
     }
 
     // =====================================================================
@@ -561,7 +587,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 // The row was rebuilt (for example after a metadata repair scan), so refresh
                 // the now-playing panel from the new track data instead of the stale row.
                 UpdateNowPlayingMetadata(row);
-                _ = LoadNowPlayingCoverAsync(tracks[i]);
+                BeginNowPlayingCoverLoad(tracks[i], keepExistingCover: true);
             }
 
             Tracks.Add(row);
@@ -593,34 +619,60 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void ApplySortAndGrouping()
     {
-        var sortDescriptions = new List<SortDescription>();
-        if (!string.IsNullOrWhiteSpace(CurrentLayout.SortColumn))
-        {
-            sortDescriptions.Add(new SortDescription(CurrentLayout.SortColumn,
-                CurrentLayout.SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending));
-        }
-        else
-        {
-            sortDescriptions.Add(new SortDescription(nameof(TrackRowViewModel.RowNumber), ListSortDirection.Ascending));
-        }
+        var primarySort = BuildPrimarySort();
+        var grouped = IsGroupedViewActive;
 
-        // The DataGrid is used for the flat (ungrouped) view; the grouped ListView renders
-        // albums with a cover gutter, so it keeps its own grouping and the same sort order.
+        // Flat DataGrid view: always the user's chosen order, never grouped.
         _tracksView.GroupDescriptions.Clear();
-        ApplySortDescriptions(_tracksView, sortDescriptions);
+        ApplySortDescriptions(_tracksView, primarySort);
 
+        // Album list: group only for album-oriented sorts. For any other sort the
+        // ListView mirrors the flat order so playback and display stay consistent.
         _groupedTracksView.GroupDescriptions.Clear();
-        if (GroupByAlbum)
+        if (grouped)
         {
             _groupedTracksView.GroupDescriptions.Add(
                 new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
+            ApplySortDescriptions(_groupedTracksView, BuildGroupedSort(primarySort));
         }
-
-        ApplySortDescriptions(_groupedTracksView, sortDescriptions);
+        else
+        {
+            ApplySortDescriptions(_groupedTracksView, primarySort);
+        }
 
         _tracksView.Refresh();
         _groupedTracksView.Refresh();
         RebuildGroupedView();
+    }
+
+    private IReadOnlyList<SortDescription> BuildPrimarySort()
+    {
+        var hasSort = !string.IsNullOrWhiteSpace(CurrentLayout.SortColumn);
+        var sortColumn = hasSort ? CurrentLayout.SortColumn! : PlaylistSortPolicy.DefaultOrder;
+        var direction = hasSort && CurrentLayout.SortDescending
+            ? ListSortDirection.Descending
+            : ListSortDirection.Ascending;
+        return [new SortDescription(sortColumn, direction)];
+    }
+
+    /// <summary>
+    /// Sort order of the grouped list: the album-oriented primary sort first, then the
+    /// album group key so one album's tracks always stay contiguous, and finally the
+    /// disc/track order inside each group (foobar2000-style disc → track ascending).
+    /// </summary>
+    private List<SortDescription> BuildGroupedSort(IReadOnlyList<SortDescription> primary)
+    {
+        var sort = primary.ToList();
+        var direction = primary[0].Direction;
+        sort.Add(new SortDescription(nameof(TrackRowViewModel.AlbumGroupKey), direction));
+        if (CurrentLayout.GroupSortByDiscTrack)
+        {
+            sort.Add(new SortDescription(nameof(TrackRowViewModel.DiscNumberSort), ListSortDirection.Ascending));
+            sort.Add(new SortDescription(nameof(TrackRowViewModel.TrackNumberSort), ListSortDirection.Ascending));
+        }
+
+        sort.Add(new SortDescription(PlaylistSortPolicy.DefaultOrder, ListSortDirection.Ascending));
+        return sort;
     }
 
     private static void ApplySortDescriptions(ListCollectionView view, IReadOnlyList<SortDescription> descriptions)
@@ -640,7 +692,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void RebuildGroupedView()
     {
         GroupedColumns.Clear();
-        if (!GroupByAlbum)
+        if (!IsGroupedViewActive)
         {
             foreach (var row in Tracks)
             {
@@ -712,9 +764,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnGroupByAlbumChanged(bool value)
     {
+        OnPropertyChanged(nameof(IsGroupedViewActive));
         ApplySortAndGrouping();
         LayoutChanged?.Invoke(this, EventArgs.Empty);
         SortChanged?.Invoke(this, EventArgs.Empty);
+        if (value && !PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn))
+        {
+            SetStatus("已开启按专辑分组：请按“专辑”或“专辑艺术家”列排序，分组列表才会显示。");
+        }
     }
 
     public void SortBy(string? sortProperty, bool? descending = null)
@@ -728,6 +785,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var desc = descending ?? (isSame ? !CurrentLayout.SortDescending : false);
         CurrentLayout.SortColumn = sortProperty;
         CurrentLayout.SortDescending = desc;
+        OnPropertyChanged(nameof(IsGroupedViewActive));
         ApplySortAndGrouping();
         PersistCurrentLayout();
     }
@@ -812,9 +870,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void ApplyPreset(ColumnPreset preset)
     {
-        // Presets describe columns only; keep the user's current grouped-cover size.
+        // Presets describe columns only; keep the user's current grouped-cover size and
+        // the per-group disc/track ordering preference.
         var applied = preset.ToLayout();
         applied.GroupCoverSize = CurrentLayout.GroupCoverSize;
+        applied.GroupSortByDiscTrack = CurrentLayout.GroupSortByDiscTrack;
         CurrentLayout = ViewLayoutFactory.Normalize(applied);
         ApplySortAndGrouping();
         PersistCurrentLayout(null, captureFromView: false);
@@ -913,6 +973,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         row.IsPlaying = true;
         CurrentRowChanged?.Invoke(this, EventArgs.Empty);
         UpdateNowPlayingMetadata(row);
+        BeginNowPlayingCoverLoad(row.Track);
         DurationSeconds = row.Track.DurationMs / 1000.0;
         DurationText = DisplayFormatter.Duration(row.Track.DurationMs);
         PositionSeconds = 0;
@@ -935,7 +996,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     _host.Logger.Debug($"Playback counter update failed: {ex.Message}");
                 }
             });
-            _ = LoadNowPlayingCoverAsync(row.Track);
             _ = LoadRowCoverAsync(row);
         }
         catch (Exception ex)
@@ -1011,13 +1071,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CurrentTitle = "未在播放";
         CurrentSubtitle = string.Empty;
         CurrentInfo = string.Empty;
+        // Invalidate any in-flight cover decode and drop the artwork right away.
+        _nowPlayingCoverVersion++;
+        _currentCoverPath = null;
+        IsNowPlayingCoverLoading = false;
         CurrentCover = null;
         OnPropertyChanged(nameof(HasCurrentTrack));
     }
 
     private List<TrackRowViewModel> GetPlaybackOrder()
     {
-        var view = GroupByAlbum ? (ICollectionView)_groupedTracksView : _tracksView;
+        var view = IsGroupedViewActive ? (ICollectionView)_groupedTracksView : _tracksView;
         return view.Cast<TrackRowViewModel>().Where(r => r.IsPlayable).ToList();
     }
 
@@ -1042,20 +1106,57 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         DurationText = DisplayFormatter.Duration(track.DurationMs);
     }
 
-    private async Task LoadNowPlayingCoverAsync(Track track)
+    /// <summary>
+    /// Starts loading the now-playing cover. The previous track's artwork is removed
+    /// immediately, so switching songs never shows the old cover while the new one decodes.
+    /// </summary>
+    private void BeginNowPlayingCoverLoad(Track track, bool keepExistingCover = false)
+    {
+        var version = ++_nowPlayingCoverVersion;
+        var isSameTrack = string.Equals(_currentCoverPath, track.Path, StringComparison.OrdinalIgnoreCase);
+        if (!keepExistingCover && !isSameTrack)
+        {
+            CurrentCover = null;
+            _currentCoverPath = null;
+        }
+
+        if (!keepExistingCover || CurrentCover is null)
+        {
+            IsNowPlayingCoverLoading = true;
+        }
+
+        _ = LoadNowPlayingCoverAsync(track, version);
+    }
+
+    private async Task LoadNowPlayingCoverAsync(Track track, int version)
     {
         try
         {
+            _host.Logger.Debug($"Now playing cover load start: {track.Path}");
             var image = await _host.CoverImages.GetAsync(new CoverRequest(track.Path, track.CoverKey ?? string.Empty,
                 track.ModifiedAtUtc, track.FileSize), 420);
-            if (CurrentRow?.Track.Path == track.Path)
+            if (version != _nowPlayingCoverVersion ||
+                !string.Equals(CurrentRow?.Track.Path, track.Path, StringComparison.OrdinalIgnoreCase))
             {
-                CurrentCover = image;
+                _host.Logger.Debug($"Now playing cover discarded (stale): {track.Path}");
+                return;
             }
+
+            CurrentCover = image;
+            _currentCoverPath = image is null ? null : track.Path;
+            _host.Logger.Debug($"Now playing cover loaded: {track.Path} ({(image is null ? "none" : "ok")})");
         }
         catch (Exception ex)
         {
             _host.Logger.Debug($"Now playing cover failed: {ex.Message}");
+        }
+        finally
+        {
+            // Only the most recent request may clear the loading state.
+            if (version == _nowPlayingCoverVersion)
+            {
+                IsNowPlayingCoverLoading = false;
+            }
         }
     }
 
@@ -1944,7 +2045,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 if (ReferenceEquals(CurrentRow, row))
                 {
                     UpdateNowPlayingMetadata(row);
-                    await LoadNowPlayingCoverAsync(updated);
+                    BeginNowPlayingCoverLoad(updated);
                 }
             }
 

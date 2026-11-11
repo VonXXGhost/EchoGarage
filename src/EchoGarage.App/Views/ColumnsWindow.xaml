@@ -138,8 +138,11 @@
             <TextBlock Text="排序" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
             <ComboBox x:Name="SortColumnBox" />
             <CheckBox x:Name="DescendingBox" Content="降序" Margin="0,10,0,0" />
+            <CheckBox x:Name="GroupDiscTrackBox" Content="分组内按碟片号 / 曲目号排序" Margin="0,10,0,0" />
+            <TextBlock Text="勾选后，专辑分组内的歌曲始终按碟片号 → 曲目号升序排列；分组列表仅在按“专辑”或“专辑艺术家”排序时显示，其他排序方式保持普通列表。"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
             <TextBlock Text="排序也可以在表头上点击列名切换。" Foreground="{DynamicResource TextMutedBrush}"
-                       FontSize="11" TextWrapping="Wrap" Margin="0,12,0,0" />
+                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
         </StackPanel>
 
         <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

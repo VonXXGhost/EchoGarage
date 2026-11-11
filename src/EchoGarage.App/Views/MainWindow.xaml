@@ -22,7 +22,7 @@
         <!-- ================= Cell templates ================= -->
         <DataTemplate x:Key="Cell.Cover">
             <Border Width="24" Height="24" CornerRadius="3" Background="{DynamicResource CoverPlaceholderBrush}" ClipToBounds="True"
-                    Visibility="{Binding DataContext.GroupByAlbum, RelativeSource={RelativeSource AncestorType=Window},
+                    Visibility="{Binding DataContext.IsGroupedViewActive, RelativeSource={RelativeSource AncestorType=Window},
                                          Converter={StaticResource InverseBoolToVisibility}}">
                 <Image Source="{Binding CoverImage}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" />
             </Border>
@@ -222,6 +222,38 @@
                        TextTrimming="CharacterEllipsis" />
         </DataTemplate>
 
+        <!-- ================= Now-playing cover spinner ================= -->
+        <!-- Rotating accent arc shown while the large cover decodes. The fade-in delay
+             hides the spinner for fast (cached) loads so it never flashes. -->
+        <Style x:Key="NowPlayingCoverSpinner" TargetType="Grid">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <RotateTransform />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsNowPlayingCoverLoading}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard x:Name="CoverSpinnerStoryboard">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1"
+                                                 BeginTime="0:0:0.12" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                 From="0" To="360" Duration="0:0:1.05" RepeatBehavior="Forever" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <StopStoryboard BeginStoryboardName="CoverSpinnerStoryboard" />
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- ================= Sidebar item ================= -->
         <Style x:Key="SourceItemStyle" TargetType="ListBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
@@ -292,7 +324,8 @@
         <ContextMenu x:Key="ViewMenu">
             <MenuItem Header="显示专辑信息面板" IsCheckable="False"
                       Command="{Binding ToggleAlbumPanelCommand}" />
-            <MenuItem Header="按专辑分组" IsCheckable="True" IsChecked="{Binding GroupByAlbum, Mode=TwoWay}" />
+            <MenuItem Header="按专辑分组" IsCheckable="True" IsChecked="{Binding GroupByAlbum, Mode=TwoWay}"
+                      ToolTip="分组列表只在按“专辑”或“专辑艺术家”排序时显示；其他排序方式保持普通列表。" />
             <MenuItem Header="使用浅色主题" Command="{Binding SetThemeCommand}" CommandParameter="0" />
             <MenuItem Header="使用深色主题" Command="{Binding SetThemeCommand}" CommandParameter="1" />
             <MenuItem Header="列与布局…" Command="{Binding EditColumnsCommand}" />
@@ -443,7 +476,7 @@
 
                 <DataGrid x:Name="TrackGrid" Grid.Row="1"
                           AutomationProperties.AutomationId="TrackGrid"
-                          Visibility="{Binding GroupByAlbum, Converter={StaticResource InverseBoolToVisibility}}"
+                          Visibility="{Binding IsGroupedViewActive, Converter={StaticResource InverseBoolToVisibility}}"
                           ItemsSource="{Binding TracksView}"
                           SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                           SelectionChanged="OnTrackSelectionChanged"
@@ -458,7 +491,7 @@
 
                 <!-- Grouped view: foobar2000-style album gutter; the cover spans the whole
                      group and songs are listed to its right. -->
-                <Grid Grid.Row="1" Visibility="{Binding GroupByAlbum, Converter={StaticResource BoolToVisibility}}">
+                <Grid Grid.Row="1" Visibility="{Binding IsGroupedViewActive, Converter={StaticResource BoolToVisibility}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="30" />
                         <RowDefinition Height="*" />
@@ -554,9 +587,19 @@
                         <StackPanel Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
                             <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True" Height="300">
                                 <Grid>
-                                    <Image Source="{Binding CurrentCover}" Stretch="Uniform" />
-                                    <TextBlock Text="♪" FontSize="54" Foreground="{DynamicResource CoverNoteBrush}" HorizontalAlignment="Center"
-                                               VerticalAlignment="Center" />
+                                    <Image Source="{Binding CurrentCover}" Stretch="Uniform"
+                                           RenderOptions.BitmapScalingMode="HighQuality" />
+                                    <TextBlock Text="♪" FontSize="54" Foreground="{DynamicResource CoverNoteBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding ShowCoverPlaceholder, Converter={StaticResource BoolToVisibility}}" />
+                                    <Grid Width="52" Height="52" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Style="{StaticResource NowPlayingCoverSpinner}">
+                                        <Ellipse Width="52" Height="52" Stroke="{DynamicResource CoverNoteBrush}"
+                                                 StrokeThickness="3" Opacity="0.35" />
+                                        <Path Stroke="{DynamicResource AccentBrush}" StrokeThickness="3"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                              Data="M 26,4 A 22,22 0 1 1 4,26" />
+                                    </Grid>
                                 </Grid>
                             </Border>
                             <TextBlock Text="{Binding CurrentTitle}" FontSize="18" FontWeight="SemiBold" Margin="0,16,0,0"

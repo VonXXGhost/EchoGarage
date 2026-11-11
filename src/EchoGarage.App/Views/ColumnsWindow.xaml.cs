@@ -74,6 +74,7 @@ public partial class ColumnsWindow : ThemedWindow
         var currentSortHeader = _rows.FirstOrDefault(r => r.Key == layout.SortColumn)?.Header;
         SortColumnBox.SelectedItem = currentSortHeader ?? "（默认顺序）";
         DescendingBox.IsChecked = layout.SortDescending;
+        GroupDiscTrackBox.IsChecked = normalized.GroupSortByDiscTrack;
     }
 
     public ColumnsEditResult? Result { get; private set; }
@@ -166,8 +167,8 @@ public partial class ColumnsWindow : ThemedWindow
 
     private PlaylistViewLayout BuildLayout()
     {
-        // The dialog edits columns only; the grouped album-cover size is adjusted by
-        // dragging the cover column and must survive a round-trip through this dialog.
+        // The dialog edits columns only; the grouped album-cover size and the per-group
+        // disc/track ordering preference are adjusted outside and must survive a round-trip.
         var layout = new PlaylistViewLayout { GroupCoverSize = _groupCoverSize };
         foreach (var row in _rows)
         {
@@ -185,6 +186,7 @@ public partial class ColumnsWindow : ThemedWindow
         }
 
         layout.SortDescending = DescendingBox.IsChecked == true;
+        layout.GroupSortByDiscTrack = GroupDiscTrackBox.IsChecked == true;
         return ViewLayoutFactory.Normalize(layout);
     }
 

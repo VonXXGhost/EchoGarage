@@ -448,7 +448,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_vm.GroupByAlbum)
+        if (_vm.IsGroupedViewActive)
         {
             if (GroupedList.Items.Contains(_vm.CurrentRow))
             {

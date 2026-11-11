@@ -69,13 +69,20 @@ public sealed class PlaylistViewLayout
     /// </summary>
     public double GroupCoverSize { get; set; } = 96;
 
+    /// <summary>
+    /// When true, songs inside an album group are ordered by disc number and then by
+    /// track number (ascending) instead of the playlist's current sort order.
+    /// </summary>
+    public bool GroupSortByDiscTrack { get; set; } = true;
+
     public PlaylistViewLayout Clone() => new()
     {
         PresetName = PresetName,
         Columns = Columns.Select(c => c.Clone()).ToList(),
         SortColumn = SortColumn,
         SortDescending = SortDescending,
-        GroupCoverSize = GroupCoverSize
+        GroupCoverSize = GroupCoverSize,
+        GroupSortByDiscTrack = GroupSortByDiscTrack
     };
 }
 

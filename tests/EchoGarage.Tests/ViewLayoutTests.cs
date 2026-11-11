@@ -98,6 +98,21 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
+    public void GroupSortByDiscTrack_DefaultsToTrueAndRoundTrips()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        Assert.True(layout.GroupSortByDiscTrack);
+        Assert.True(ViewLayoutFactory.Normalize(layout).GroupSortByDiscTrack);
+        Assert.True(layout.Clone().GroupSortByDiscTrack);
+
+        layout.GroupSortByDiscTrack = false;
+        var json = ViewLayoutFactory.Serialize(layout);
+        var restored = ViewLayoutFactory.Deserialize(json);
+        Assert.False(restored.GroupSortByDiscTrack);
+        Assert.False(restored.Clone().GroupSortByDiscTrack);
+    }
+
+    [Fact]
     public void SmartDefinition_RoundTrips()
     {
         var definition = new SmartPlaylistDefinition

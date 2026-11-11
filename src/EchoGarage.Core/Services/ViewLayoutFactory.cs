@@ -41,7 +41,8 @@ public static class ViewLayoutFactory
             SortColumn = layout.SortColumn,
             SortDescending = layout.SortDescending,
             GroupCoverSize = Math.Clamp(groupCoverSize, PlaylistViewLayout.MinGroupCoverSize,
-                PlaylistViewLayout.MaxGroupCoverSize)
+                PlaylistViewLayout.MaxGroupCoverSize),
+            GroupSortByDiscTrack = layout.GroupSortByDiscTrack
         };
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
