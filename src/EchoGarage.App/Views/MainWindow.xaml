@@ -28,6 +28,29 @@
             </Border>
         </DataTemplate>
 
+        <!-- Grouped mode: the first row of each album is taller and carries the album cover,
+             so the cover sits beside the song list instead of in the group header. -->
+        <DataTemplate x:Key="Cell.CoverGrouped">
+            <Border x:Name="Cover"
+                    Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                    Height="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                    Margin="8" CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
+                    ClipToBounds="True" HorizontalAlignment="Left" VerticalAlignment="Center"
+                    Visibility="Collapsed">
+                <Image Source="{Binding GroupCoverImage}" Stretch="UniformToFill"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsAlbumGroupStart}" Value="True">
+                    <Setter TargetName="Cover" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <Style x:Key="GroupCoverCell" TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
         <DataTemplate x:Key="Cell.Status">
             <TextBlock Text="{Binding StatusGlyph}" Foreground="{DynamicResource AccentBrush}" FontSize="10"
                        HorizontalAlignment="Center" />
@@ -354,28 +377,31 @@
                         <GroupStyle>
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
-                                    <Border Background="{DynamicResource GroupHeaderBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,0,0,1" Padding="8,10" Loaded="OnGroupHeaderLoaded"
-                                            Unloaded="OnGroupHeaderUnloaded">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    Height="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
-                                                    ClipToBounds="True" Margin="0,0,14,0">
-                                                <Image Source="{Binding Items[0].GroupCoverImage}" Stretch="UniformToFill"
-                                                       RenderOptions.BitmapScalingMode="HighQuality" />
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Items[0].AlbumGroupTitle}" FontSize="18"
-                                                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding Items[0].AlbumGroupArtist}"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13"
-                                                           Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding Items[0].AlbumGroupYear}"
-                                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                                                           Margin="0,2,0,0" />
-                                            </StackPanel>
-                                        </StackPanel>
+                                    <Border Background="{DynamicResource GroupHeaderBackgroundBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="8,0" Height="30">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Items[0].AlbumGroupTitle}"
+                                                       FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource AccentBrush}"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Items[0].AlbumGroupArtist}"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                                                       Margin="10,0,0,0" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Border Grid.Column="2" Height="1" Margin="12,0"
+                                                    Background="{DynamicResource RowSeparatorBrush}"
+                                                    VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{Binding Items[0].AlbumGroupYear}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                                       VerticalAlignment="Center" />
+                                        </Grid>
                                     </Border>
                                 </DataTemplate>
                             </GroupStyle.HeaderTemplate>

@@ -598,18 +598,26 @@
             <DataTrigger Binding="{Binding IsMissing}" Value="True">
                 <Setter Property="Opacity" Value="0.55" />
             </DataTrigger>
+            <DataTrigger Binding="{Binding IsAlbumGroupStart}" Value="True">
+                <!-- Taller row whose cover cell carries the album art next to the song list. -->
+                <Setter Property="Height"
+                        Value="{Binding DataContext.GroupCoverRowHeight, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+            </DataTrigger>
         </Style.Triggers>
     </Style>
 
     <Style TargetType="DataGridCell">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="8,0" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridCell">
-                    <Border Background="{TemplateBinding Background}" Padding="8,0" SnapsToDevicePixels="True">
+                    <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                            BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
+                            SnapsToDevicePixels="True">
                         <ContentPresenter VerticalAlignment="Center" />
                     </Border>
                 </ControlTemplate>

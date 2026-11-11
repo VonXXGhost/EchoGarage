@@ -1,35 +1,33 @@
-# KB-008：分组封面尺寸、布局持久化、进度条空状态与音量/静音
+# KB-008：分组列表布局（封面+单行标签+分割线）、布局持久化、进度条空状态与音量/静音
 
 - 状态：已批准（Accepted，2026-11-10，owner 指示记录为 KB，不需要 ADR；2026-11-11 更新）
 - 日期：2026-11-10
 - 关联：ADR-005（播放列表显示格式）、ADR-006（配置与媒体库分离）
-- 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建与分组头、底部进度条与音量区
+- 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建 / 分组头 / 行模板、底部进度条与音量区
 
-## 1. 分组封面尺寸（GroupCoverSize）
+## 1. 分组列表布局（v2：单行标签 + 封面与歌曲列表并列）
 
-- `PlaylistViewLayout` 增加 `GroupCoverSize`（double，默认 96，范围 48–320），表示**实际显示的
-  封面边长**，随布局一起序列化：媒体库视图存 `settings.json` 的 `libraryLayout`，普通播放列表
-  存各自 `ViewLayoutJson`；旧 JSON 没有该字段时按 96 处理（`ViewLayoutFactory.Normalize` 里
-  `<= 0` 视为缺失，超出范围则 clamp）。
-- 分组模式下封面列宽 = `GroupCoverSize + 16`（左右各 8px 内边距）；列的最小 / 最大宽度相应为
-  64 / 336。拖动表头右缘时 `GroupCoverSize = 列宽 - 16`。该值**不写回**普通模式下的封面列宽，
-  取消分组后逐行封面仍用原列宽（行内图片固定 24px，与行高 32px 匹配）。
-- 对齐：分组头模板 `Padding="8,10"`，与 `DataGridColumnHeader` 的 `Padding="8,0"` 一致，因此
-  封面在封面列内的左右留白相等，正好和“封面”表头文字对齐，右缘不会越过分栏线。
-- 实时联动：`MainWindow` 用 `DependencyPropertyDescriptor.FromProperty(DataGridColumn.WidthProperty, ...)`
-  监听封面列的宽度变化，写入 `MainViewModel.GroupCoverSize`（ObservableProperty）；
-  分组头模板的封面 `Border` 通过
-  `{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}`
-  绑定宽高，所以拖动时封面跟手变化。
-- 持久化：拖动停下后 600ms 防抖调用 `PersistCurrentLayout(CaptureLayoutFromGrid())`；
-  `CaptureLayoutFromGrid` 在分组模式下把 `封面列 ActualWidth - 16` 写进 `GroupCoverSize`，
-  普通列宽照旧。关闭窗口 / 切换播放列表仍走原有保存路径。
-- 列与布局对话框只编辑列，`GroupCoverSize` 原样透传；应用预设时保留当前值（预设不包含
-  封面尺寸，`ColumnPreset` 未增加字段）。
-- 分组头封面单独解码：`TrackRowViewModel.GroupCoverImage` 以 512px 请求
-  （`CoverImageService` 按 `尺寸|coverKey` 缓存，LRU 300），在 320 DIP、150% DPI 下仍清晰；
-  分组头虚拟化卸载时（模板根 `Border.Unloaded`）清空引用，避免滚过所有专辑后大图常驻。
-- 注意：封面调大后列总宽可能超过窗口，出现横向滚动条属正常；用户可加宽窗口或隐藏其他列。
+用户反馈旧分组头“封面 96px + 标题/艺术家/年份 3 行堆叠”信息密度太低，目标是：
+
+- 分组头只占一行：专辑名（Accent 色、SemiBold）+ 专辑艺术家 + 分隔线 + 年份（右对齐），
+  高 30px，底部 1px 分割线；不再在分组头里放封面。
+- 封面放到该专辑**第一行歌曲**的“封面”格中，与歌曲列表并列。该行高度 =
+  `GroupCoverSize + 17`（上下各 8px 边距 + 1px 底部分割线），其余行仍为 32px；
+  这样封面在视觉上位于分组标题下方、紧挨歌曲列表，而不是把整块头部撑高。
+- 实现：`MainViewModel.ApplySortAndGrouping()` 每次刷新后调用
+  `UpdateAlbumGroupStarts()`，遍历 `_tracksView.Groups` 把每组第一行的
+  `TrackRowViewModel.IsAlbumGroupStart` 置 true；`Controls.xaml` 的 `DataGridRow`
+  样式用 `DataTrigger` 命中该属性，把行高绑定到 `GroupCoverRowHeight`。
+- 封面列在分组模式下使用 `Cell.CoverGrouped` 模板（`IsAlbumGroupStart` 时显示
+  `GroupCoverImage`，尺寸 512px 解码）；`GroupCoverCell` 样式把 Cell 的 Padding 设为 0，
+  封面 Border `Margin="8"` 正好落在“封面”列内。
+- 封面尺寸仍由“封面”列宽驱动：`GroupCoverSize` 表示封面实际显示尺寸，
+  列宽 = `GroupCoverSize + 16`（左右各 8px 内边距）；拖动列宽时
+  `GroupCoverSize = 列宽 - 16`。范围 48–320，随播放列表布局持久化。
+- 歌曲之间加 1px 浅色分割线：`DataGridCell` 模板的 Border 使用
+  `BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"`；
+  `RowSeparatorBrush` 在两个主题字典中分别定义（浅色 `#EDF0F4`、深色 `#1E242C`）。
+- 封面调大后列总宽可能超过窗口，出现横向滚动条属正常。
 
 ## 2. 启动时布局被默认值覆盖的坑
 
@@ -53,15 +51,14 @@
   绑定它；空闲时 `Maximum=1, Value=0`，Thumb 在最左侧、轨道为空。`DurationSeconds` 变化时
   手动通知 `SeekMaximum`。
 - 同时把进度条 `IsEnabled` 绑定到 `HasCurrentTrack`，无播放时不可拖动（避免拖动 Thumb 把
-  `Value` 的 OneWay 绑定顶掉）；Slider 样式补了 `IsEnabled=False` 时 `Opacity=0.45`，
-  空状态一眼可辨。
+  `Value` 的 OneWay 绑定顶掉）；Slider 样式补了 `IsEnabled=False` 时 `Opacity=0.45`。
 
 ## 4. 音量百分比与静音状态
 
 - 滑块右侧显示 `VolumeText`：未静音显示四舍五入百分比（如 `70%`），静音时显示“静音”。
 - 静音按钮：`Content` 绑定 `MuteGlyph`（🔊 / 🔇）、`ToolTip` 绑定 `MuteToolTip`
   （静音 / 取消静音）；按钮样式带 `DataTrigger`，`IsMuted=True` 时背景用
-  `AccentSoftBrush`、前景用 `AccentBrush`，状态一眼可见。
+  `AccentSoftBrush`、前景用 `AccentBrush`。
 - `IsMuted` 只是会话状态，不写入 `settings.json`（`Volume` 仍持久化）；静音时
   `Player.Volume=0`，取消静音恢复 `Volume/100`。
 - 相关 `AutomationId`：`VolumeSlider`、`VolumeText`、`MuteButton`，方便 UI 自动化验证。
@@ -70,8 +67,9 @@
 
 - 单元测试：`ViewLayoutTests.Normalize_ClampsGroupedCoverSize_AndRoundTrips`（默认值 / clamp /
   序列化 / Clone）。
-- UI：`--screenshot` 分别截默认 96px 和拖动后 176px 的分组封面，检查封面左右留白相等、
-  与“封面”表头对齐且不越过分栏线；截无播放时的进度条，确认 Thumb 在最左侧、轨道为空。
-- 静音状态截图确认“静音”文字 + 高亮按钮；重启后 `libraryLayout.groupCoverSize` 保持。
-- 鼠标拖拽用 UI Automation 定位表头 `Thumb` 后 `SetCursorPos + mouse_event` 模拟，
-  拖完读 `settings.json` 确认保存。
+- UI：`--screenshot` 截分组布局（浅色 / 深色）：分组头单行、封面在第一行歌曲左侧、
+  行间 1px 分割线；拖动封面列后重启检查 `libraryLayout.groupCoverSize` 保持。
+- UI Automation 读行高：分组首行应为 `GroupCoverSize + 17`，其余 32；调度行文本位置确认
+  封面与歌曲同排。
+- 无播放进度条截图确认 Thumb 在最左侧、轨道为空；播放中用真实鼠标点击跳转并检查
+  `Seeked to` 日志。

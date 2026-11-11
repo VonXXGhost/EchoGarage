@@ -126,8 +126,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private double _groupCoverSize = PlaylistViewLayout.DefaultGroupCoverSize;
 
-    partial void OnGroupCoverSizeChanged(double value) =>
+    /// <summary>Height of the first row of an album group: cover size plus 8px top/bottom
+    /// margins and the cell's 1px bottom separator.</summary>
+    public double GroupCoverRowHeight => GroupCoverSize + 17;
+
+    partial void OnGroupCoverSizeChanged(double value)
+    {
+        OnPropertyChanged(nameof(GroupCoverRowHeight));
         _host.Logger.Debug($"Group cover size: {value:F1}");
+    }
 
     partial void OnCurrentLayoutChanged(PlaylistViewLayout value)
     {
@@ -603,6 +610,34 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         _tracksView.Refresh();
+        UpdateAlbumGroupStarts();
+    }
+
+    /// <summary>
+    /// Marks the first row of each album group. That row is taller and renders the album
+    /// cover in its cover cell, so the cover sits beside the song list instead of inside
+    /// the group header (group headers are now a single compact line).
+    /// </summary>
+    private void UpdateAlbumGroupStarts()
+    {
+        foreach (var row in Tracks)
+        {
+            row.IsAlbumGroupStart = false;
+        }
+
+        if (!GroupByAlbum)
+        {
+            return;
+        }
+
+        foreach (var group in _tracksView.Groups)
+        {
+            if (group is CollectionViewGroup { Items.Count: > 0 } viewGroup &&
+                viewGroup.Items[0] is TrackRowViewModel first)
+            {
+                first.IsAlbumGroupStart = true;
+            }
+        }
     }
 
     partial void OnGroupByAlbumChanged(bool value)

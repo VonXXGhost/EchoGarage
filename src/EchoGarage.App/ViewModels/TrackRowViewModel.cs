@@ -28,6 +28,10 @@ public sealed partial class TrackRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
+    /// <summary>True for the first visible row of an album group (it carries the album cover).</summary>
+    [ObservableProperty]
+    private bool _isAlbumGroupStart;
+
     public TrackRowViewModel(Track track, int rowNumber)
     {
         Track = track;

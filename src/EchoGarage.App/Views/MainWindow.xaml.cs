@@ -221,15 +221,16 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var cellTemplate = TryFindResource("Cell." + ToPascalCase(column.Key)) as DataTemplate;
+            var isGroupedCover = _vm.GroupByAlbum &&
+                                 string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase);
+            var templateKey = isGroupedCover ? "Cell.CoverGrouped" : "Cell." + ToPascalCase(column.Key);
+            var cellTemplate = TryFindResource(templateKey) as DataTemplate;
             if (cellTemplate is null)
             {
                 continue;
             }
 
             SortPropertyMap.TryGetValue(column.Key, out var sortProperty);
-            var isGroupedCover = _vm.GroupByAlbum &&
-                                 string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase);
             // The cover column carries the album cover plus equal left/right insets so the
             // cover lines up with the column header padding instead of spilling over the
             // column divider.
@@ -251,7 +252,8 @@ public partial class MainWindow : Window
                     : 1400,
                 SortMemberPath = sortProperty,
                 CanUserSort = descriptor.Sortable && sortProperty is not null,
-                IsReadOnly = true
+                IsReadOnly = true,
+                CellStyle = isGroupedCover ? TryFindResource("GroupCoverCell") as Style : null
             };
 
             if (sortProperty is not null &&
@@ -438,9 +440,16 @@ public partial class MainWindow : Window
         if (e.Row.DataContext is TrackRowViewModel row)
         {
             row.IsSelected = TrackGrid.SelectedItems.Contains(row);
-            if (!_vm.GroupByAlbum)
+            if (_vm.GroupByAlbum)
             {
-                // Grouped mode shows one large album cover and hides the per-row cover.
+                // Grouped mode: only the first row of an album shows the (large) cover.
+                if (row.IsAlbumGroupStart)
+                {
+                    _ = _vm.LoadGroupCoverAsync(row);
+                }
+            }
+            else
+            {
                 _ = _vm.LoadRowCoverAsync(row);
             }
         }
@@ -451,32 +460,7 @@ public partial class MainWindow : Window
         if (e.Row.DataContext is TrackRowViewModel row)
         {
             row.CoverImage = null;
-        }
-    }
-
-    private void OnGroupHeaderLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
-        {
-            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
-            if (first is not null)
-            {
-                _ = _vm.LoadGroupCoverAsync(first);
-            }
-        }
-    }
-
-    private void OnGroupHeaderUnloaded(object sender, RoutedEventArgs e)
-    {
-        // Release the large header cover while the group is virtualized away; it will be
-        // reloaded from the bounded image cache when the header becomes visible again.
-        if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
-        {
-            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
-            if (first is not null)
-            {
-                first.GroupCoverImage = null;
-            }
+            row.GroupCoverImage = null;
         }
     }
 
