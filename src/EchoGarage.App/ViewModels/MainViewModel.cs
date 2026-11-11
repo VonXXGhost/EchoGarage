@@ -685,6 +685,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Re-applies the current sort to both views. The DataGrid drops the ItemsSource view's
+    /// SortDescriptions when its ItemsSource is rebound during a column rebuild, so the window
+    /// calls this right after rebuilding. Also used when only the sort order changed.
+    /// </summary>
+    public void ReapplySort() => ApplySortAndGrouping();
+
+    /// <summary>
     /// Rebuilds the grouped list's column header cells and the per-row cell list. The
     /// grouped view draws the album cover in a fixed gutter next to the whole group
     /// (foobar2000 style), so the cover column is not part of the row cells.
@@ -788,6 +795,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsGroupedViewActive));
         ApplySortAndGrouping();
         PersistCurrentLayout();
+        // Also fired for header clicks in the grouped list: the DataGrid behind the flat view
+        // must refresh its sort arrows when the sort changes while the grouped list is visible.
+        SortChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // =====================================================================

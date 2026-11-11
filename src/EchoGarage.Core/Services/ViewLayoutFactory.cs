@@ -82,11 +82,20 @@ public static class ViewLayoutFactory
             title.Visible = true;
         }
 
-        if (normalized.SortColumn is not null &&
-            !normalized.Columns.Any(c => c.Visible && string.Equals(c.Key, normalized.SortColumn, StringComparison.OrdinalIgnoreCase)))
+        if (normalized.SortColumn is not null)
         {
-            normalized.SortColumn = null;
-            normalized.SortDescending = false;
+            // SortColumn stores a row *property* name (e.g. "DurationSort"), not a column key;
+            // validate it against the visible columns through the catalog mapping so sorting by
+            // any column survives a layout round-trip (previously only properties whose names
+            // happened to match their column key, like "Title", were kept).
+            var sortDescriptor = ColumnCatalog.FindBySortProperty(normalized.SortColumn);
+            if (sortDescriptor is null ||
+                !normalized.Columns.Any(c => c.Visible &&
+                    string.Equals(c.Key, sortDescriptor.Key, StringComparison.OrdinalIgnoreCase)))
+            {
+                normalized.SortColumn = null;
+                normalized.SortDescending = false;
+            }
         }
 
         return normalized;

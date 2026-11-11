@@ -1,4 +1,5 @@
 using System.Windows;
+using EchoGarage.Core.Services;
 
 namespace EchoGarage.App.ViewModels;
 
@@ -24,28 +25,13 @@ public sealed class GroupedColumnHeaderViewModel
 /// <summary>Maps playlist column keys to the row property used for sorting.</summary>
 public static class TrackSortMap
 {
+    /// <summary>
+    /// Derived from <see cref="ColumnCatalog"/> so header sorting, the grouped list and layout
+    /// normalization all use the same column → sort-property mapping.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, string?> ByKey =
-        new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["cover"] = null,
-            ["status"] = null,
-            ["index"] = nameof(TrackRowViewModel.RowNumber),
-            ["title"] = nameof(TrackRowViewModel.Title),
-            ["artist"] = nameof(TrackRowViewModel.Artist),
-            ["album"] = nameof(TrackRowViewModel.Album),
-            ["albumArtist"] = nameof(TrackRowViewModel.AlbumArtist),
-            ["trackNumber"] = nameof(TrackRowViewModel.TrackNumberSort),
-            ["discNumber"] = nameof(TrackRowViewModel.DiscNumberSort),
-            ["year"] = nameof(TrackRowViewModel.YearSort),
-            ["genre"] = nameof(TrackRowViewModel.Genre),
-            ["duration"] = nameof(TrackRowViewModel.DurationSort),
-            ["bitrate"] = nameof(TrackRowViewModel.BitrateSort),
-            ["sampleRate"] = nameof(TrackRowViewModel.SampleRateSort),
-            ["codec"] = nameof(TrackRowViewModel.Codec),
-            ["rating"] = nameof(TrackRowViewModel.RatingSort),
-            ["addedAt"] = nameof(TrackRowViewModel.AddedSort),
-            ["fileSize"] = nameof(TrackRowViewModel.FileSizeSort),
-            ["path"] = nameof(TrackRowViewModel.PathText),
-            ["comment"] = nameof(TrackRowViewModel.Comment)
-        };
+        ColumnCatalog.All.ToDictionary(
+            c => c.Key,
+            c => c.SortProperty,
+            StringComparer.OrdinalIgnoreCase);
 }

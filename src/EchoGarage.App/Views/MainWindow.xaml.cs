@@ -225,6 +225,9 @@ public partial class MainWindow : Window
 
         BindingOperations.SetBinding(TrackGrid, ItemsControl.ItemsSourceProperty,
             new Binding(nameof(MainViewModel.TracksView)) { Source = _vm });
+        // Rebinding ItemsSource makes the DataGrid clear the view's SortDescriptions; restore
+        // the saved sort before rows are rendered.
+        _vm.ReapplySort();
         if (selectedRow is not null)
         {
             TrackGrid.SelectedItem = selectedRow;

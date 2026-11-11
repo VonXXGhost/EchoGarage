@@ -70,6 +70,61 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
+    public void Normalize_KeepsSortPropertyForVisibleSortableColumns()
+    {
+        foreach (var descriptor in ColumnCatalog.All.Where(c => !string.IsNullOrWhiteSpace(c.SortProperty)))
+        {
+            var layout = ViewLayoutFactory.CreateDefault();
+            layout.Columns.First(c => c.Key == descriptor.Key).Visible = true;
+            layout.SortColumn = descriptor.SortProperty;
+            layout.SortDescending = true;
+
+            var normalized = ViewLayoutFactory.Normalize(layout);
+
+            Assert.Equal(descriptor.SortProperty, normalized.SortColumn);
+            Assert.True(normalized.SortDescending);
+        }
+    }
+
+    [Fact]
+    public void Normalize_ClearsSortPropertyWhenItsColumnIsHidden()
+    {
+        // albumArtist is hidden in the default layout.
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.SortColumn = "AlbumArtist";
+        layout.SortDescending = true;
+
+        var normalized = ViewLayoutFactory.Normalize(layout);
+
+        Assert.Null(normalized.SortColumn);
+        Assert.False(normalized.SortDescending);
+    }
+
+    [Fact]
+    public void Normalize_ClearsUnknownSortProperty()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.SortColumn = "NotARealSortProperty";
+
+        Assert.Null(ViewLayoutFactory.Normalize(layout).SortColumn);
+    }
+
+    [Fact]
+    public void SerializeRoundTrip_PreservesDurationSort()
+    {
+        // Regression: the old normalization compared SortColumn with column *keys*, so sorting
+        // by time ("DurationSort") was silently cleared on every layout save.
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.SortColumn = "DurationSort";
+        layout.SortDescending = true;
+
+        var restored = ViewLayoutFactory.Deserialize(ViewLayoutFactory.Serialize(layout));
+
+        Assert.Equal("DurationSort", restored.SortColumn);
+        Assert.True(restored.SortDescending);
+    }
+
+    [Fact]
     public void Deserialize_InvalidJsonFallsBackToDefault()
     {
         var restored = ViewLayoutFactory.Deserialize("{ not json");

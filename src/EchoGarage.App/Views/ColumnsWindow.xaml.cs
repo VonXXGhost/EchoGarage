@@ -193,28 +193,7 @@ public partial class ColumnsWindow : ThemedWindow
     private string? SortPropertyFor(string header)
     {
         var key = _rows.FirstOrDefault(r => r.Header == header)?.Key;
-        return key switch
-        {
-            "index" => "RowNumber",
-            "title" => "Title",
-            "artist" => "Artist",
-            "album" => "Album",
-            "albumArtist" => "AlbumArtist",
-            "trackNumber" => "TrackNumberSort",
-            "discNumber" => "DiscNumberSort",
-            "year" => "YearSort",
-            "genre" => "Genre",
-            "duration" => "DurationSort",
-            "bitrate" => "BitrateSort",
-            "sampleRate" => "SampleRateSort",
-            "codec" => "Codec",
-            "rating" => "RatingSort",
-            "addedAt" => "AddedSort",
-            "fileSize" => "FileSizeSort",
-            "path" => "PathText",
-            "comment" => "Comment",
-            _ => null
-        };
+        return key is null ? null : ColumnCatalog.Find(key)?.SortProperty;
     }
 
     private void OnOk(object sender, RoutedEventArgs e)

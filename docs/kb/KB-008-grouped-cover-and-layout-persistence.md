@@ -5,6 +5,10 @@
 - 关联：ADR-005（播放列表显示格式）、ADR-006（配置与媒体库分离）
 - 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建 / 分组视图 / 行模板、底部进度条与音量区
 
+> 更新（2026-11-11）：本文第 1 节中“分组/平铺视图可见性由 `GroupByAlbum` 直接控制”的规则
+> 已被 [KB-009](KB-009-grouping-scrollbar-and-cover-loading.md) 第 1 条取代——分组只在按
+> “专辑”或“专辑艺术家”排序时显示。本文其余内容（封面栏、封面尺寸持久化、分割线、进度条/音量）仍有效。
+
 ## 1. 分组列表布局（foobar2000 风格：左侧封面栏 + 右侧歌曲列）
 
 DataGrid 不支持单元格跨行，无法做出“封面纵向覆盖整个专辑、歌曲列在右侧”的效果，因此：
@@ -31,9 +35,9 @@ DataGrid 不支持单元格跨行，无法做出“封面纵向覆盖整个专�
   这样线也覆盖最后一列右侧的空白。`RowSeparatorBrush` 浅色 `#EDF0F4`、深色 `#1E242C`。
 - 封面 512px 解码（`TrackRowViewModel.GroupCoverImage`），分组虚拟化卸载时清空引用；
   封面调大后列总宽可能超过窗口，超出部分裁切（分组视图无横向滚动）。
-- 分组/平铺切换：`GroupByAlbum` 绑定两个视图的 Visibility；`ApplySortAndGrouping()` 同时
-  刷新两个 `ListCollectionView` 并重建分组列头/cell；播放顺序也按当前视图取
-  （`GetPlaybackOrder()` 分组时用 `GroupedTracksView`）。
+- 分组/平铺切换：规则见 KB-009 第 1 条——`IsGroupedViewActive = GroupByAlbum && 按“专辑/专辑艺术家”排序`；
+  `ApplySortAndGrouping()` 同时刷新两个 `ListCollectionView` 并重建分组列头/cell；播放顺序也按实际
+  显示的视图取（`GetPlaybackOrder()` 用 `IsGroupedViewActive` 判断）。
 
 ## 2. 启动时布局被默认值覆盖的坑
 
