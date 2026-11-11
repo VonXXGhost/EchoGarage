@@ -28,9 +28,14 @@ public sealed partial class TrackRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
-    /// <summary>True for the first visible row of an album group (it carries the album cover).</summary>
-    [ObservableProperty]
-    private bool _isAlbumGroupStart;
+    private IReadOnlyList<TrackCellViewModel> _cells = [];
+
+    /// <summary>Cells rendered by the grouped list; rebuilt when the column layout changes.</summary>
+    public IReadOnlyList<TrackCellViewModel> Cells
+    {
+        get => _cells;
+        set => SetProperty(ref _cells, value);
+    }
 
     public TrackRowViewModel(Track track, int rowNumber)
     {

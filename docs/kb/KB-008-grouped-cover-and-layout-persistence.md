@@ -1,33 +1,39 @@
-# KB-008：分组列表布局（封面+单行标签+分割线）、布局持久化、进度条空状态与音量/静音
+# KB-008：分组列表布局（foobar2000 风格封面栏）、布局持久化、进度条空状态与音量/静音
 
 - 状态：已批准（Accepted，2026-11-10，owner 指示记录为 KB，不需要 ADR；2026-11-11 更新）
 - 日期：2026-11-10
 - 关联：ADR-005（播放列表显示格式）、ADR-006（配置与媒体库分离）
-- 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建 / 分组头 / 行模板、底部进度条与音量区
+- 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建 / 分组视图 / 行模板、底部进度条与音量区
 
-## 1. 分组列表布局（v2：单行标签 + 封面与歌曲列表并列）
+## 1. 分组列表布局（foobar2000 风格：左侧封面栏 + 右侧歌曲列）
 
-用户反馈旧分组头“封面 96px + 标题/艺术家/年份 3 行堆叠”信息密度太低，目标是：
+DataGrid 不支持单元格跨行，无法做出“封面纵向覆盖整个专辑、歌曲列在右侧”的效果，因此：
 
-- 分组头只占一行：专辑名（Accent 色、SemiBold）+ 专辑艺术家 + 分隔线 + 年份（右对齐），
-  高 30px，底部 1px 分割线；不再在分组头里放封面。
-- 封面放到该专辑**第一行歌曲**的“封面”格中，与歌曲列表并列。该行高度 =
-  `GroupCoverSize + 17`（上下各 8px 边距 + 1px 底部分割线），其余行仍为 32px；
-  这样封面在视觉上位于分组标题下方、紧挨歌曲列表，而不是把整块头部撑高。
-- 实现：`MainViewModel.ApplySortAndGrouping()` 每次刷新后调用
-  `UpdateAlbumGroupStarts()`，遍历 `_tracksView.Groups` 把每组第一行的
-  `TrackRowViewModel.IsAlbumGroupStart` 置 true；`Controls.xaml` 的 `DataGridRow`
-  样式用 `DataTrigger` 命中该属性，把行高绑定到 `GroupCoverRowHeight`。
-- 封面列在分组模式下使用 `Cell.CoverGrouped` 模板（`IsAlbumGroupStart` 时显示
-  `GroupCoverImage`，尺寸 512px 解码）；`GroupCoverCell` 样式把 Cell 的 Padding 设为 0，
-  封面 Border `Margin="8"` 正好落在“封面”列内。
-- 封面尺寸仍由“封面”列宽驱动：`GroupCoverSize` 表示封面实际显示尺寸，
-  列宽 = `GroupCoverSize + 16`（左右各 8px 内边距）；拖动列宽时
-  `GroupCoverSize = 列宽 - 16`。范围 48–320，随播放列表布局持久化。
-- 歌曲之间加 1px 浅色分割线：`DataGridCell` 模板的 Border 使用
-  `BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"`；
-  `RowSeparatorBrush` 在两个主题字典中分别定义（浅色 `#EDF0F4`、深色 `#1E242C`）。
-- 封面调大后列总宽可能超过窗口，出现横向滚动条属正常。
+- **DataGrid 只负责不分组（平铺表格）视图**；分组视图是一个独立的 `ListView`（`GroupedList`），
+  与 DataGrid 共享同一个 `Tracks` 集合但使用各自的 `ListCollectionView`
+  （`TracksView` 不分组，`GroupedTracksView` 按 `AlbumGroupKey` 分组，排序一致）。
+- 每个专辑由自定义 `GroupItem` 模板绘制（`GroupStyle.ContainerStyle`）：
+  - 顶部 30px 单行分组头：专辑名（Accent、SemiBold）+ 专辑艺术家 + 分隔线 + 年份（右对齐）；
+  - 下面两列 Grid：左列宽 `GroupCoverColumnWidth = GroupCoverSize + 16`，放封面
+    （`Margin=8`、尺寸 = `GroupCoverSize`、`VerticalAlignment=Top`），封面自然纵向覆盖
+    该专辑全部歌曲；右列是 `ItemsPresenter`，即该专辑的歌曲行。
+  - 结果就是封面在左、歌曲列在右，封面高度随专辑歌曲数延展，与 foobar2000 一致。
+- 歌曲行是 `ListViewItem`（`GroupedTrackItem` 模板）= 横向 `ItemsControl`，
+  每列一个 cell：cell 来自 `TrackRowViewModel.Cells`（`RebuildGroupedView()` 按当前布局生成：
+  可见列、去掉 `cover`、宽度 = `max(MinWidth, 列宽)`）。cell 模板通过
+  `CellTemplateProvider` 从 Window 的 `Cell.*` 资源解析，复用 DataGrid 的同一套模板。
+- 分组视图上方有独立表头行（“封面”栏 + 各列），列头点击调用 `SortBy` 排序并显示 ▲/▼；
+  “封面”栏右缘的 `Thumb` 拖动改变 `GroupCoverSize`，`DragCompleted` 时
+  `PersistGroupCoverSize()` 写入布局（媒体库视图存 settings，播放列表存 ViewLayoutJson）。
+- `GroupCoverSize` 表示封面实际尺寸（48–320），列宽 = 尺寸 + 左右各 8px。
+- 分割线：`GroupedTrackItem` 模板 Border 底边 1px（`RowSeparatorBrush`），ListViewItem 横向
+  拉伸，因此线一直延伸到列表右缘；平铺视图同样把底边放到 `DataGridRow` 模板（不再放单元格），
+  这样线也覆盖最后一列右侧的空白。`RowSeparatorBrush` 浅色 `#EDF0F4`、深色 `#1E242C`。
+- 封面 512px 解码（`TrackRowViewModel.GroupCoverImage`），分组虚拟化卸载时清空引用；
+  封面调大后列总宽可能超过窗口，超出部分裁切（分组视图无横向滚动）。
+- 分组/平铺切换：`GroupByAlbum` 绑定两个视图的 Visibility；`ApplySortAndGrouping()` 同时
+  刷新两个 `ListCollectionView` 并重建分组列头/cell；播放顺序也按当前视图取
+  （`GetPlaybackOrder()` 分组时用 `GroupedTracksView`）。
 
 ## 2. 启动时布局被默认值覆盖的坑
 
@@ -67,9 +73,9 @@
 
 - 单元测试：`ViewLayoutTests.Normalize_ClampsGroupedCoverSize_AndRoundTrips`（默认值 / clamp /
   序列化 / Clone）。
-- UI：`--screenshot` 截分组布局（浅色 / 深色）：分组头单行、封面在第一行歌曲左侧、
-  行间 1px 分割线；拖动封面列后重启检查 `libraryLayout.groupCoverSize` 保持。
-- UI Automation 读行高：分组首行应为 `GroupCoverSize + 17`，其余 32；调度行文本位置确认
-  封面与歌曲同排。
+- UI：`--screenshot` 截分组布局（浅色 / 深色）：分组头单行、封面在左侧封面栏纵向覆盖
+  整组歌曲、歌曲列在右侧、行间 1px 分割线到列表右缘；拖动“封面”栏右缘后重启检查
+  `libraryLayout.groupCoverSize` 保持。
+- 平铺视图（取消分组）用 `--screenshot` 验证 DataGrid 正常、分割线覆盖整行。
 - 无播放进度条截图确认 Thumb 在最左侧、轨道为空；播放中用真实鼠标点击跳转并检查
   `Seeked to` 日志。

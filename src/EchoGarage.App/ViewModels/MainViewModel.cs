@@ -19,6 +19,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly IDialogService _dialogs;
     private readonly Dispatcher _dispatcher;
     private readonly ListCollectionView _tracksView;
+    private readonly ListCollectionView _groupedTracksView;
     private readonly ICollectionView _sourcesView;
     private readonly DispatcherTimer _positionTimer;
     private readonly DispatcherTimer _statusTimer;
@@ -49,8 +50,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         Tracks = [];
         _tracksView = new ListCollectionView(Tracks);
-        _tracksView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
         TracksView = _tracksView;
+
+        _groupedTracksView = new ListCollectionView(Tracks);
+        _groupedTracksView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
+        GroupedTracksView = _groupedTracksView;
 
         Devices = [];
         Presets = new ObservableCollection<ColumnPreset>(Settings.ColumnPresets);
@@ -86,6 +90,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ICollectionView SourcesView => _sourcesView;
     public ObservableCollection<TrackRowViewModel> Tracks { get; }
     public ICollectionView TracksView { get; }
+    public ICollectionView GroupedTracksView { get; }
+    public ObservableCollection<GroupedColumnHeaderViewModel> GroupedColumns { get; } = [];
     public ObservableCollection<AudioDeviceInfo> Devices { get; }
     public ObservableCollection<ColumnPreset> Presets { get; }
 
@@ -126,13 +132,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private double _groupCoverSize = PlaylistViewLayout.DefaultGroupCoverSize;
 
-    /// <summary>Height of the first row of an album group: cover size plus 8px top/bottom
-    /// margins and the cell's 1px bottom separator.</summary>
-    public double GroupCoverRowHeight => GroupCoverSize + 17;
+    /// <summary>Width of the cover gutter in the grouped list (cover + 8px margins).</summary>
+    public double GroupCoverColumnWidth => GroupCoverSize + 16;
 
     partial void OnGroupCoverSizeChanged(double value)
     {
-        OnPropertyChanged(nameof(GroupCoverRowHeight));
+        OnPropertyChanged(nameof(GroupCoverColumnWidth));
         _host.Logger.Debug($"Group cover size: {value:F1}");
     }
 
@@ -141,6 +146,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         GroupCoverSize = value.GroupCoverSize;
         _host.Logger.Debug($"Layout changed: groupCoverSize={value.GroupCoverSize:F1}, " +
                            $"coverWidth={value.Columns.FirstOrDefault(c => c.Key == "cover")?.Width:F1}");
+        RebuildGroupedView();
     }
 
     [ObservableProperty]
@@ -253,6 +259,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// widths/order even when the switch is initiated from the view model.
     /// </summary>
     public Func<PlaylistViewLayout?>? LayoutProvider { get; set; }
+
+    /// <summary>Resolves "Cell.&lt;Column&gt;" templates for the grouped list row cells.</summary>
+    public Func<string, System.Windows.DataTemplate?>? CellTemplateProvider { get; set; }
 
     public string PlayGlyph => IsPlaying ? "⏸" : "▶";
 
@@ -584,60 +593,121 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void ApplySortAndGrouping()
     {
-        if (GroupByAlbum)
-        {
-            if (!_tracksView.GroupDescriptions.OfType<PropertyGroupDescription>()
-                    .Any(g => g.PropertyName == nameof(TrackRowViewModel.AlbumGroupKey)))
-            {
-                _tracksView.GroupDescriptions.Clear();
-                _tracksView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
-            }
-        }
-        else
-        {
-            _tracksView.GroupDescriptions.Clear();
-        }
-
-        _tracksView.SortDescriptions.Clear();
+        var sortDescriptions = new List<SortDescription>();
         if (!string.IsNullOrWhiteSpace(CurrentLayout.SortColumn))
         {
-            _tracksView.SortDescriptions.Add(new SortDescription(CurrentLayout.SortColumn,
+            sortDescriptions.Add(new SortDescription(CurrentLayout.SortColumn,
                 CurrentLayout.SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending));
         }
         else
         {
-            _tracksView.SortDescriptions.Add(new SortDescription(nameof(TrackRowViewModel.RowNumber), ListSortDirection.Ascending));
+            sortDescriptions.Add(new SortDescription(nameof(TrackRowViewModel.RowNumber), ListSortDirection.Ascending));
         }
 
+        // The DataGrid is used for the flat (ungrouped) view; the grouped ListView renders
+        // albums with a cover gutter, so it keeps its own grouping and the same sort order.
+        _tracksView.GroupDescriptions.Clear();
+        ApplySortDescriptions(_tracksView, sortDescriptions);
+
+        _groupedTracksView.GroupDescriptions.Clear();
+        if (GroupByAlbum)
+        {
+            _groupedTracksView.GroupDescriptions.Add(
+                new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
+        }
+
+        ApplySortDescriptions(_groupedTracksView, sortDescriptions);
+
         _tracksView.Refresh();
-        UpdateAlbumGroupStarts();
+        _groupedTracksView.Refresh();
+        RebuildGroupedView();
+    }
+
+    private static void ApplySortDescriptions(ListCollectionView view, IReadOnlyList<SortDescription> descriptions)
+    {
+        view.SortDescriptions.Clear();
+        foreach (var description in descriptions)
+        {
+            view.SortDescriptions.Add(description);
+        }
     }
 
     /// <summary>
-    /// Marks the first row of each album group. That row is taller and renders the album
-    /// cover in its cover cell, so the cover sits beside the song list instead of inside
-    /// the group header (group headers are now a single compact line).
+    /// Rebuilds the grouped list's column header cells and the per-row cell list. The
+    /// grouped view draws the album cover in a fixed gutter next to the whole group
+    /// (foobar2000 style), so the cover column is not part of the row cells.
     /// </summary>
-    private void UpdateAlbumGroupStarts()
+    private void RebuildGroupedView()
     {
-        foreach (var row in Tracks)
-        {
-            row.IsAlbumGroupStart = false;
-        }
-
+        GroupedColumns.Clear();
         if (!GroupByAlbum)
         {
+            foreach (var row in Tracks)
+            {
+                row.Cells = [];
+            }
+
             return;
         }
 
-        foreach (var group in _tracksView.Groups)
+        var sortColumn = CurrentLayout.SortColumn;
+        var descending = CurrentLayout.SortDescending;
+        var templates = new Dictionary<string, System.Windows.DataTemplate?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in CurrentLayout.Columns.Where(c => c.Visible))
         {
-            if (group is CollectionViewGroup { Items.Count: > 0 } viewGroup &&
-                viewGroup.Items[0] is TrackRowViewModel first)
+            if (string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase))
             {
-                first.IsAlbumGroupStart = true;
+                continue;
             }
+
+            var descriptor = ColumnCatalog.Find(column.Key);
+            if (descriptor is null)
+            {
+                continue;
+            }
+
+            var template = CellTemplateProvider?.Invoke(column.Key);
+            if (template is null)
+            {
+                continue;
+            }
+
+            TrackSortMap.ByKey.TryGetValue(column.Key, out var sortProperty);
+            var glyph = sortProperty is not null &&
+                        string.Equals(sortColumn, sortProperty, StringComparison.Ordinal)
+                ? descending ? "▼" : "▲"
+                : string.Empty;
+            templates[descriptor.Key] = template;
+            GroupedColumns.Add(new GroupedColumnHeaderViewModel
+            {
+                Key = column.Key,
+                Header = descriptor.Header,
+                Width = Math.Max(descriptor.MinWidth, column.Width),
+                SortGlyph = glyph
+            });
         }
+
+        var columns = GroupedColumns
+            .Select(h => (h.Key, h.Width, Template: templates[h.Key]))
+            .ToList();
+        foreach (var row in Tracks)
+        {
+            row.Cells = columns.Select(c => new TrackCellViewModel
+            {
+                Key = c.Key,
+                Width = c.Width,
+                Row = row,
+                Template = c.Template
+            }).ToList();
+        }
+    }
+
+    /// <summary>Persists the grouped cover size after the cover gutter was dragged.</summary>
+    public void PersistGroupCoverSize()
+    {
+        CurrentLayout.GroupCoverSize = Math.Clamp(GroupCoverSize,
+            PlaylistViewLayout.MinGroupCoverSize, PlaylistViewLayout.MaxGroupCoverSize);
+        PersistCurrentLayout(CurrentLayout.Clone(), captureFromView: false);
     }
 
     partial void OnGroupByAlbumChanged(bool value)
@@ -945,8 +1015,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasCurrentTrack));
     }
 
-    private List<TrackRowViewModel> GetPlaybackOrder() =>
-        _tracksView.Cast<TrackRowViewModel>().Where(r => r.IsPlayable).ToList();
+    private List<TrackRowViewModel> GetPlaybackOrder()
+    {
+        var view = GroupByAlbum ? (ICollectionView)_groupedTracksView : _tracksView;
+        return view.Cast<TrackRowViewModel>().Where(r => r.IsPlayable).ToList();
+    }
 
     private void UpdateNowPlayingMetadata(TrackRowViewModel row)
     {

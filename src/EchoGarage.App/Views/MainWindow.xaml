@@ -28,27 +28,108 @@
             </Border>
         </DataTemplate>
 
-        <!-- Grouped mode: the first row of each album is taller and carries the album cover,
-             so the cover sits beside the song list instead of in the group header. -->
-        <DataTemplate x:Key="Cell.CoverGrouped">
-            <Border x:Name="Cover"
-                    Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                    Height="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                    Margin="8" CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
-                    ClipToBounds="True" HorizontalAlignment="Left" VerticalAlignment="Center"
-                    Visibility="Collapsed">
-                <Image Source="{Binding GroupCoverImage}" Stretch="UniformToFill"
-                       RenderOptions.BitmapScalingMode="HighQuality" />
-            </Border>
-            <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding IsAlbumGroupStart}" Value="True">
-                    <Setter TargetName="Cover" Property="Visibility" Value="Visible" />
+        <!-- Grouped list: the album cover lives in a gutter next to the whole group, so it
+             spans all songs of that album (foobar2000 style). -->
+        <Style x:Key="GroupedTrackItem" TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowSelectedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource PlayingRowBrush}" />
                 </DataTrigger>
-            </DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsMissing}" Value="True">
+                    <Setter Property="Opacity" Value="0.55" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="GroupedHeaderCell">
+            <Grid Width="{Binding Width}" Background="Transparent" Cursor="Hand"
+                  MouseLeftButtonUp="OnGroupedHeaderClick">
+                <TextBlock Text="{Binding Header}" Margin="8,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding SortGlyph}" Foreground="{DynamicResource AccentBrush}"
+                           FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Margin="0,0,4,0" />
+            </Grid>
         </DataTemplate>
 
-        <Style x:Key="GroupCoverCell" TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
-            <Setter Property="Padding" Value="0" />
+        <Style x:Key="AlbumGroupContainer" TargetType="GroupItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupItem">
+                        <StackPanel>
+                            <Border Height="30" Background="{DynamicResource GroupHeaderBackgroundBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                                    Padding="8,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Items[0].AlbumGroupTitle}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Items[0].AlbumGroupArtist}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                                               Margin="10,0,0,0" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Border Grid.Column="2" Height="1" Margin="12,0"
+                                            Background="{DynamicResource RowSeparatorBrush}"
+                                            VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Items[0].AlbumGroupYear}"
+                                               Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="{Binding DataContext.GroupCoverColumnWidth,
+                                                RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                        Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Height="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
+                                        ClipToBounds="True" Loaded="OnGroupCoverLoaded"
+                                        Unloaded="OnGroupCoverUnloaded">
+                                    <Image Source="{Binding Items[0].GroupCoverImage}" Stretch="UniformToFill"
+                                           RenderOptions.BitmapScalingMode="HighQuality" />
+                                </Border>
+                                <ItemsPresenter Grid.Column="1" />
+                            </Grid>
+                        </StackPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <DataTemplate x:Key="Cell.Status">
@@ -362,6 +443,7 @@
 
                 <DataGrid x:Name="TrackGrid" Grid.Row="1"
                           AutomationProperties.AutomationId="TrackGrid"
+                          Visibility="{Binding GroupByAlbum, Converter={StaticResource InverseBoolToVisibility}}"
                           ItemsSource="{Binding TracksView}"
                           SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                           SelectionChanged="OnTrackSelectionChanged"
@@ -372,42 +454,83 @@
                           ContextMenu="{StaticResource TrackMenu}"
                           VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                           ScrollViewer.CanContentScroll="True"
-                          Margin="0,0,0,0">
-                    <DataGrid.GroupStyle>
-                        <GroupStyle>
-                            <GroupStyle.HeaderTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource GroupHeaderBackgroundBrush}"
-                                            BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,0,0,1" Padding="8,0" Height="30">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Items[0].AlbumGroupTitle}"
-                                                       FontSize="13" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource AccentBrush}"
-                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Items[0].AlbumGroupArtist}"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
-                                                       Margin="10,0,0,0" VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <Border Grid.Column="2" Height="1" Margin="12,0"
-                                                    Background="{DynamicResource RowSeparatorBrush}"
-                                                    VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="3" Text="{Binding Items[0].AlbumGroupYear}"
-                                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                                       VerticalAlignment="Center" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </GroupStyle.HeaderTemplate>
-                        </GroupStyle>
-                    </DataGrid.GroupStyle>
-                </DataGrid>
+                          Margin="0,0,0,0" />
+
+                <!-- Grouped view: foobar2000-style album gutter; the cover spans the whole
+                     group and songs are listed to its right. -->
+                <Grid Grid.Row="1" Visibility="{Binding GroupByAlbum, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="30" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Background="{DynamicResource HeaderBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                            ClipToBounds="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="{Binding GroupCoverColumnWidth}" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" Background="Transparent">
+                                <TextBlock Text="封面" Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                                           Margin="8,0" VerticalAlignment="Center" />
+                                <Thumb x:Name="GroupCoverThumb" Width="6" HorizontalAlignment="Right"
+                                       Cursor="SizeWE" Style="{StaticResource ColumnHeaderGripper}"
+                                       DragDelta="OnGroupCoverThumbDragDelta"
+                                       DragCompleted="OnGroupCoverThumbDragCompleted" />
+                            </Grid>
+                            <ItemsControl Grid.Column="1" ItemsSource="{Binding GroupedColumns}"
+                                          ItemTemplate="{StaticResource GroupedHeaderCell}"
+                                          ClipToBounds="True">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </Grid>
+                    </Border>
+
+                    <ListView x:Name="GroupedList" Grid.Row="1"
+                              AutomationProperties.AutomationId="GroupedList"
+                              ItemsSource="{Binding GroupedTracksView}"
+                              SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                              SelectionChanged="OnGroupedSelectionChanged"
+                              MouseDoubleClick="OnGroupedDoubleClick"
+                              ContextMenu="{StaticResource TrackMenu}"
+                              Background="Transparent" BorderThickness="0" Padding="0"
+                              SelectionMode="Extended"
+                              ItemContainerStyle="{StaticResource GroupedTrackItem}"
+                              ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                        <ListView.GroupStyle>
+                            <GroupStyle ContainerStyle="{StaticResource AlbumGroupContainer}" />
+                        </ListView.GroupStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <ItemsControl ItemsSource="{Binding Cells}" VerticalAlignment="Center">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Width="{Binding Width}" Padding="8,0" Background="Transparent">
+                                                <ContentControl Content="{Binding Row}"
+                                                                ContentTemplate="{Binding Template}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
 
                 <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding HasTracks, Converter={StaticResource InverseBoolToVisibility}}"

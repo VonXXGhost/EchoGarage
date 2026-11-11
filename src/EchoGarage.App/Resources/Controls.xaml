@@ -585,6 +585,21 @@
         <Setter Property="Height" Value="32" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="ToolTip" Value="{Binding RowToolTip}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridRow">
+                    <!-- Bottom border lives on the row (not on cells) so the 1px separator
+                         spans the full row width even past the last column. -->
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
+                            SnapsToDevicePixels="True">
+                        <DataGridCellsPresenter x:Name="PART_CellsPresenter"
+                                                ItemsPanel="{TemplateBinding ItemsPanel}"
+                                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
@@ -597,11 +612,6 @@
             </DataTrigger>
             <DataTrigger Binding="{Binding IsMissing}" Value="True">
                 <Setter Property="Opacity" Value="0.55" />
-            </DataTrigger>
-            <DataTrigger Binding="{Binding IsAlbumGroupStart}" Value="True">
-                <!-- Taller row whose cover cell carries the album art next to the song list. -->
-                <Setter Property="Height"
-                        Value="{Binding DataContext.GroupCoverRowHeight, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
             </DataTrigger>
         </Style.Triggers>
     </Style>
@@ -616,7 +626,6 @@
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridCell">
                     <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
-                            BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
                             SnapsToDevicePixels="True">
                         <ContentPresenter VerticalAlignment="Center" />
                     </Border>

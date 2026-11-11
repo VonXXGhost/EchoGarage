@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -20,14 +21,6 @@ public partial class MainWindow : Window
     private readonly MainViewModel _vm;
     private readonly DialogService _dialogs;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
-    private const double GroupCoverInset = 8;
-    private readonly DispatcherTimer _coverPersistTimer = new(DispatcherPriority.Background)
-    {
-        Interval = TimeSpan.FromMilliseconds(600)
-    };
-    private DataGridColumn? _coverColumn;
-    private DependencyPropertyDescriptor? _coverWidthDescriptor;
-    private EventHandler? _coverWidthChangedHandler;
     private bool _seekInteracting;
     private double _seekTargetSeconds;
     private double _seekStartX;
@@ -44,6 +37,7 @@ public partial class MainWindow : Window
         _dialogs = new DialogService(this);
         _vm = new MainViewModel(host, _dialogs);
         _vm.LayoutProvider = CaptureLayoutFromGrid;
+        _vm.CellTemplateProvider = key => TryFindResource("Cell." + ToPascalCase(key)) as DataTemplate;
         DataContext = _vm;
 
         _vm.LayoutChanged += (_, _) => ApplyLayout();
@@ -53,7 +47,6 @@ public partial class MainWindow : Window
 
         ApplyWindowPlacement();
         HookSeekSlider();
-        _coverPersistTimer.Tick += OnCoverPersistTick;
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -154,61 +147,37 @@ public partial class MainWindow : Window
     // =====================================================================
     // Columns
     // =====================================================================
-    private static readonly Dictionary<string, string?> SortPropertyMap = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["cover"] = null,
-        ["status"] = null,
-        ["index"] = nameof(TrackRowViewModel.RowNumber),
-        ["title"] = nameof(TrackRowViewModel.Title),
-        ["artist"] = nameof(TrackRowViewModel.Artist),
-        ["album"] = nameof(TrackRowViewModel.Album),
-        ["albumArtist"] = nameof(TrackRowViewModel.AlbumArtist),
-        ["trackNumber"] = nameof(TrackRowViewModel.TrackNumberSort),
-        ["discNumber"] = nameof(TrackRowViewModel.DiscNumberSort),
-        ["year"] = nameof(TrackRowViewModel.YearSort),
-        ["genre"] = nameof(TrackRowViewModel.Genre),
-        ["duration"] = nameof(TrackRowViewModel.DurationSort),
-        ["bitrate"] = nameof(TrackRowViewModel.BitrateSort),
-        ["sampleRate"] = nameof(TrackRowViewModel.SampleRateSort),
-        ["codec"] = nameof(TrackRowViewModel.Codec),
-        ["rating"] = nameof(TrackRowViewModel.RatingSort),
-        ["addedAt"] = nameof(TrackRowViewModel.AddedSort),
-        ["fileSize"] = nameof(TrackRowViewModel.FileSizeSort),
-        ["path"] = nameof(TrackRowViewModel.PathText),
-        ["comment"] = nameof(TrackRowViewModel.Comment)
-    };
+    private static readonly IReadOnlyDictionary<string, string?> SortPropertyMap = TrackSortMap.ByKey;
 
     private string? _appliedLayoutSignature;
 
     private void ApplyLayout()
     {
         var layout = _vm.CurrentLayout;
-        var signature = BuildLayoutSignature(layout, _vm.GroupByAlbum);
+        var signature = BuildLayoutSignature(layout);
         if (TrackGrid.Columns.Count > 0 &&
             string.Equals(signature, _appliedLayoutSignature, StringComparison.Ordinal))
         {
             UpdateSortGlyphs();
+            ScrollToCurrentRow();
             return;
         }
 
-        _host.Logger.Debug($"Applying layout: grouped={_vm.GroupByAlbum} groupCoverSize={_vm.GroupCoverSize:F1} " +
-                           $"signature={signature}");
+        _host.Logger.Debug($"Applying layout: groupCoverSize={_vm.GroupCoverSize:F1} signature={signature}");
         RebuildColumns(layout, signature);
+        ScrollToCurrentRow();
     }
 
-    private string BuildLayoutSignature(PlaylistViewLayout layout, bool grouped) =>
-        (grouped ? "g|" : "u|") + string.Join("|", layout.Columns
+    private static string BuildLayoutSignature(PlaylistViewLayout layout) =>
+        "u|" + string.Join("|", layout.Columns
             .Where(c => c.Visible)
-            .Select(c => $"{c.Key}:{(grouped && c.Key == "cover"
-                ? (int)Math.Round(_vm.GroupCoverSize)
-                : (int)Math.Round(c.Width))}"));
+            .Select(c => $"{c.Key}:{(int)Math.Round(c.Width)}"));
 
     private void RebuildColumns(PlaylistViewLayout layout, string signature)
     {
         // Changing DataGrid.Columns while rows own cells can crash DataGridCellsPanel
         // ("index out of range" during arrange). Detach the items first, rebuild, reattach.
         var selectedRow = _vm.SelectedRow;
-        DetachCoverWidthListener();
         TrackGrid.ItemsSource = null;
         _columnKeys.Clear();
         TrackGrid.Columns.Clear();
@@ -221,39 +190,25 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var isGroupedCover = _vm.GroupByAlbum &&
-                                 string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase);
-            var templateKey = isGroupedCover ? "Cell.CoverGrouped" : "Cell." + ToPascalCase(column.Key);
-            var cellTemplate = TryFindResource(templateKey) as DataTemplate;
+            var cellTemplate = TryFindResource("Cell." + ToPascalCase(column.Key)) as DataTemplate;
             if (cellTemplate is null)
             {
                 continue;
             }
 
             SortPropertyMap.TryGetValue(column.Key, out var sortProperty);
-            // The cover column carries the album cover plus equal left/right insets so the
-            // cover lines up with the column header padding instead of spilling over the
-            // column divider.
-            var width = isGroupedCover
-                ? Math.Clamp(_vm.GroupCoverSize, PlaylistViewLayout.MinGroupCoverSize,
-                    PlaylistViewLayout.MaxGroupCoverSize) + GroupCoverInset * 2
-                : Math.Max(descriptor.MinWidth, column.Width);
+            var width = Math.Max(descriptor.MinWidth, column.Width);
 
             var gridColumn = new DataGridTemplateColumn
             {
                 Header = descriptor.Header,
                 CellTemplate = cellTemplate,
                 Width = new DataGridLength(width, DataGridLengthUnitType.Pixel),
-                MinWidth = isGroupedCover
-                    ? PlaylistViewLayout.MinGroupCoverSize + GroupCoverInset * 2
-                    : descriptor.MinWidth,
-                MaxWidth = isGroupedCover
-                    ? PlaylistViewLayout.MaxGroupCoverSize + GroupCoverInset * 2
-                    : 1400,
+                MinWidth = descriptor.MinWidth,
+                MaxWidth = 1400,
                 SortMemberPath = sortProperty,
                 CanUserSort = descriptor.Sortable && sortProperty is not null,
-                IsReadOnly = true,
-                CellStyle = isGroupedCover ? TryFindResource("GroupCoverCell") as Style : null
+                IsReadOnly = true
             };
 
             if (sortProperty is not null &&
@@ -266,11 +221,6 @@ public partial class MainWindow : Window
 
             _columnKeys[gridColumn] = descriptor.Key;
             TrackGrid.Columns.Add(gridColumn);
-
-            if (isGroupedCover)
-            {
-                AttachCoverWidthListener(gridColumn);
-            }
         }
 
         BindingOperations.SetBinding(TrackGrid, ItemsControl.ItemsSourceProperty,
@@ -313,16 +263,6 @@ public partial class MainWindow : Window
             }
 
             var width = gridColumn.ActualWidth > 10 ? gridColumn.ActualWidth : stored.Width;
-            if (_vm.GroupByAlbum && string.Equals(key, "cover", StringComparison.OrdinalIgnoreCase))
-            {
-                // In grouped mode the cover column is the resize handle for the album cover;
-                // subtract the equal left/right insets to get the displayed cover size.
-                layout.GroupCoverSize = Math.Clamp(width - GroupCoverInset * 2,
-                    PlaylistViewLayout.MinGroupCoverSize, PlaylistViewLayout.MaxGroupCoverSize);
-                // Keep the stored width for the per-row cover used when grouping is off.
-                width = stored.Width;
-            }
-
             ordered.Add(new PlaylistColumn { Key = stored.Key, Width = width, Visible = true });
         }
 
@@ -337,72 +277,6 @@ public partial class MainWindow : Window
 
         layout.Columns = ordered;
         return layout;
-    }
-
-    // =====================================================================
-    // Grouped album cover resizing
-    // =====================================================================
-    private void AttachCoverWidthListener(DataGridColumn column)
-    {
-        _coverColumn = column;
-        _coverWidthDescriptor = DependencyPropertyDescriptor.FromProperty(
-            DataGridColumn.WidthProperty, typeof(DataGridColumn));
-        _coverWidthChangedHandler = (_, _) =>
-        {
-            if (!_vm.GroupByAlbum || _coverColumn is null)
-            {
-                return;
-            }
-
-            var width = _coverColumn.Width.DisplayValue;
-            if (double.IsNaN(width) || width <= 0)
-            {
-                width = _coverColumn.ActualWidth;
-            }
-
-            if (!double.IsFinite(width) || width <= 0)
-            {
-                return;
-            }
-
-            _vm.GroupCoverSize = Math.Clamp(width - GroupCoverInset * 2, PlaylistViewLayout.MinGroupCoverSize,
-                PlaylistViewLayout.MaxGroupCoverSize);
-            // Keep the layout signature in sync with the live drag so a later ApplyLayout
-            // (theme, settings dialog) does not needlessly rebuild the columns.
-            _appliedLayoutSignature = BuildLayoutSignature(_vm.CurrentLayout, grouped: true);
-            // Persist once the user pauses; closing without switching playlists would be the
-            // only other chance to save this width.
-            _coverPersistTimer.Stop();
-            _coverPersistTimer.Start();
-        };
-        _coverWidthDescriptor.AddValueChanged(column, _coverWidthChangedHandler);
-    }
-
-    private void OnCoverPersistTick(object? sender, EventArgs e)
-    {
-        _coverPersistTimer.Stop();
-        if (!_vm.GroupByAlbum)
-        {
-            return;
-        }
-
-        var captured = CaptureLayoutFromGrid();
-        if (captured is not null)
-        {
-            _vm.PersistCurrentLayout(captured);
-        }
-    }
-
-    private void DetachCoverWidthListener()
-    {
-        if (_coverColumn is not null && _coverWidthDescriptor is not null && _coverWidthChangedHandler is not null)
-        {
-            _coverWidthDescriptor.RemoveValueChanged(_coverColumn, _coverWidthChangedHandler);
-        }
-
-        _coverColumn = null;
-        _coverWidthDescriptor = null;
-        _coverWidthChangedHandler = null;
     }
 
     private void UpdateSortGlyphs()
@@ -440,18 +314,7 @@ public partial class MainWindow : Window
         if (e.Row.DataContext is TrackRowViewModel row)
         {
             row.IsSelected = TrackGrid.SelectedItems.Contains(row);
-            if (_vm.GroupByAlbum)
-            {
-                // Grouped mode: only the first row of an album shows the (large) cover.
-                if (row.IsAlbumGroupStart)
-                {
-                    _ = _vm.LoadGroupCoverAsync(row);
-                }
-            }
-            else
-            {
-                _ = _vm.LoadRowCoverAsync(row);
-            }
+            _ = _vm.LoadRowCoverAsync(row);
         }
     }
 
@@ -460,7 +323,6 @@ public partial class MainWindow : Window
         if (e.Row.DataContext is TrackRowViewModel row)
         {
             row.CoverImage = null;
-            row.GroupCoverImage = null;
         }
     }
 
@@ -493,6 +355,84 @@ public partial class MainWindow : Window
         }
     }
 
+    // =====================================================================
+    // Grouped list (foobar2000-style album gutter)
+    // =====================================================================
+    private void OnGroupedSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _vm.SelectedRows.Clear();
+        foreach (var item in GroupedList.SelectedItems)
+        {
+            if (item is TrackRowViewModel row)
+            {
+                row.IsSelected = true;
+                _vm.SelectedRows.Add(row);
+            }
+        }
+
+        foreach (var item in e.RemovedItems)
+        {
+            if (item is TrackRowViewModel row)
+            {
+                row.IsSelected = false;
+            }
+        }
+    }
+
+    private void OnGroupedDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (GroupedList.SelectedItem is TrackRowViewModel row)
+        {
+            _ = _vm.PlayRowCommand.ExecuteAsync(row);
+        }
+    }
+
+    private void OnGroupedHeaderClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header } &&
+            SortPropertyMap.TryGetValue(header.Key, out var sortProperty) &&
+            !string.IsNullOrWhiteSpace(sortProperty))
+        {
+            _vm.SortBy(sortProperty);
+            e.Handled = true;
+        }
+    }
+
+    private void OnGroupCoverThumbDragDelta(object sender, DragDeltaEventArgs e)
+    {
+        _vm.GroupCoverSize = Math.Clamp(_vm.GroupCoverSize + e.HorizontalChange,
+            PlaylistViewLayout.MinGroupCoverSize, PlaylistViewLayout.MaxGroupCoverSize);
+        e.Handled = true;
+    }
+
+    private void OnGroupCoverThumbDragCompleted(object sender, DragCompletedEventArgs e) =>
+        _vm.PersistGroupCoverSize();
+
+    private void OnGroupCoverLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
+        {
+            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
+            if (first is not null)
+            {
+                _ = _vm.LoadGroupCoverAsync(first);
+            }
+        }
+    }
+
+    private void OnGroupCoverUnloaded(object sender, RoutedEventArgs e)
+    {
+        // Release the large cover while the album group is virtualized away.
+        if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
+        {
+            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
+            if (first is not null)
+            {
+                first.GroupCoverImage = null;
+            }
+        }
+    }
+
     private void OnSourceSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SourceList.SelectedItem is SourceNodeViewModel node && !ReferenceEquals(node, _vm.SelectedSource))
@@ -503,7 +443,22 @@ public partial class MainWindow : Window
 
     private void ScrollToCurrentRow()
     {
-        if (_vm.CurrentRow is not null && TrackGrid.Items.Contains(_vm.CurrentRow))
+        if (_vm.CurrentRow is null)
+        {
+            return;
+        }
+
+        if (_vm.GroupByAlbum)
+        {
+            if (GroupedList.Items.Contains(_vm.CurrentRow))
+            {
+                GroupedList.ScrollIntoView(_vm.CurrentRow);
+            }
+
+            return;
+        }
+
+        if (TrackGrid.Items.Contains(_vm.CurrentRow))
         {
             TrackGrid.ScrollIntoView(_vm.CurrentRow);
         }
@@ -748,11 +703,11 @@ public partial class MainWindow : Window
                 await _vm.PlayPauseCommand.ExecuteAsync(null);
                 break;
             case Key.Enter when Keyboard.Modifiers == ModifierKeys.Alt && !isTextInput &&
-                                TrackGrid.SelectedItem is TrackRowViewModel propertiesRow:
+                                _vm.SelectedRow is { } propertiesRow:
                 e.Handled = true;
                 await _vm.EditTagsCommand.ExecuteAsync(propertiesRow);
                 break;
-            case Key.Enter when !isTextInput && TrackGrid.SelectedItem is TrackRowViewModel row:
+            case Key.Enter when !isTextInput && _vm.SelectedRow is { } row:
                 e.Handled = true;
                 await _vm.PlayRowCommand.ExecuteAsync(row);
                 break;
