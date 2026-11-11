@@ -39,7 +39,9 @@ public sealed class FileCoverCache : ICoverCache
         foreach (var extension in SupportedCoverExtensions)
         {
             var candidate = System.IO.Path.Combine(_coversDirectory, coverKey + extension);
-            if (File.Exists(candidate))
+            // A zero-length file is a leftover from an interrupted write; treat it as missing
+            // so the artwork is extracted again instead of being decoded (and failing forever).
+            if (File.Exists(candidate) && new FileInfo(candidate).Length > 0)
             {
                 return candidate;
             }
@@ -128,8 +130,11 @@ public sealed class FileCoverCache : ICoverCache
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Do not swallow the failure: the image service must not remember this as
+            // "no artwork", otherwise one transient I/O problem would blank the cover for the
+            // rest of the session.
             _logger.Warn($"Cover extraction failed for {request.TrackPath}: {ex.Message}");
-            return null;
+            throw;
         }
         finally
         {
@@ -307,7 +312,24 @@ public sealed class FileCoverCache : ICoverCache
 
         var path = System.IO.Path.Combine(_coversDirectory, coverKey + extension);
         Directory.CreateDirectory(_coversDirectory);
-        await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
+
+        // Write to a temporary file and move it into place atomically: a concurrent reader
+        // must never observe a half-written image file (decoding one would fail permanently
+        // in the old implementation that remembered the miss).
+        var tempPath = path + ".tmp" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                TryDelete(tempPath);
+            }
+        }
+
         return path;
     }
 

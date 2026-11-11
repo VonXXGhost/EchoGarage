@@ -413,26 +413,77 @@ public partial class MainWindow : Window
 
     private void OnGroupCoverLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
+        if (sender is FrameworkElement { DataContext: CollectionViewGroup group } element)
         {
-            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
-            if (first is not null)
+            // Containers can be created for measuring before they become visible; loading here
+            // would decode artwork for groups the user may never see. IsVisibleChanged handles
+            // the moment the group actually appears.
+            if (element.IsVisible)
             {
-                _ = _vm.LoadGroupCoverAsync(first);
+                RequestGroupCover(group);
             }
+        }
+    }
+
+    private void OnGroupCoverIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        // The ListView creates group containers for measuring before they enter the visible
+        // tree; those containers never raise Loaded but do become visible later, when the user
+        // scrolls. IsVisibleChanged is the only event that fires for every path, so it drives
+        // both loading the album art and releasing it once the group leaves the viewport.
+        if (sender is not FrameworkElement element ||
+            element.DataContext is not CollectionViewGroup group)
+        {
+            return;
+        }
+
+        var nowVisible = e.NewValue is true;
+        if (nowVisible)
+        {
+            RequestGroupCover(group);
+        }
+        else
+        {
+            ReleaseGroupCover(group);
+        }
+    }
+
+    private void OnGroupCoverDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.OldValue is CollectionViewGroup previous && !ReferenceEquals(e.NewValue, previous))
+        {
+            ReleaseGroupCover(previous);
+        }
+
+        if (sender is FrameworkElement { IsVisible: true } && e.NewValue is CollectionViewGroup group)
+        {
+            RequestGroupCover(group);
         }
     }
 
     private void OnGroupCoverUnloaded(object sender, RoutedEventArgs e)
     {
-        // Release the large cover while the album group is virtualized away.
         if (sender is FrameworkElement { DataContext: CollectionViewGroup group })
         {
-            var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
-            if (first is not null)
-            {
-                first.GroupCoverImage = null;
-            }
+            ReleaseGroupCover(group);
+        }
+    }
+
+    private void RequestGroupCover(CollectionViewGroup group)
+    {
+        var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
+        if (first is not null)
+        {
+            _ = _vm.LoadGroupCoverAsync(first);
+        }
+    }
+
+    private void ReleaseGroupCover(CollectionViewGroup group)
+    {
+        var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
+        if (first is not null && first.GroupCoverImage is not null)
+        {
+            first.GroupCoverImage = null;
         }
     }
 
@@ -446,25 +497,10 @@ public partial class MainWindow : Window
 
     private void ScrollToCurrentRow()
     {
-        if (_vm.CurrentRow is null)
-        {
-            return;
-        }
-
-        if (_vm.IsGroupedViewActive)
-        {
-            if (GroupedList.Items.Contains(_vm.CurrentRow))
-            {
-                GroupedList.ScrollIntoView(_vm.CurrentRow);
-            }
-
-            return;
-        }
-
-        if (TrackGrid.Items.Contains(_vm.CurrentRow))
-        {
-            TrackGrid.ScrollIntoView(_vm.CurrentRow);
-        }
+        // The actual centering is deferred one dispatcher turn (see MainWindow.NowPlaying.cs):
+        // right after playback starts or a playlist/view switch the row containers are usually
+        // not generated yet, and WPF's ScrollIntoView only makes a row barely visible.
+        ScheduleCenterCurrentRow();
     }
 
     // =====================================================================

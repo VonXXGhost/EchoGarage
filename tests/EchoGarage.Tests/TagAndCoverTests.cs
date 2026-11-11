@@ -126,6 +126,49 @@ public sealed class TagAndCoverTests : IDisposable
     }
 
     [Fact]
+    public async Task CoverCache_ResolveIgnoresZeroLengthFile_AndReextracts()
+    {
+        var paths = new AppPaths(_workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        var cache = new FileCoverCache(paths.DefaultCacheDirectory, logger);
+
+        var track = TestAudio.CreateWav(_workspace.Combine("media", "zero-length.wav"));
+        _tags.Write(track, new TagEditModel { Title = "x", NewCoverBytes = TestAudio.CoverBytes(), NewCoverMime = "image/png" });
+        var info = new FileInfo(track);
+        var key = CoverKeyFactory.ForTrack(track, "album", "artist");
+
+        // An interrupted write can leave a zero-length image file behind; it must be treated as
+        // missing so the artwork gets extracted again instead of being decoded forever.
+        await File.WriteAllBytesAsync(Path.Combine(cache.CoversDirectory, key + ".png"), []);
+        Assert.Null(cache.Resolve(key));
+
+        var resolved = await cache.EnsureAsync(new CoverRequest(track, key, info.LastWriteTimeUtc, info.Length));
+        Assert.NotNull(resolved);
+        Assert.True(new FileInfo(resolved!).Length > 0);
+    }
+
+    [Fact]
+    public async Task CoverCache_WritesAtomicallyAndLeavesNoTempFiles()
+    {
+        var paths = new AppPaths(_workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        var cache = new FileCoverCache(paths.DefaultCacheDirectory, logger);
+
+        var track = TestAudio.CreateWav(_workspace.Combine("media", "atomic.wav"));
+        _tags.Write(track, new TagEditModel { Title = "x", NewCoverBytes = TestAudio.CoverBytes(), NewCoverMime = "image/png" });
+        var info = new FileInfo(track);
+        var key = CoverKeyFactory.ForTrack(track, "album", "artist");
+
+        var resolved = await cache.EnsureAsync(new CoverRequest(track, key, info.LastWriteTimeUtc, info.Length));
+
+        Assert.NotNull(resolved);
+        Assert.True(new FileInfo(resolved!).Length > 0);
+        Assert.Empty(Directory.GetFiles(cache.CoversDirectory, "*.tmp*"));
+    }
+
+    [Fact]
     public async Task CoverCache_InvalidatesWhenSourceFileChanges()
     {
         var paths = new AppPaths(_workspace.Combine("state"));

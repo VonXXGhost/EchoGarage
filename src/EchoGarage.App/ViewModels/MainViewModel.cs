@@ -248,7 +248,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         GroupByAlbum && PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn);
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStatusHint))]
     private string _statusMessage = "就绪";
+
+    /// <summary>
+    /// True while a transient status message (scan progress, import result, error …) should
+    /// be shown in the status bar. "就绪" is the resting state and stays hidden: the left
+    /// side already shows either the current track or "就绪" itself.
+    /// </summary>
+    public bool HasStatusHint =>
+        !string.IsNullOrWhiteSpace(StatusMessage) &&
+        !string.Equals(StatusMessage, "就绪", StringComparison.Ordinal);
 
     [ObservableProperty]
     private double _scanProgress;
@@ -326,12 +336,58 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public string CurrentFilePath => CurrentRow?.Track.Path ?? string.Empty;
 
+    /// <summary>
+    /// Single-line "♪ title — artist — album" summary for the status bar. Missing tags are
+    /// skipped and the resting state falls back to "就绪".
+    /// </summary>
+    public string NowPlayingStatusText
+    {
+        get
+        {
+            if (!HasCurrentTrack)
+            {
+                return "就绪";
+            }
+
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(CurrentTitle) && CurrentTitle != "未在播放")
+            {
+                parts.Add(CurrentTitle.Trim());
+            }
+
+            if (CurrentRow is { } row)
+            {
+                if (!string.IsNullOrWhiteSpace(row.Track.Artist))
+                {
+                    parts.Add(row.Track.Artist.Trim());
+                }
+
+                if (!string.IsNullOrWhiteSpace(row.Track.Album))
+                {
+                    parts.Add(row.Track.Album.Trim());
+                }
+            }
+
+            return parts.Count == 0 ? "就绪" : "♪ " + string.Join(" — ", parts);
+        }
+    }
+
+    partial void OnCurrentTitleChanged(string value) =>
+        OnPropertyChanged(nameof(NowPlayingStatusText));
+
+    partial void OnCurrentSubtitleChanged(string value) =>
+        OnPropertyChanged(nameof(NowPlayingStatusText));
+
+    partial void OnCurrentInfoChanged(string value) =>
+        OnPropertyChanged(nameof(NowPlayingStatusText));
+
     partial void OnCurrentRowChanged(TrackRowViewModel? value)
     {
         OnPropertyChanged(nameof(CurrentFormatText));
         OnPropertyChanged(nameof(CurrentFilePath));
         OnPropertyChanged(nameof(HasCurrentTrack));
         OnPropertyChanged(nameof(ShowCoverPlaceholder));
+        OnPropertyChanged(nameof(NowPlayingStatusText));
     }
 
     // =====================================================================

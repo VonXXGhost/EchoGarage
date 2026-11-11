@@ -90,6 +90,8 @@
         <Setter Property="FontSize" Value="15" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <!-- 去掉 WPF 默认的虚线焦点框：传输栏按钮依靠悬停 / 按下反馈即可，键盘聚焦时不再画虚线。 -->
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
 
     <Style x:Key="PlayButton" TargetType="Button" BasedOn="{StaticResource TransportButton}">

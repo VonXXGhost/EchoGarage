@@ -8,6 +8,13 @@ namespace EchoGarage.App.Services;
 /// <summary>
 /// Decodes cached cover images for the UI and keeps a bounded in-memory LRU so scrolling
 /// does not re-decode the same album art. Decoding stays off the UI thread.
+///
+/// Two rules keep the list reliable while the user scrolls quickly:
+/// <list type="bullet">
+/// <item>Concurrent requests for the same cover are coalesced into a single extraction/decode.</item>
+/// <item>A transient failure (I/O, lock, decode error) is never cached as "no artwork" — only a
+/// confirmed negative result from the cover cache is remembered, so a later request retries.</item>
+/// </list>
 /// </summary>
 public sealed class CoverImageService : IDisposable
 {
@@ -16,6 +23,7 @@ public sealed class CoverImageService : IDisposable
     private readonly ICoverCache _cache;
     private readonly IAppLogger _logger;
     private readonly ConcurrentDictionary<string, BitmapSource?> _images = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task<BitmapSource?>>> _inFlight = new(StringComparer.Ordinal);
     private readonly LinkedList<string> _lru = new();
     private readonly object _lruGate = new();
     private readonly SemaphoreSlim _concurrency = new(3, 3);
@@ -30,6 +38,7 @@ public sealed class CoverImageService : IDisposable
     public void ClearMemoryCache()
     {
         _images.Clear();
+        _inFlight.Clear();
         lock (_lruGate)
         {
             _lru.Clear();
@@ -63,38 +72,93 @@ public sealed class CoverImageService : IDisposable
             return cached;
         }
 
-        await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Many list rows can request the same album cover within a few milliseconds while the
+        // user scrolls. Coalesce them into one extraction + decode instead of queuing duplicates.
+        var lazy = _inFlight.GetOrAdd(memoryKey,
+            key => new Lazy<Task<BitmapSource?>>(
+                () => LoadThroughAsync(key, request, decodeWidth, cancellationToken),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        return await lazy.Value.ConfigureAwait(false);
+    }
+
+    private async Task<BitmapSource?> LoadThroughAsync(
+        string memoryKey,
+        CoverRequest request,
+        int decodeWidth,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            if (_images.TryGetValue(memoryKey, out cached))
+            if (_images.TryGetValue(memoryKey, out var cached))
             {
                 return cached;
             }
 
-            var path = await _cache.EnsureAsync(request, cancellationToken).ConfigureAwait(false);
-
-            BitmapSource? bitmap = null;
-            if (path is not null)
+            await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                bitmap = await Task.Run(() => LoadBitmap(path, decodeWidth), cancellationToken).ConfigureAwait(false);
-            }
+                if (_images.TryGetValue(memoryKey, out cached))
+                {
+                    return cached;
+                }
 
-            Remember(memoryKey, bitmap);
-            return bitmap;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug($"Cover load failed for {request.TrackPath}: {ex.Message}");
-            Remember(memoryKey, null);
-            return null;
+                string? path;
+                try
+                {
+                    path = await _cache.EnsureAsync(request, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Transient extraction failure: do not remember it, a later request may succeed.
+                    _logger.Warn($"Cover extraction failed for {request.TrackPath}: {ex.Message}");
+                    return null;
+                }
+
+                if (path is null)
+                {
+                    // The cache confirmed there is no artwork for this track (negative marker).
+                    Remember(memoryKey, null);
+                    return null;
+                }
+
+                BitmapSource? bitmap = null;
+                try
+                {
+                    bitmap = await Task.Run(() => LoadBitmap(path, decodeWidth), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"Cover decode failed for {path}: {ex.Message}");
+                }
+
+                if (bitmap is null)
+                {
+                    // A cached file may be unreadable (interrupted write, locked file…). Retry later
+                    // instead of poisoning the memory cache with a permanent miss.
+                    _logger.Debug($"Cover decode returned no image: {path}");
+                    return null;
+                }
+
+                Remember(memoryKey, bitmap);
+                return bitmap;
+            }
+            finally
+            {
+                _concurrency.Release();
+            }
         }
         finally
         {
-            _concurrency.Release();
+            _inFlight.TryRemove(memoryKey, out _);
         }
     }
 
