@@ -94,6 +94,7 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 业务规则（智能查询、布局归一化、路径判断、扫描增量、标签读写、设置归一化）必须有单元测试。
 - 修改 SQLite schema 时必须：新增 `PRAGMA user_version` 迁移分支 + 测试覆盖新旧两种库。
 - 音频设备 / 独占模式 / 全局快捷键等依赖真实环境的行为，至少保留日志与手动验证步骤。
+- 实际运行程序并播放音频的测试，除音量相关功能外必须先静音或把输出音量调到最低（见 ADR-012）；测试使用独立的 ECHOGARAGE_DATA_DIR 副本。
 
 ## 8. 诊断与日志
 
@@ -109,3 +110,5 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 提交信息用中文或英文皆可，需说明“改了什么 / 为什么”。
 - 引入新依赖前：确认是否真的需要、许可证、是否影响启动时间与安装体积，并记录到 ADR 提案。
 - 改动架构、数据模型、缓存策略、默认播放器注册方式时，必须同步准备 ADR 提案，等待 owner 批准。
+
+

@@ -31,6 +31,8 @@ EchoGarage 是一个面向个人使用的 Windows 本地音乐播放器，目标
 - 底部状态栏显示当前播放曲目（`♪ 标题 — 艺术家 — 专辑`）；扫描 / 导入 / 错误等瞬时提示显示在右侧，
   媒体库统计移到“正在播放”面板。
 - 传输栏按钮不再显示系统默认的虚线焦点框（悬停 / 按下反馈保留）。
+- 分组列表快速拖动滚动条时自动居中会主动让路；同时针对 WPF 分组虚拟化 + 像素滚动在 150% DPI 下的
+  小数偏移/锚定抖动做了布局取整与缓存优化，异常滚动循环会写入日志并尝试自愈（见 `docs/proposals/KB-011-*`）。
 
 ### 播放
 - 支持 WAV、FLAC、MP3、AAC/M4A（以及系统 Media Foundation 能解码的 WMA、AIFF、MP4 音频）。
@@ -197,3 +199,4 @@ $env:ECHOGARAGE_DATA_DIR = "G:\EchoGarageData"
 - `docs/adr/`：已批准的架构决策记录，索引见 `docs/adr/ADR-index.md`。
 - `docs/kb/`：已批准的长期知识库（NAudio、WPF、TagLib、性能基线等）。
 - `docs/proposals/`：尚未批准的 ADR / KB 提案；批准后才移入 `docs/adr/` 或 `docs/kb/`。
+
