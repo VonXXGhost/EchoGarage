@@ -95,6 +95,7 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 修改 SQLite schema 时必须：新增 `PRAGMA user_version` 迁移分支 + 测试覆盖新旧两种库。
 - 音频设备 / 独占模式 / 全局快捷键等依赖真实环境的行为，至少保留日志与手动验证步骤。
 - 实际运行程序并播放音频的测试，除音量相关功能外必须先静音或把输出音量调到最低（见 ADR-012）；测试使用独立的 ECHOGARAGE_DATA_DIR 副本。
+- 需要注入鼠标 / 键盘输入或抢占前台窗口的自动化测试：必须在真正输入前约 10 秒通过通知（聊天消息 + 系统通知）告知 owner，无需因此暂停任务；结束后恢复 owner 原有的前台窗口与光标位置（owner 要求，2026-11-12）。
 
 ## 8. 诊断与日志
 
