@@ -34,6 +34,9 @@ public partial class MainWindow : Window
     private double _scrollBurstLastOffset;
     private DateTime _scrollBurstLastLog = DateTime.MinValue;
 
+    /// <summary>Upper bound for a grouped-view column dragged by the header gripper (DIPs).</summary>
+    private const double MaxGroupedColumnWidth = 1600;
+
     public MainWindow(AppHost host)
     {
         _host = host;
@@ -432,6 +435,26 @@ public partial class MainWindow : Window
         {
             _vm.SortBy(sortProperty);
             e.Handled = true;
+        }
+    }
+
+    private void OnGroupedColumnThumbDragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
+        {
+            // The header cell and every realized row cell bind to this same instance, so updating
+            // the width here resizes the whole column live while the gripper is dragged.
+            header.Width = Math.Clamp(header.Width + e.HorizontalChange,
+                header.MinWidth, MaxGroupedColumnWidth);
+            e.Handled = true;
+        }
+    }
+
+    private void OnGroupedColumnThumbDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
+        {
+            _vm.PersistGroupedColumnWidth(header.Key, header.Width);
         }
     }
 

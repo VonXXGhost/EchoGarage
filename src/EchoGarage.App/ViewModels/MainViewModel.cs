@@ -817,24 +817,44 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 Key = column.Key,
                 Header = descriptor.Header,
+                MinWidth = descriptor.MinWidth,
                 Width = Math.Max(descriptor.MinWidth, column.Width),
                 SortGlyph = glyph
             });
         }
 
-        var columns = GroupedColumns
-            .Select(h => (h.Key, h.Width, Template: templates[h.Key]))
-            .ToList();
+        var headers = GroupedColumns.ToList();
         foreach (var row in Tracks)
         {
-            row.Cells = columns.Select(c => new TrackCellViewModel
+            row.Cells = headers.Select(h => new TrackCellViewModel
             {
-                Key = c.Key,
-                Width = c.Width,
+                Key = h.Key,
+                HeaderSource = h,
                 Row = row,
-                Template = c.Template
+                Template = templates[h.Key]
             }).ToList();
         }
+    }
+
+    /// <summary>
+    /// Applies a width dragged in the grouped view's column header and persists the layout. Only
+    /// the header is updated live (row cells bind to it); the layout itself is written once the
+    /// drag finishes, so a long drag does not rebuild the whole grouped view repeatedly.
+    /// </summary>
+    public void PersistGroupedColumnWidth(string key, double width)
+    {
+        var column = CurrentLayout.Columns.FirstOrDefault(c =>
+            string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+        {
+            _host.Logger.Debug($"Grouped column width: column '{key}' is not in the current layout.");
+            return;
+        }
+
+        var descriptor = ColumnCatalog.Find(key);
+        column.Width = Math.Max(descriptor?.MinWidth ?? 24, width);
+        PersistCurrentLayout(CurrentLayout.Clone(), captureFromView: false);
+        _host.Logger.Debug($"Grouped column width: {key}={column.Width:F1}");
     }
 
     /// <summary>Persists the grouped cover size after the cover gutter was dragged.</summary>

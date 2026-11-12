@@ -70,12 +70,19 @@
         <DataTemplate x:Key="GroupedHeaderCell">
             <Grid Width="{Binding Width}" Background="Transparent" Cursor="Hand"
                   MouseLeftButtonUp="OnGroupedHeaderClick">
-                <TextBlock Text="{Binding Header}" Margin="8,0" VerticalAlignment="Center"
+                <TextBlock Text="{Binding Header}" Margin="8,0,10,0" VerticalAlignment="Center"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                            TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding SortGlyph}" Foreground="{DynamicResource AccentBrush}"
                            FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Center"
-                           Margin="0,0,4,0" />
+                           Margin="0,0,9,0" />
+                <!-- Thin vertical rule marks the exact column boundary; the gripper sits on top. -->
+                <Border Width="1" HorizontalAlignment="Right" Margin="0,7"
+                        Background="{DynamicResource BorderBrush}" IsHitTestVisible="False" />
+                <Thumb Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                       Style="{StaticResource ColumnHeaderGripper}" ToolTip="拖动调整列宽"
+                       DragDelta="OnGroupedColumnThumbDragDelta"
+                       DragCompleted="OnGroupedColumnThumbDragCompleted" />
             </Grid>
         </DataTemplate>
 
@@ -516,7 +523,10 @@
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0" Background="Transparent">
                                 <TextBlock Text="封面" Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                                           Margin="8,0" VerticalAlignment="Center" />
+                                           Margin="8,0,10,0" VerticalAlignment="Center" />
+                                <!-- Same boundary rule as the song columns; the cover gripper sits on top. -->
+                                <Border Width="1" HorizontalAlignment="Right" Margin="0,7"
+                                        Background="{DynamicResource BorderBrush}" IsHitTestVisible="False" />
                                 <Thumb x:Name="GroupCoverThumb" Width="6" HorizontalAlignment="Right"
                                        Cursor="SizeWE" Style="{StaticResource ColumnHeaderGripper}"
                                        DragDelta="OnGroupCoverThumbDragDelta"
@@ -564,7 +574,7 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Width="{Binding Width}" Padding="8,0" Background="Transparent">
+                                            <Border Width="{Binding HeaderSource.Width}" Padding="8,0" Background="Transparent">
                                                 <ContentControl Content="{Binding Row}"
                                                                 ContentTemplate="{Binding Template}" />
                                             </Border>
