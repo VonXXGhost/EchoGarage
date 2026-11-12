@@ -4,6 +4,7 @@
         xmlns:vm="clr-namespace:EchoGarage.App.ViewModels"
         xmlns:core="clr-namespace:EchoGarage.Core.Models;assembly=EchoGarage.Core"
         xmlns:svc="clr-namespace:EchoGarage.App.Services"
+        xmlns:views="clr-namespace:EchoGarage.App.Views"
         Title="EchoGarage"
         Icon="/EchoGarage;component/Resources/echogarage.ico"
         Height="880" Width="1440" MinHeight="600" MinWidth="980"
@@ -111,13 +112,19 @@
                             </Border>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="{Binding DataContext.GroupCoverColumnWidth,
-                                                RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    <!-- Auto: the gutter is exactly the cover plus its 8 DIP margins. -->
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
+                                <!-- The cover size comes from GroupCoverMetrics.CoverSize (inherited from
+                                     GroupedList). Deliberately no RelativeSource AncestorType=Window binding:
+                                     virtualized group containers can be templated before they are attached
+                                     to the tree, and such ancestor lookups occasionally never resolved,
+                                     leaving the cover at the artwork's natural size (giant cover bug,
+                                     2026-11-12). Self bindings cannot fail that way. -->
                                 <Border Grid.Column="0" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                        Width="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Height="{Binding DataContext.GroupCoverSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Width="{Binding Path=(views:GroupCoverMetrics.CoverSize), RelativeSource={RelativeSource Self}}"
+                                        Height="{Binding Path=(views:GroupCoverMetrics.CoverSize), RelativeSource={RelativeSource Self}}"
                                         CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
                                         ClipToBounds="True" Loaded="OnGroupCoverLoaded"
                                         IsVisibleChanged="OnGroupCoverIsVisibleChanged"
@@ -648,11 +655,26 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <!-- Double-click: jump to and center the playing row when it is part of the
+                     list that is currently browsed (see MainWindow.NowPlaying.cs). -->
                 <TextBlock Grid.Column="0" Text="{Binding NowPlayingStatusText}"
                            AutomationProperties.AutomationId="NowPlayingStatus"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            VerticalAlignment="Center" FontSize="12"
-                           TextTrimming="CharacterEllipsis" ToolTip="{Binding NowPlayingStatusText}" />
+                           TextTrimming="CharacterEllipsis" Cursor="Hand"
+                           Background="Transparent"
+                           MouseLeftButtonDown="OnNowPlayingStatusMouseLeftButtonDown">
+                    <TextBlock.ToolTip>
+                        <ToolTip>
+                            <StackPanel>
+                                <TextBlock Text="{Binding NowPlayingStatusText}" />
+                                <TextBlock Text="双击跳转到正在播放的歌曲"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
+                                           Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                        </ToolTip>
+                    </TextBlock.ToolTip>
+                </TextBlock>
                 <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" MaxWidth="620"
                            AutomationProperties.AutomationId="StatusHint"
                            Foreground="{DynamicResource TextMutedBrush}"

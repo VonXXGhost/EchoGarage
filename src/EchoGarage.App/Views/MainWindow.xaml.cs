@@ -49,6 +49,8 @@ public partial class MainWindow : Window
         _vm.SortChanged += (_, _) => UpdateSortGlyphs();
         _vm.SettingsRequested += (_, _) => OpenSettings();
         _vm.CurrentRowChanged += (_, _) => ScrollToCurrentRow();
+        _vm.PropertyChanged += OnViewModelPropertyChanged;
+        ApplyGroupCoverMetrics();
 
         // Watch for scroll feedback loops: a huge number of ScrollChanged events with almost no
         // movement means the ScrollViewer's anchoring is re-posting itself instead of scrolling.
@@ -74,6 +76,26 @@ public partial class MainWindow : Window
     {
         ThemeManager.ThemeApplied -= OnThemeApplied;
         Closed -= OnClosed;
+        _vm.PropertyChanged -= OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainViewModel.GroupCoverSize))
+        {
+            ApplyGroupCoverMetrics();
+        }
+    }
+
+    /// <summary>
+    /// Pushes the current album cover metrics into the grouped list. The album group template
+    /// reads the size through the inheritable <see cref="GroupCoverMetrics.CoverSize"/> attached
+    /// property instead of an ancestor binding, so group containers created later by
+    /// virtualization/recycling receive the same value.
+    /// </summary>
+    private void ApplyGroupCoverMetrics()
+    {
+        GroupedList.SetValue(GroupCoverMetrics.CoverSizeProperty, _vm.GroupCoverSize);
     }
 
     public MainViewModel ViewModel => _vm;
@@ -433,8 +455,31 @@ public partial class MainWindow : Window
             if (element.IsVisible)
             {
                 RequestGroupCover(group);
+                RepairGroupCoverSizeIfNeeded(element, group);
             }
         }
+    }
+
+    /// <summary>
+    /// Last line of defence for the giant-cover bug (2026-11-12): the cover Border must be
+    /// <see cref="MainViewModel.GroupCoverSize"/> wide. A NaN width means the size never arrived
+    /// (in the old template an ancestor binding that stayed unresolved), in which case the Border
+    /// grows to the decoded artwork's natural size. Repair the element and leave a WARN behind.
+    /// </summary>
+    private void RepairGroupCoverSizeIfNeeded(FrameworkElement cover, CollectionViewGroup group)
+    {
+        var expected = _vm.GroupCoverSize;
+        if (!double.IsNaN(cover.Width) && Math.Abs(cover.Width - expected) <= 0.5)
+        {
+            return;
+        }
+
+        var first = group.Items.OfType<TrackRowViewModel>().FirstOrDefault();
+        _host.Logger.Warn(
+            $"Album group cover size was not applied (width={cover.Width:F1}, expected={expected:F1}, " +
+            $"group={first?.AlbumGroupTitle ?? "?"}); repairing the element.");
+        cover.Width = expected;
+        cover.Height = expected;
     }
 
     private void OnGroupCoverIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)

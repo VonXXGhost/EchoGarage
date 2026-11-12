@@ -311,4 +311,40 @@ public partial class MainWindow
 
         return null;
     }
+
+    /// <summary>
+    /// Double-clicking the status-bar now-playing text jumps to then centers the playing row of
+    /// the list that is currently browsed (owner request, 2026-11-12). When the playing track is
+    /// not part of the current list a hint is shown instead of silently doing nothing.
+    /// </summary>
+    private void OnNowPlayingStatusMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount < 2)
+        {
+            return;
+        }
+
+        e.Handled = true;
+
+        var row = _vm.CurrentRow;
+        if (row is null)
+        {
+            _host.Logger.Debug("Now-playing status double-click: nothing is playing.");
+            _vm.SetStatus("当前没有正在播放的歌曲。");
+            return;
+        }
+
+        if (!IsCurrentRowBrowsable(row))
+        {
+            _host.Logger.Debug($"Now-playing status double-click: playing row is not in the current list (row={row.Track.Title}).");
+            _vm.SetStatus("正在播放的歌曲不在当前列表中。");
+            return;
+        }
+
+        _host.Logger.Debug($"Now-playing status double-click: centering the playing row (row={row.Track.Title}).");
+
+        // Same path as the automatic centering after a track change: deferred to the next
+        // dispatcher turn and postponed while the user is dragging a scrollbar.
+        ScheduleCenterCurrentRow();
+    }
 }
