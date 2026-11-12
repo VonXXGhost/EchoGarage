@@ -35,6 +35,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isSeeking;
     private bool _isDisposed;
     private int _consecutiveFailures;
+
+    /// <summary>
+    /// The source whose tracks and layout are currently shown. This is deliberately separate
+    /// from <see cref="SelectedSource"/>: the source ListBox uses a TwoWay SelectedItem binding,
+    /// so SelectedSource already points at the *requested* source before the switch has happened.
+    /// Layouts must be saved to the source that is still displayed, not to the new one.
+    /// </summary>
+    private SourceNodeViewModel? _activeSource;
     private CancellationTokenSource? _scanCts;
 
     // Monotonic token so a slow cover decode cannot overwrite a newer track's artwork.
@@ -511,6 +519,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         SetSelectedSourceSilently(SelectedSource ?? Sources.FirstOrDefault());
+        if (_activeSource is not null)
+        {
+            // The source nodes are replaced on every reload; keep tracking the displayed one so
+            // layout persistence still reaches the right destination (and its playlist object).
+            _activeSource = Sources.FirstOrDefault(s => s.Matches(_activeSource)) ?? SelectedSource;
+        }
+
         _sourcesView.Refresh();
     }
 
@@ -586,9 +601,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // On the very first selection there is no previous source/grid layout to persist;
             // doing it anyway would overwrite the saved library layout with the default one
             // (the window has not built its columns yet, so CaptureLayoutFromGrid returns null).
-            if (SelectedSource is not null)
+            // Always persist to the source that is still on screen: the TwoWay SelectedItem
+            // binding has already replaced SelectedSource with the requested source, and using
+            // it here wrote the previous layout into the new source (which made grouping vanish
+            // when switching back to the library).
+            if (_activeSource is not null)
             {
-                PersistCurrentLayout();
+                PersistCurrentLayout(null, destination: _activeSource);
             }
 
             SetSelectedSourceSilently(source);
@@ -599,6 +618,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 : ViewLayoutFactory.Normalize(Settings.LibraryLayout.Clone());
 
             ApplyTracks(tracks, source);
+            _activeSource = source;
             if (source.Kind == SourceKind.Playlist && source.Playlist is not null)
             {
                 Settings.LastPlaylistId = source.Playlist.Id;
@@ -865,11 +885,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <param name="captureFromView">
     /// 应用预设或列设置后必须为 false：此时界面还是旧列，抓取会把旧宽度覆盖回新布局。
     /// </param>
-    public void PersistCurrentLayout(PlaylistViewLayout? capturedLayout, bool captureFromView = true)
+    /// <param name="destination">
+    /// 布局要保存到的来源。为空时使用当前实际显示的来源（<see cref="_activeSource"/>），而不是
+    /// <see cref="SelectedSource"/>——列表选择绑定会先把 SelectedSource 改成新来源，切换来源时必须
+    /// 显式传入旧来源，否则旧布局会被写进新来源。
+    /// </param>
+    public void PersistCurrentLayout(PlaylistViewLayout? capturedLayout, bool captureFromView = true,
+        SourceNodeViewModel? destination = null)
     {
+        var target = destination ?? _activeSource ?? SelectedSource;
         _host.Logger.Debug(
             $"Persist layout: captured={(capturedLayout is null ? "null" : "provided")} captureFromView={captureFromView} " +
-            $"selected={SelectedSource?.Kind.ToString() ?? "null"} currentGroupCoverSize={CurrentLayout.GroupCoverSize:F1}");
+            $"source={target?.Kind.ToString() ?? "null"} currentGroupCoverSize={CurrentLayout.GroupCoverSize:F1}");
 
         if (capturedLayout is null && captureFromView)
         {
@@ -888,15 +915,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             CurrentLayout = ViewLayoutFactory.Normalize(capturedLayout);
         }
 
-        if (SelectedSource?.Kind == SourceKind.Playlist && SelectedSource.Playlist is not null)
+        if (target?.Kind == SourceKind.Playlist && target.Playlist is not null)
         {
-            var playlist = SelectedSource.Playlist;
-            var layout = CurrentLayout;
+            var playlist = target.Playlist;
+            var serialized = ViewLayoutFactory.Serialize(CurrentLayout);
+            // Keep the in-memory node in sync with the database: switching back to this playlist
+            // deserializes from the node, not from the repository, and a stale value made the
+            // playlist reopen with an old layout (and then overwrite the library layout).
+            playlist.ViewLayoutJson = serialized;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await _host.PlaylistRepository.UpdatePlaylistLayoutAsync(playlist.Id, ViewLayoutFactory.Serialize(layout));
+                    await _host.PlaylistRepository.UpdatePlaylistLayoutAsync(playlist.Id, serialized);
                 }
                 catch (Exception ex)
                 {
