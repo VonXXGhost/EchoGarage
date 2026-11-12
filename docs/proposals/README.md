@@ -20,5 +20,7 @@
   传输按钮焦点框），已归档到 `docs/kb/KB-010-*`。
 - 2026-11-12：新增提案 `KB-011-grouped-list-scrollbar-stuck-scroll-loop.md`
   （分组列表拖动滚动条后卡住抽搐的排查、WPF 滚动锚定机理与防御性修复），**待 owner 批准**。
-- 待批准提案：`KB-011`。
+- 2026-11-12：新增提案 `KB-012-group-cover-size-binding-and-nowplaying-double-click.md`
+  （分组视图偶发巨大封面的祖先绑定失效根因、可继承附加属性加固与自愈日志；状态栏双击跳转播放行），**待 owner 批准**。
+- 待批准提案：`KB-011`、`KB-012`。
 
