@@ -43,13 +43,27 @@ public sealed class Playlist
     }
 }
 
+/// <summary>
+/// Where a column is anchored in the grouped view's header. Left columns flow from the left
+/// edge after the cover gutter; right columns hug the right edge of the list, so widening a
+/// left column squeezes the flexible space instead of pushing the right block out of view.
+/// </summary>
+public enum ColumnPin
+{
+    Left = 0,
+    Right = 1
+}
+
 public sealed class PlaylistColumn
 {
     public string Key { get; set; } = string.Empty;
     public double Width { get; set; }
     public bool Visible { get; set; } = true;
 
-    public PlaylistColumn Clone() => new() { Key = Key, Width = Width, Visible = Visible };
+    /// <summary>Header anchor in the grouped view. Stored per layout so each source remembers it.</summary>
+    public ColumnPin Pin { get; set; } = ColumnPin.Left;
+
+    public PlaylistColumn Clone() => new() { Key = Key, Width = Width, Visible = Visible, Pin = Pin };
 }
 
 public sealed class PlaylistViewLayout

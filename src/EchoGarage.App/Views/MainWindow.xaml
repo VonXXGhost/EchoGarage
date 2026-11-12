@@ -70,20 +70,48 @@
         <DataTemplate x:Key="GroupedHeaderCell">
             <Grid Width="{Binding Width}" Background="Transparent" Cursor="Hand"
                   MouseLeftButtonUp="OnGroupedHeaderClick">
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="固定在左侧" IsCheckable="True"
+                                  IsChecked="{Binding IsLeftPinned, Mode=OneWay}"
+                                  Click="OnGroupedHeaderPinLeftClick" />
+                        <MenuItem Header="固定在右侧" IsCheckable="True"
+                                  IsChecked="{Binding IsRightPinned, Mode=OneWay}"
+                                  Click="OnGroupedHeaderPinRightClick" />
+                    </ContextMenu>
+                </Grid.ContextMenu>
                 <TextBlock Text="{Binding Header}" Margin="8,0,10,0" VerticalAlignment="Center"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                            TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding SortGlyph}" Foreground="{DynamicResource AccentBrush}"
                            FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Center"
                            Margin="0,0,9,0" />
+                <!-- Boundary between the left flow and the right-pinned block: this gripper resizes
+                     the last left column instead of moving the pinned block. -->
+                <Border Width="1" HorizontalAlignment="Left" Margin="0,7"
+                        Background="{DynamicResource BorderBrush}" IsHitTestVisible="False"
+                        Visibility="{Binding ShowLeftBoundaryGripper, Converter={StaticResource BoolToVisibility}}" />
+                <Thumb Width="6" HorizontalAlignment="Left" Cursor="SizeWE"
+                       Visibility="{Binding ShowLeftBoundaryGripper, Converter={StaticResource BoolToVisibility}}"
+                       Style="{StaticResource ColumnHeaderGripper}" ToolTip="拖动调整右侧列宽"
+                       DragDelta="OnGroupedBoundaryThumbDragDelta"
+                       DragCompleted="OnGroupedBoundaryThumbDragCompleted" />
                 <!-- Thin vertical rule marks the exact column boundary; the gripper sits on top. -->
                 <Border Width="1" HorizontalAlignment="Right" Margin="0,7"
                         Background="{DynamicResource BorderBrush}" IsHitTestVisible="False" />
                 <Thumb Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                       Visibility="{Binding ShowResizeGripper, Converter={StaticResource BoolToVisibility}}"
                        Style="{StaticResource ColumnHeaderGripper}" ToolTip="拖动调整列宽"
                        DragDelta="OnGroupedColumnThumbDragDelta"
                        DragCompleted="OnGroupedColumnThumbDragCompleted" />
             </Grid>
+        </DataTemplate>
+
+        <!-- One song cell in the grouped list; used by the left flow and the right-pinned block. -->
+        <DataTemplate x:Key="GroupedRowCell">
+            <Border Width="{Binding HeaderSource.Width}" Padding="8,0" Background="Transparent">
+                <ContentControl Content="{Binding Row}" ContentTemplate="{Binding Template}" />
+            </Border>
         </DataTemplate>
 
         <Style x:Key="AlbumGroupContainer" TargetType="GroupItem">
@@ -379,19 +407,16 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="EchoGarage" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
-                    <TextBlock Text="v0.1.0" FontSize="10" Foreground="{DynamicResource TextMutedBrush}"
-                               Margin="6,2,0,0" VerticalAlignment="Center" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="FileMenuButton" Content="文件" Style="{StaticResource ToolbarButton}"
-                            Click="OnMenuButtonClick" Tag="{StaticResource FileMenu}" />
+                            Click="OnMenuButtonClick" MouseEnter="OnMenuButtonMouseEnter"
+                            Tag="{StaticResource FileMenu}" />
                     <Button x:Name="PlaylistMenuButton" Content="播放列表" Style="{StaticResource ToolbarButton}"
-                            Click="OnMenuButtonClick" Tag="{StaticResource PlaylistMenu}" />
+                            Click="OnMenuButtonClick" MouseEnter="OnMenuButtonMouseEnter"
+                            Tag="{StaticResource PlaylistMenu}" />
                     <Button x:Name="ViewMenuButton" Content="视图" Style="{StaticResource ToolbarButton}"
-                            Click="OnMenuButtonClick" Tag="{StaticResource ViewMenu}" />
+                            Click="OnMenuButtonClick" MouseEnter="OnMenuButtonMouseEnter"
+                            Tag="{StaticResource ViewMenu}" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
@@ -516,10 +541,11 @@
                     <Border Grid.Row="0" Background="{DynamicResource HeaderBackgroundBrush}"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
                             ClipToBounds="True">
-                        <Grid>
+                        <Grid x:Name="GroupedHeaderGrid">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="{Binding GroupCoverColumnWidth}" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0" Background="Transparent">
                                 <TextBlock Text="封面" Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
@@ -532,9 +558,20 @@
                                        DragDelta="OnGroupCoverThumbDragDelta"
                                        DragCompleted="OnGroupCoverThumbDragCompleted" />
                             </Grid>
-                            <ItemsControl Grid.Column="1" ItemsSource="{Binding GroupedColumns}"
+                            <ItemsControl x:Name="GroupedLeftHeaderItems" Grid.Column="1"
+                                          ItemsSource="{Binding GroupedLeftColumns}"
                                           ItemTemplate="{StaticResource GroupedHeaderCell}"
-                                          ClipToBounds="True">
+                                          ClipToBounds="True" HorizontalAlignment="Left">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <ItemsControl x:Name="GroupedRightHeaderItems" Grid.Column="2"
+                                          ItemsSource="{Binding GroupedRightColumns}"
+                                          ItemTemplate="{StaticResource GroupedHeaderCell}"
+                                          ClipToBounds="True" HorizontalAlignment="Right">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <StackPanel Orientation="Horizontal" />
@@ -566,21 +603,30 @@
                         </ListView.GroupStyle>
                         <ListView.ItemTemplate>
                             <DataTemplate>
-                                <ItemsControl ItemsSource="{Binding Cells}" VerticalAlignment="Center">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Width="{Binding HeaderSource.Width}" Padding="8,0" Background="Transparent">
-                                                <ContentControl Content="{Binding Row}"
-                                                                ContentTemplate="{Binding Template}" />
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <Grid VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ItemsControl Grid.Column="0" ItemsSource="{Binding Cells}"
+                                                  HorizontalAlignment="Left"
+                                                  ItemTemplate="{StaticResource GroupedRowCell}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding RightCells}"
+                                                  HorizontalAlignment="Right"
+                                                  ItemTemplate="{StaticResource GroupedRowCell}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
@@ -737,7 +783,8 @@
                                HorizontalAlignment="Right" />
                 </Grid>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                            Background="Transparent" PreviewMouseWheel="OnVolumeAreaMouseWheel">
                     <TextBlock Text="音量" Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                                VerticalAlignment="Center" />
                     <Slider Width="120" Margin="8,0,6,0" Minimum="0" Maximum="100"

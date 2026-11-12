@@ -57,7 +57,10 @@ public static class ViewLayoutFactory
             {
                 Key = descriptor.Key,
                 Width = Math.Clamp(column.Width <= 0 ? descriptor.DefaultWidth : column.Width, descriptor.MinWidth, 1200),
-                Visible = column.Visible
+                Visible = column.Visible,
+                // Pins only make sense for the columns a user can see and drag in the grouped
+                // header; older layouts deserialize without one and default to left.
+                Pin = column.Visible ? column.Pin : ColumnPin.Left
             });
         }
 

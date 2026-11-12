@@ -70,6 +70,34 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
+    public void Normalize_PreservesRightPinOnlyForVisibleColumns()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        var duration = layout.Columns.Single(c => c.Key == "duration");
+        duration.Visible = true;
+        duration.Pin = ColumnPin.Right;
+        // albumArtist is hidden by default; a hidden column cannot stay pinned to the right edge.
+        layout.Columns.Single(c => c.Key == "albumArtist").Pin = ColumnPin.Right;
+
+        var normalized = ViewLayoutFactory.Normalize(layout);
+
+        Assert.Equal(ColumnPin.Right, normalized.Columns.Single(c => c.Key == "duration").Pin);
+        Assert.Equal(ColumnPin.Left, normalized.Columns.Single(c => c.Key == "albumArtist").Pin);
+    }
+
+    [Fact]
+    public void SerializeRoundTrip_PreservesColumnPin()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.Columns.Single(c => c.Key == "album").Pin = ColumnPin.Right;
+
+        var restored = ViewLayoutFactory.Deserialize(ViewLayoutFactory.Serialize(layout));
+
+        Assert.Equal(ColumnPin.Right, restored.Columns.Single(c => c.Key == "album").Pin);
+        Assert.Equal(ColumnPin.Left, restored.Columns.Single(c => c.Key == "title").Pin);
+    }
+
+    [Fact]
     public void Normalize_KeepsSortPropertyForVisibleSortableColumns()
     {
         foreach (var descriptor in ColumnCatalog.All.Where(c => !string.IsNullOrWhiteSpace(c.SortProperty)))

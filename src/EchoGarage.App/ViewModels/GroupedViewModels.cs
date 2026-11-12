@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
 
 namespace EchoGarage.App.ViewModels;
@@ -23,6 +24,7 @@ public sealed class TrackCellViewModel
 public sealed class GroupedColumnHeaderViewModel : INotifyPropertyChanged
 {
     private double _width;
+    private bool _showResizeGripper = true;
 
     public required string Key { get; init; }
 
@@ -47,6 +49,41 @@ public sealed class GroupedColumnHeaderViewModel : INotifyPropertyChanged
     }
 
     public string SortGlyph { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Header anchor: left columns flow after the cover gutter, right columns stay glued to the
+    /// right edge of the list (so they never scroll out of view when a left column grows).
+    /// </summary>
+    public ColumnPin Pin { get; init; }
+
+    /// <summary>
+    /// True for the first right-pinned column: its left edge is the boundary between the left flow
+    /// and the pinned block, so dragging it compresses/expands the last left-pinned column.
+    /// </summary>
+    public bool ShowLeftBoundaryGripper { get; set; }
+
+    public bool IsLeftPinned => Pin == ColumnPin.Left;
+
+    public bool IsRightPinned => Pin == ColumnPin.Right;
+
+    /// <summary>
+    /// False for the trailing right-pinned column whose right edge is the list border: that edge
+    /// is anchored, so dragging it cannot change the width without detaching the block.
+    /// </summary>
+    public bool ShowResizeGripper
+    {
+        get => _showResizeGripper;
+        set
+        {
+            if (_showResizeGripper == value)
+            {
+                return;
+            }
+
+            _showResizeGripper = value;
+            OnPropertyChanged();
+        }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

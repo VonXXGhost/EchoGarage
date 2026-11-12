@@ -103,7 +103,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<TrackRowViewModel> Tracks { get; }
     public ICollectionView TracksView { get; }
     public ICollectionView GroupedTracksView { get; }
-    public ObservableCollection<GroupedColumnHeaderViewModel> GroupedColumns { get; } = [];
+    /// <summary>Header cells for the left-anchored part of the grouped list.</summary>
+    public ObservableCollection<GroupedColumnHeaderViewModel> GroupedLeftColumns { get; } = [];
+    /// <summary>Header cells pinned to the right edge of the grouped list.</summary>
+    public ObservableCollection<GroupedColumnHeaderViewModel> GroupedRightColumns { get; } = [];
     public ObservableCollection<AudioDeviceInfo> Devices { get; }
     public ObservableCollection<ColumnPreset> Presets { get; }
 
@@ -774,12 +777,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     private void RebuildGroupedView()
     {
-        GroupedColumns.Clear();
+        GroupedLeftColumns.Clear();
+        GroupedRightColumns.Clear();
         if (!IsGroupedViewActive)
         {
             foreach (var row in Tracks)
             {
                 row.Cells = [];
+                row.RightCells = [];
             }
 
             return;
@@ -813,20 +818,52 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 ? descending ? "▼" : "▲"
                 : string.Empty;
             templates[descriptor.Key] = template;
-            GroupedColumns.Add(new GroupedColumnHeaderViewModel
+            var header = new GroupedColumnHeaderViewModel
             {
                 Key = column.Key,
                 Header = descriptor.Header,
                 MinWidth = descriptor.MinWidth,
                 Width = Math.Max(descriptor.MinWidth, column.Width),
-                SortGlyph = glyph
-            });
+                SortGlyph = glyph,
+                Pin = column.Pin
+            };
+
+            if (column.Pin == ColumnPin.Right)
+            {
+                GroupedRightColumns.Add(header);
+            }
+            else
+            {
+                GroupedLeftColumns.Add(header);
+            }
         }
 
-        var headers = GroupedColumns.ToList();
+        var leftHeaders = GroupedLeftColumns.ToList();
+        var rightHeaders = GroupedRightColumns.ToList();
+        if (rightHeaders.Count > 0)
+        {
+            // The trailing pinned column's right edge is the list border; its gripper would
+            // detach the block from that edge, so it is not resizable from the outside.
+            rightHeaders[^1].ShowResizeGripper = false;
+
+            // The first pinned column owns the boundary line against the left flow: dragging it
+            // compresses the last left column instead of moving the pinned block.
+            if (leftHeaders.Count > 0)
+            {
+                rightHeaders[0].ShowLeftBoundaryGripper = true;
+            }
+        }
+
         foreach (var row in Tracks)
         {
-            row.Cells = headers.Select(h => new TrackCellViewModel
+            row.Cells = leftHeaders.Select(h => new TrackCellViewModel
+            {
+                Key = h.Key,
+                HeaderSource = h,
+                Row = row,
+                Template = templates[h.Key]
+            }).ToList();
+            row.RightCells = rightHeaders.Select(h => new TrackCellViewModel
             {
                 Key = h.Key,
                 HeaderSource = h,
@@ -834,6 +871,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 Template = templates[h.Key]
             }).ToList();
         }
+    }
+
+    /// <summary>
+    /// Moves a grouped-view column between the left flow and the right-pinned block and
+    /// persists the layout. Called from the grouped header's context menu.
+    /// </summary>
+    public void SetGroupedColumnPin(string key, ColumnPin pin)
+    {
+        var column = CurrentLayout.Columns.FirstOrDefault(c =>
+            string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+        {
+            _host.Logger.Debug($"Grouped column pin: column '{key}' is not in the current layout.");
+            return;
+        }
+
+        if (column.Pin == pin)
+        {
+            return;
+        }
+
+        column.Pin = pin;
+        PersistCurrentLayout(CurrentLayout.Clone(), captureFromView: false);
+        RebuildGroupedView();
+        _host.Logger.Debug($"Grouped column pin: {column.Key}={pin}");
     }
 
     /// <summary>

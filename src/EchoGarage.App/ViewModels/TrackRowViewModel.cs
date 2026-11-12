@@ -37,6 +37,18 @@ public sealed partial class TrackRowViewModel : ObservableObject
         set => SetProperty(ref _cells, value);
     }
 
+    private IReadOnlyList<TrackCellViewModel> _rightCells = [];
+
+    /// <summary>
+    /// Cells whose columns are pinned to the right edge of the list. They are rendered in a
+    /// separate right-aligned block so a growing left column cannot push them out of view.
+    /// </summary>
+    public IReadOnlyList<TrackCellViewModel> RightCells
+    {
+        get => _rightCells;
+        set => SetProperty(ref _rightCells, value);
+    }
+
     public TrackRowViewModel(Track track, int rowNumber)
     {
         Track = track;

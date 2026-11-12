@@ -33,9 +33,13 @@ public partial class MainWindow : Window
     private double _scrollBurstTravel;
     private double _scrollBurstLastOffset;
     private DateTime _scrollBurstLastLog = DateTime.MinValue;
+    private DateTime _lastHeaderInsetCheck = DateTime.MinValue;
 
     /// <summary>Upper bound for a grouped-view column dragged by the header gripper (DIPs).</summary>
     private const double MaxGroupedColumnWidth = 1600;
+
+    /// <summary>Song-column width that must stay visible next to a pinned header block (DIPs).</summary>
+    private const double MinGroupedContentWidth = 160;
 
     public MainWindow(AppHost host)
     {
@@ -61,6 +65,7 @@ public partial class MainWindow : Window
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
         TrackGrid.AddHandler(ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
+        GroupedList.SizeChanged += (_, _) => UpdateGroupedHeaderInset();
 
         ApplyWindowPlacement();
         HookSeekSlider();
@@ -196,12 +201,15 @@ public partial class MainWindow : Window
             string.Equals(signature, _appliedLayoutSignature, StringComparison.Ordinal))
         {
             UpdateSortGlyphs();
+            UpdateGroupedHeaderInset();
             ScrollToCurrentRow();
             return;
         }
 
         _host.Logger.Debug($"Applying layout: groupCoverSize={_vm.GroupCoverSize:F1} signature={signature}");
         RebuildColumns(layout, signature);
+        UpdateGroupedHeaderInset();
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdateGroupedHeaderInset));
         ScrollToCurrentRow();
     }
 
@@ -438,6 +446,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnGroupedHeaderPinLeftClick(object sender, RoutedEventArgs e) =>
+        SetGroupedColumnPin(sender, ColumnPin.Left);
+
+    private void OnGroupedHeaderPinRightClick(object sender, RoutedEventArgs e) =>
+        SetGroupedColumnPin(sender, ColumnPin.Right);
+
+    private void SetGroupedColumnPin(object sender, ColumnPin pin)
+    {
+        if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
+        {
+            _vm.SetGroupedColumnPin(header.Key, pin);
+        }
+    }
+
     private void OnGroupedColumnThumbDragDelta(object sender, DragDeltaEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
@@ -445,9 +467,47 @@ public partial class MainWindow : Window
             // The header cell and every realized row cell bind to this same instance, so updating
             // the width here resizes the whole column live while the gripper is dragged.
             header.Width = Math.Clamp(header.Width + e.HorizontalChange,
-                header.MinWidth, MaxGroupedColumnWidth);
+                header.MinWidth, MaxAllowedGroupedColumnWidth(header));
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// Largest width a header may take without dragging the pinned block out of its visible area:
+    /// left-pinned columns must fit in the left flow, right-pinned columns must leave the song
+    /// content readable next to the right-aligned block.
+    /// </summary>
+    private double MaxAllowedGroupedColumnWidth(GroupedColumnHeaderViewModel header)
+    {
+        if (GroupedHeaderGrid is null || GroupedHeaderGrid.ActualWidth <= 0)
+        {
+            return MaxGroupedColumnWidth;
+        }
+
+        var siblings = header.Pin == ColumnPin.Right ? _vm.GroupedRightColumns : _vm.GroupedLeftColumns;
+        var siblingWidth = siblings
+            .Where(h => !ReferenceEquals(h, header))
+            .Sum(h => h.Width);
+        // The left flow may not shrink below the minimum widths of its own columns, otherwise
+        // widening a right-pinned column would silently clip whole columns away.
+        var leftMinTotal = _vm.GroupedLeftColumns.Sum(h => h.MinWidth);
+        var contentReserve = leftMinTotal > 0 ? leftMinTotal : MinGroupedContentWidth;
+        var available = header.Pin == ColumnPin.Right
+            ? GroupedHeaderGrid.ActualWidth
+              - GroupedHeaderGrid.ColumnDefinitions[0].ActualWidth
+              - GroupedRightHeaderItems.Margin.Right
+              - contentReserve
+              - siblingWidth
+            : GroupedHeaderGrid.ColumnDefinitions[1].ActualWidth - siblingWidth;
+        var maxWidth = Math.Max(header.Width, Math.Max(header.MinWidth,
+            Math.Min(MaxGroupedColumnWidth, available)));
+        _host.Logger.Debug(
+            $"Grouped column drag clamp: key={header.Key} pin={header.Pin} grid={GroupedHeaderGrid.ActualWidth:F1} " +
+            $"cover={GroupedHeaderGrid.ColumnDefinitions[0].ActualWidth:F1} " +
+            $"left={GroupedHeaderGrid.ColumnDefinitions[1].ActualWidth:F1} " +
+            $"right={GroupedHeaderGrid.ColumnDefinitions[2].ActualWidth:F1} inset={GroupedRightHeaderItems.Margin.Right:F1} " +
+            $"siblings={siblingWidth:F1} reserve={contentReserve:F1} max={maxWidth:F1}");
+        return maxWidth;
     }
 
     private void OnGroupedColumnThumbDragCompleted(object sender, DragCompletedEventArgs e)
@@ -458,15 +518,91 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnGroupedBoundaryThumbDragDelta(object sender, DragDeltaEventArgs e)
+    {
+        var firstRight = _vm.GroupedRightColumns.FirstOrDefault();
+        if (firstRight is null)
+        {
+            return;
+        }
+
+        // The pinned block's left edge is the boundary: dragging it to the left widens the first
+        // pinned column, which compresses the left flow without moving the pinned block.
+        firstRight.Width = Math.Clamp(firstRight.Width - e.HorizontalChange,
+            firstRight.MinWidth, MaxAllowedGroupedColumnWidth(firstRight));
+        e.Handled = true;
+    }
+
+    private void OnGroupedBoundaryThumbDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        var firstRight = _vm.GroupedRightColumns.FirstOrDefault();
+        if (firstRight is not null)
+        {
+            _vm.PersistGroupedColumnWidth(firstRight.Key, firstRight.Width);
+        }
+    }
+
     private void OnGroupCoverThumbDragDelta(object sender, DragDeltaEventArgs e)
     {
+        var maxCoverSize = PlaylistViewLayout.MaxGroupCoverSize;
+        if (GroupedHeaderGrid is { ActualWidth: > 0 })
+        {
+            // Growing the cover gutter squeezes the song columns; stop before the content area
+            // disappears from the visible range.
+            maxCoverSize = Math.Min(maxCoverSize, Math.Max(PlaylistViewLayout.MinGroupCoverSize,
+                GroupedHeaderGrid.ActualWidth - 16 - MinGroupedContentWidth));
+        }
+
         _vm.GroupCoverSize = Math.Clamp(_vm.GroupCoverSize + e.HorizontalChange,
-            PlaylistViewLayout.MinGroupCoverSize, PlaylistViewLayout.MaxGroupCoverSize);
+            PlaylistViewLayout.MinGroupCoverSize, maxCoverSize);
         e.Handled = true;
     }
 
     private void OnGroupCoverThumbDragCompleted(object sender, DragCompletedEventArgs e) =>
         _vm.PersistGroupCoverSize();
+
+    /// <summary>
+    /// Keeps the right-pinned header block flush with the song rows: rows live inside the list's
+    /// ScrollViewer, so they end where the vertical scroll bar begins, while the header spans the
+    /// full width.
+    /// </summary>
+    private void UpdateGroupedHeaderInset()
+    {
+        if (GroupedRightHeaderItems is null)
+        {
+            return;
+        }
+
+        var viewer = FindScrollViewer(GroupedList);
+        var bar = viewer is null ? null : FindVerticalScrollBar(viewer);
+        var inset = bar is { IsVisible: true } ? bar.ActualWidth : 0;
+        if (Math.Abs(GroupedRightHeaderItems.Margin.Right - inset) > 0.5)
+        {
+            GroupedRightHeaderItems.Margin = new Thickness(0, 0, inset, 0);
+            _host.Logger.Debug($"Grouped header inset: {inset:F1} (viewer={viewer is not null}, bar={bar is not null})");
+        }
+    }
+
+    private static ScrollBar? FindVerticalScrollBar(DependencyObject root)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollBar { Orientation: Orientation.Vertical } bar)
+            {
+                return bar;
+            }
+
+            var nested = FindVerticalScrollBar(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
 
     private void OnGroupCoverLoaded(object sender, RoutedEventArgs e)
     {
@@ -598,6 +734,15 @@ public partial class MainWindow : Window
     private void OnListScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         var now = DateTime.UtcNow;
+        if (ReferenceEquals(sender, GroupedList) &&
+            (now - _lastHeaderInsetCheck).TotalMilliseconds >= 250)
+        {
+            // The scroll bar appears/disappears as the grouped list grows and shrinks, which moves
+            // the right edge of the song rows; keep the pinned header block aligned with it.
+            _lastHeaderInsetCheck = now;
+            UpdateGroupedHeaderInset();
+        }
+
         if ((now - _scrollBurstWindow).TotalSeconds >= 1.0)
         {
             _scrollBurstWindow = now;
@@ -634,9 +779,44 @@ public partial class MainWindow : Window
     // =====================================================================
     // Menus and context menu actions
     // =====================================================================
+    private void OnVolumeAreaMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // Wheel over the volume controls steps by 5 %; the value snaps to whole steps so repeated
+        // nudges always land on multiples of five (matching the slider's displayed percentage).
+        if (e.Delta == 0)
+        {
+            return;
+        }
+
+        var step = e.Delta > 0 ? 5.0 : -5.0;
+        var target = Math.Round((_vm.Volume + step) / 5, MidpointRounding.AwayFromZero) * 5;
+        _vm.IsMuted = false;
+        _vm.Volume = Math.Clamp(target, 0, 100);
+        e.Handled = true;
+    }
+
     private void OnMenuButtonClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not ContextMenu menu)
+        {
+            return;
+        }
+
+        OpenMenuButtonMenu(button, menu);
+        e.Handled = true;
+    }
+
+    private void OnMenuButtonMouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is Button { Tag: ContextMenu menu } button)
+        {
+            OpenMenuButtonMenu(button, menu);
+        }
+    }
+
+    private void OpenMenuButtonMenu(Button button, ContextMenu menu)
+    {
+        if (menu.IsOpen && ReferenceEquals(menu.PlacementTarget, button))
         {
             return;
         }
@@ -645,7 +825,6 @@ public partial class MainWindow : Window
         menu.PlacementTarget = button;
         menu.Placement = PlacementMode.Bottom;
         menu.IsOpen = true;
-        e.Handled = true;
     }
 
     private void OnExitMenuClick(object sender, RoutedEventArgs e) => Close();
