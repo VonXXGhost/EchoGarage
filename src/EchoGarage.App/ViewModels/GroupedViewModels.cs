@@ -24,6 +24,7 @@ public sealed class TrackCellViewModel
 public sealed class GroupedColumnHeaderViewModel : INotifyPropertyChanged
 {
     private double _width;
+    private double _fillWidth;
     private bool _showResizeGripper = true;
 
     public required string Key { get; init; }
@@ -45,8 +46,33 @@ public sealed class GroupedColumnHeaderViewModel : INotifyPropertyChanged
 
             _width = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayWidth));
         }
     }
+
+    /// <summary>
+    /// Display-only extra width for the trailing left-pinned column. The left flow is stretched to
+    /// meet the right-pinned block, so the divider between the two blocks only redistributes space;
+    /// the logical <see cref="Width"/> (the persisted value) is not affected by this.
+    /// </summary>
+    public double FillWidth
+    {
+        get => _fillWidth;
+        set
+        {
+            if (Math.Abs(_fillWidth - value) < 0.01)
+            {
+                return;
+            }
+
+            _fillWidth = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayWidth));
+        }
+    }
+
+    /// <summary>Width actually used by the header cell and the row cells.</summary>
+    public double DisplayWidth => _width + _fillWidth;
 
     public string SortGlyph { get; init; } = string.Empty;
 

@@ -19,6 +19,25 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <svc:SecondaryTextConverter x:Key="SecondaryTextConverter" />
+
+        <!-- Optional second line under a cell's primary text. The style trigger collapses the
+             line when the column has no secondary format or the track value renders empty. -->
+        <Style x:Key="SecondaryCellText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Margin" Value="0,1,0,0" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SecondaryMonoCellText" TargetType="TextBlock" BasedOn="{StaticResource SecondaryCellText}">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+        </Style>
 
         <!-- ================= Cell templates ================= -->
         <DataTemplate x:Key="Cell.Cover">
@@ -34,7 +53,7 @@
         <Style x:Key="GroupedTrackItem" TargetType="ListViewItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="MinHeight" Value="40" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -68,7 +87,7 @@
         </Style>
 
         <DataTemplate x:Key="GroupedHeaderCell">
-            <Grid Width="{Binding Width}" Background="Transparent" Cursor="Hand"
+            <Grid Width="{Binding DisplayWidth}" Background="Transparent" Cursor="Hand"
                   MouseLeftButtonUp="OnGroupedHeaderClick">
                 <Grid.ContextMenu>
                     <ContextMenu>
@@ -109,7 +128,7 @@
 
         <!-- One song cell in the grouped list; used by the left flow and the right-pinned block. -->
         <DataTemplate x:Key="GroupedRowCell">
-            <Border Width="{Binding HeaderSource.Width}" Padding="8,0" Background="Transparent">
+            <Border Width="{Binding HeaderSource.DisplayWidth}" Padding="8,0" Background="Transparent">
                 <ContentControl Content="{Binding Row}" ContentTemplate="{Binding Template}" />
             </Border>
         </DataTemplate>
@@ -183,87 +202,147 @@
 
         <DataTemplate x:Key="Cell.Index">
             <TextBlock Text="{Binding IndexDisplay}" Foreground="{DynamicResource TextMutedBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Title">
-            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=title}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Artist">
-            <TextBlock Text="{Binding Artist}" Foreground="{DynamicResource TextSecondaryBrush}"
-                       TextTrimming="CharacterEllipsis" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Artist}" Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=artist}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Album">
-            <TextBlock Text="{Binding Album}" Foreground="{DynamicResource TextSecondaryBrush}"
-                       TextTrimming="CharacterEllipsis" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Album}" Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=album}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.AlbumArtist">
-            <TextBlock Text="{Binding AlbumArtist}" Foreground="{DynamicResource TextSecondaryBrush}"
-                       TextTrimming="CharacterEllipsis" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding AlbumArtist}" Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=albumArtist}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.TrackNumber">
-            <TextBlock Text="{Binding TrackNumberText}" Foreground="{DynamicResource TextMutedBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding TrackNumberText}" Foreground="{DynamicResource TextMutedBrush}"
+                           FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Style="{StaticResource SecondaryMonoCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=trackNumber}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.DiscNumber">
-            <TextBlock Text="{Binding DiscNumberText}" Foreground="{DynamicResource TextMutedBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding DiscNumberText}" Foreground="{DynamicResource TextMutedBrush}"
+                           FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Style="{StaticResource SecondaryMonoCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=discNumber}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Year">
-            <TextBlock Text="{Binding Year}" Foreground="{DynamicResource TextMutedBrush}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Year}" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=year}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Genre">
-            <TextBlock Text="{Binding Genre}" Foreground="{DynamicResource TextSecondaryBrush}"
-                       TextTrimming="CharacterEllipsis" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Genre}" Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=genre}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Duration">
-            <TextBlock Text="{Binding DurationText}" Foreground="{DynamicResource TextSecondaryBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding DurationText}" Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Style="{StaticResource SecondaryMonoCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=duration}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Bitrate">
-            <TextBlock Text="{Binding BitrateText}" Foreground="{DynamicResource TextMutedBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding BitrateText}" Foreground="{DynamicResource TextMutedBrush}"
+                           FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Style="{StaticResource SecondaryMonoCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=bitrate}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.SampleRate">
-            <TextBlock Text="{Binding SampleRateText}" Foreground="{DynamicResource TextMutedBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding SampleRateText}" Foreground="{DynamicResource TextMutedBrush}"
+                           FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Style="{StaticResource SecondaryMonoCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=sampleRate}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Codec">
-            <TextBlock Text="{Binding Codec}" Foreground="{DynamicResource TextMutedBrush}" />
-        </DataTemplate>
-
-        <DataTemplate x:Key="Cell.Rating">
-            <TextBlock Text="{Binding RatingText}" Foreground="{DynamicResource RatingBrush}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Codec}" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=codec}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.AddedAt">
-            <TextBlock Text="{Binding AddedText}" Foreground="{DynamicResource TextMutedBrush}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding AddedText}" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=addedAt}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.FileSize">
-            <TextBlock Text="{Binding FileSizeText}" Foreground="{DynamicResource TextMutedBrush}"
-                       FontFamily="{StaticResource MonoFont}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding FileSizeText}" Foreground="{DynamicResource TextMutedBrush}"
+                           FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Style="{StaticResource SecondaryMonoCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=fileSize}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Path">
-            <TextBlock Text="{Binding PathText}" Foreground="{DynamicResource TextMutedBrush}"
-                       TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding PathText}" Foreground="{DynamicResource TextMutedBrush}"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=path}" />
+            </StackPanel>
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Comment">
-            <TextBlock Text="{Binding Comment}" Foreground="{DynamicResource TextMutedBrush}"
-                       TextTrimming="CharacterEllipsis" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding Comment}" Foreground="{DynamicResource TextMutedBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=comment}" />
+            </StackPanel>
         </DataTemplate>
 
         <!-- ================= Now-playing cover spinner ================= -->
@@ -339,44 +418,6 @@
         </Style>
 
         <!-- ================= Context menus ================= -->
-        <ContextMenu x:Key="FileMenu">
-            <MenuItem Header="添加文件到当前播放列表…" Command="{Binding AddFilesCommand}" InputGestureText="Ctrl+O" />
-            <MenuItem Header="添加媒体库文件夹…" Command="{Binding AddLibraryFolderCommand}" />
-            <MenuItem Header="重新扫描媒体库" Command="{Binding RescanCommand}" InputGestureText="F5" />
-            <MenuItem Header="导出配置…" Command="{Binding ExportConfigurationCommand}" />
-            <MenuItem Header="导入配置…" Command="{Binding ImportConfigurationCommand}" />
-            <Separator />
-            <MenuItem Header="注册为默认播放器…" Command="{Binding RegisterDefaultPlayerCommand}" />
-            <MenuItem Header="设置…" Command="{Binding OpenSettingsCommand}" />
-            <MenuItem Header="打开日志目录" Command="{Binding OpenLogsCommand}" />
-            <Separator />
-            <MenuItem Header="退出" Click="OnExitMenuClick" />
-        </ContextMenu>
-
-        <ContextMenu x:Key="PlaylistMenu">
-            <MenuItem Header="新建播放列表…" Command="{Binding NewPlaylistCommand}" />
-            <MenuItem Header="新建智能播放列表…" Command="{Binding NewSmartPlaylistCommand}" />
-            <Separator />
-            <MenuItem Header="编辑智能条件…" Command="{Binding EditSmartRulesCommand}" />
-            <MenuItem Header="重命名播放列表…" Command="{Binding RenamePlaylistCommand}" />
-            <MenuItem Header="删除播放列表…" Command="{Binding DeletePlaylistCommand}" />
-            <Separator />
-            <MenuItem Header="从播放列表移除所选歌曲" Command="{Binding RemoveSelectedCommand}" InputGestureText="Delete" />
-            <MenuItem Header="添加所选歌曲到其他播放列表…" Command="{Binding AddSelectedToPlaylistCommand}" />
-        </ContextMenu>
-
-        <ContextMenu x:Key="ViewMenu">
-            <MenuItem Header="显示专辑信息面板" IsCheckable="False"
-                      Command="{Binding ToggleAlbumPanelCommand}" />
-            <MenuItem Header="按专辑分组" IsCheckable="True" IsChecked="{Binding GroupByAlbum, Mode=TwoWay}"
-                      ToolTip="分组列表只在按“专辑”或“专辑艺术家”排序时显示；其他排序方式保持普通列表。" />
-            <MenuItem Header="使用浅色主题" Command="{Binding SetThemeCommand}" CommandParameter="0" />
-            <MenuItem Header="使用深色主题" Command="{Binding SetThemeCommand}" CommandParameter="1" />
-            <MenuItem Header="列与布局…" Command="{Binding EditColumnsCommand}" />
-            <Separator />
-            <MenuItem Header="打开配置目录" Command="{Binding OpenConfigFolderCommand}" />
-        </ContextMenu>
-
         <ContextMenu x:Key="TrackMenu">
             <MenuItem Header="播放" Click="OnPlaySelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
@@ -407,17 +448,46 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="FileMenuButton" Content="文件" Style="{StaticResource ToolbarButton}"
-                            Click="OnMenuButtonClick" MouseEnter="OnMenuButtonMouseEnter"
-                            Tag="{StaticResource FileMenu}" />
-                    <Button x:Name="PlaylistMenuButton" Content="播放列表" Style="{StaticResource ToolbarButton}"
-                            Click="OnMenuButtonClick" MouseEnter="OnMenuButtonMouseEnter"
-                            Tag="{StaticResource PlaylistMenu}" />
-                    <Button x:Name="ViewMenuButton" Content="视图" Style="{StaticResource ToolbarButton}"
-                            Click="OnMenuButtonClick" MouseEnter="OnMenuButtonMouseEnter"
-                            Tag="{StaticResource ViewMenu}" />
-                </StackPanel>
+                <Menu Grid.Column="1" VerticalAlignment="Center">
+                    <Menu.ItemContainerStyle>
+                        <Style TargetType="MenuItem" BasedOn="{StaticResource TopLevelMenuItem}" />
+                    </Menu.ItemContainerStyle>
+                    <MenuItem Header="文件">
+                        <MenuItem Header="添加文件到当前播放列表…" Command="{Binding AddFilesCommand}" InputGestureText="Ctrl+O" />
+                        <MenuItem Header="添加媒体库文件夹…" Command="{Binding AddLibraryFolderCommand}" />
+                        <MenuItem Header="重新扫描媒体库" Command="{Binding RescanCommand}" InputGestureText="F5" />
+                        <MenuItem Header="导出配置…" Command="{Binding ExportConfigurationCommand}" />
+                        <MenuItem Header="导入配置…" Command="{Binding ImportConfigurationCommand}" />
+                        <Separator />
+                        <MenuItem Header="注册为默认播放器…" Command="{Binding RegisterDefaultPlayerCommand}" />
+                        <MenuItem Header="设置…" Command="{Binding OpenSettingsCommand}" />
+                        <MenuItem Header="打开日志目录" Command="{Binding OpenLogsCommand}" />
+                        <Separator />
+                        <MenuItem Header="退出" Click="OnExitMenuClick" />
+                    </MenuItem>
+                    <MenuItem Header="播放列表">
+                        <MenuItem Header="新建播放列表…" Command="{Binding NewPlaylistCommand}" />
+                        <MenuItem Header="新建智能播放列表…" Command="{Binding NewSmartPlaylistCommand}" />
+                        <Separator />
+                        <MenuItem Header="编辑智能条件…" Command="{Binding EditSmartRulesCommand}" />
+                        <MenuItem Header="重命名播放列表…" Command="{Binding RenamePlaylistCommand}" />
+                        <MenuItem Header="删除播放列表…" Command="{Binding DeletePlaylistCommand}" />
+                        <Separator />
+                        <MenuItem Header="从播放列表移除所选歌曲" Command="{Binding RemoveSelectedCommand}" InputGestureText="Delete" />
+                        <MenuItem Header="添加所选歌曲到其他播放列表…" Command="{Binding AddSelectedToPlaylistCommand}" />
+                    </MenuItem>
+                    <MenuItem Header="视图">
+                        <MenuItem Header="显示专辑信息面板" Command="{Binding ToggleAlbumPanelCommand}" />
+                        <MenuItem Header="按专辑分组" IsCheckable="True" IsChecked="{Binding GroupByAlbum, Mode=TwoWay}"
+                                  ToolTip="分组列表只在按“专辑”或“专辑艺术家”排序时显示；开启分组会自动切换为按专辑排序，这两列可以隐藏。" />
+                        <MenuItem Header="使用浅色主题" Command="{Binding SetThemeCommand}" CommandParameter="0" />
+                        <MenuItem Header="使用深色主题" Command="{Binding SetThemeCommand}" CommandParameter="1" />
+                        <MenuItem Header="列与布局…" Command="{Binding EditColumnsCommand}" />
+                        <MenuItem Header="显示字段说明…" Click="OnFieldGuideMenuClick" />
+                        <Separator />
+                        <MenuItem Header="打开配置目录" Command="{Binding OpenConfigFolderCommand}" />
+                    </MenuItem>
+                </Menu>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="输出" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"

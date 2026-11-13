@@ -27,6 +27,13 @@ logs/
 *.db-shm
 *.db-wal
 
+# Screenshots / screen recordings are verification artifacts: do not commit them.
+# Keep UI verification images in artifacts/ or .scratch/ (ignored below). Existing
+# docs/screenshots files are historical; new ones are ignored on purpose.
+docs/screenshots/
+*.mp4
+*.webm
+
 # OS
 Thumbs.db
 desktop.ini

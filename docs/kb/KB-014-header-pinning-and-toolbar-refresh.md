@@ -1,6 +1,6 @@
 # KB-014 分组表头左右固定、列宽拖拽边界与顶栏/图标刷新
 
-> 状态：提案（待 owner 批准后移入 `docs/kb/`）
+> 状态：已批准（Accepted，2026-11-14，owner）
 > 日期：2026-11-13
 > 相关：KB-008（分组封面尺寸与布局持久化）、KB-012（表头分隔线与列宽拖拽的祖先绑定加固）、ADR-005（每个播放列表独立记忆显示格式）
 
@@ -27,12 +27,22 @@ owner 在分组表头分隔线 + 列宽拖拽（commit d13a0d3）之后提出五
 - `GroupedColumnHeaderViewModel` 增加 `Pin`、`IsLeftPinned`、`IsRightPinned`、`ShowResizeGripper`、`ShowLeftBoundaryGripper`；`TrackRowViewModel` 增加 `RightCells`。
 - `MainViewModel.GroupedColumns` 拆为 `GroupedLeftColumns` / `GroupedRightColumns`；`RebuildGroupedView` 按 `Pin` 分派表头与行单元格。右固定块最后一个列不显示右缘滑柄（它的右缘就是列表边界，拖它会脱离锚点）。
 - 表头 Grid 改为三列：封面栏（`GroupCoverColumnWidth`）/ 左流（`*`，左对齐）/ 右固定块（`Auto`，右对齐）。
-- 行模板改为 Grid 两列：左流 + 右固定块（`RightCells`），两者共用 `GroupedRowCell` 模板，宽度仍绑定表头实例的 `Width`，拖动时实时同步。
+- 行模板改为 Grid 两列：左流 + 右固定块（`RightCells`），两者共用 `GroupedRowCell` 模板，宽度绑定表头实例的 `DisplayWidth`（见下文“左右固定块贴合”），拖动时实时同步。
 
 ### 右固定块的左边界
 
 - 第一个右固定列额外显示一个左缘滑柄（`ShowLeftBoundaryGripper`）。拖动它时修改的是**该右固定列的宽度**（`OnGroupedBoundaryThumbDragDelta`）：向左拖变宽、右块原地不动，左侧列被压缩 —— 即 owner 要求的“向左压缩专辑的空间”。松手后只持久化这一列（`PersistGroupedColumnWidth`）。
 - 由于右块贴着视口右缘、右缘滑柄隐藏，右固定列不能通过“移动右块”而越界。
+
+### 左右固定块贴合（显示层填充）
+
+- 左右两块之间原先会留出左流 `*` 未填满的空白。现在右固定块非空时，**最后一个可见左固定列**的显示宽度吸收这段剩余宽度，使左右两块贴合并共用一条分界线；逻辑列宽（持久化值）不变。
+- `GroupedColumnHeaderViewModel` 增加 `FillWidth`（INPC，显示专用）与 `DisplayWidth => Width + FillWidth`；表头单元格（`GroupedHeaderCell`）和行单元格（`GroupedRowCell`）都绑定 `DisplayWidth`。
+- 填充量由 `EchoGarage.Core.Services.GroupedColumnWidths.ComputeTrailingFill(availableWidth, leftWidths)` 计算：容差 0.01 DIP，左流已填满或溢出时返回 0（溢出仍按既有行为在右块左缘裁切，不压缩列）。
+- 可用宽度 = 表头 Grid 实际宽 − 封面栏宽 − 右侧滚动条 inset − 右固定列宽度和，与行内容里左流实际拿到的宽度一致。
+- 刷新时机：`GroupedHeaderGrid.SizeChanged`、左右列重建（`MainViewModel.GroupedColumnsRebuilt`）、列宽/边界/封面拖拽过程中、每次 `UpdateGroupedHeaderInset` 之后、`GroupCoverSize` 变化后。
+- 滑柄语义：贴合后最后一个左固定列的右缘滑柄与右块左缘的分界线重合，两个滑柄统一走 `ResizeFirstRightColumn`（`OnGroupedBoundaryThumbDragDelta` 与 `OnGroupedColumnThumbDragDelta` 的 `IsSeamResizeGripper` 分支）：拖动只修改**第一个右固定列的宽度**，右块右缘钉住列表右缘，左流显示宽度反向吸收；松手持久化该右固定列宽度。否则修改左列自身宽度会被显示填充抵消，拖动没有视觉反馈。
+- 仅在分组视图且左右两侧都有列时生效；非分组视图、持久化宽度与列宽拖拽上限逻辑不受影响。
 
 ### 边缘钳制（`MaxAllowedGroupedColumnWidth`）
 
@@ -63,9 +73,20 @@ owner 在分组表头分隔线 + 列宽拖拽（commit d13a0d3）之后提出五
   - 菜单悬停：鼠标移入“文件”按钮即展开菜单；
   - 截图：`28-wide-pins.png`（1677×1027，标题 380、专辑 170、时间右固定 162）确认左右分块、分界线与行/表头对齐正常。
 - 图标：`icon-256.png` 目视确认透明底圆环 + 播放三角；构建后嵌入 exe。
+- 后续补充（左右固定块贴合，2026-11-13）：
+  - 构建 0 警告 0 错误；单元测试 90 项全部通过（新增 `GroupedColumnWidthsTests` 6 项：空列表、单列/多列填充、精确填满、溢出、负可用宽度）。
+  - 真机截图（隔离数据根 `.scratch\fillcheck`，ffmpeg 生成的 5 首测试音频，窗口 1600×900，专辑左固定 + 时间右固定）：表头与行的“专辑”单元格一直延伸到右固定“时间”左缘，中间不再有空白；专辑逻辑宽度仍为 170（显示宽度 170 + 填充 177），行内容与表头保持对齐。
+  - 分界线滑柄的拖动语义本次未做真机鼠标自动化，留给 owner 手动确认手感。
+
+## 实现更新（2026-11-14）
+
+- **顶栏菜单改为原生 WPF `Menu`**：原实现是 3 个按钮 + `ContextMenu`，`MouseEnter` 时打开对应菜单；但菜单打开后 `ContextMenu` 的 Popup 会捕获鼠标，底层按钮收不到 `MouseEnter`，从“视图”移到“播放列表”时不会切换。最终改用 `<Menu>` + `TopLevelMenuItem` 样式（`Controls.xaml`），由 WPF 原生菜单栏处理“子菜单打开时悬停其它顶级项即切换”；弹层样式（圆角、阴影、勾选符号 `CheckGlyph`、快捷键文字）沿用主题，`FileMenu`/`PlaylistMenu`/`ViewMenu` 三个 ContextMenu 资源删除，子项与命令保持不变。
+- **图标最终版**：原提案的“透明底深色圆环 + 播放三角”在深色任务栏上对比度不足、看起来像未加载；最终重做为**蓝色渐变圆角方块 + 白色播放三角**（16–256 共 9 个尺寸，仍为 `Resources/echogarage.ico`，csproj 与窗口引用不变）。发布版 exe 用 `ExtractAssociatedIcon` 验证为蓝色 32×32 图标。
+- 2026-11-14 构建 0 警告 0 错误、单元测试 106 项全部通过；验证截图仅写入 `artifacts/verify/`（不进入仓库）。
 
 ## 局限与后续
 
 - 窄窗口下如果把大量列设为右固定，左侧列会先被压缩到各自最小宽度，再停止变宽；窗口更窄时仍可能出现列裁切（与之前行为一致，没有横向滚动条）。
+- 左右块贴合填充只作用于显示宽度：最后一个左固定列在很窄的窗口里可能显示得比持久化宽度大很多（甚至超过 1600 的拖拽上限），但不会写回布局；切回非分组视图或其它来源时仍按逻辑宽度显示。
 - 列固定方式按来源布局记忆；切换来源时不会重新推断，仍遵循“每个播放列表 / 媒体库独立记忆显示格式”的既有规则（ADR-005）。
 - 本改动不涉及数据库 schema。

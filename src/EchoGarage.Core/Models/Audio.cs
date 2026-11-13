@@ -31,6 +31,7 @@ public sealed record AudioTagData(
     string Artist,
     string Album,
     string AlbumArtist,
+    string Composer,
     string Genre,
     string Comment,
     int? Year,
@@ -50,6 +51,7 @@ public sealed class TagEditModel
     public string Artist { get; set; } = string.Empty;
     public string Album { get; set; } = string.Empty;
     public string AlbumArtist { get; set; } = string.Empty;
+    public string Composer { get; set; } = string.Empty;
     public string Genre { get; set; } = string.Empty;
     public string Comment { get; set; } = string.Empty;
     public int Year { get; set; }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,17 +13,29 @@ public sealed class ColumnEditRow : CommunityToolkit.Mvvm.ComponentModel.Observa
 {
     private bool _isVisible;
     private string _width;
+    private string _secondaryFormat;
 
-    public ColumnEditRow(string key, string header, bool isVisible, double width)
+    public ColumnEditRow(
+        string key,
+        string header,
+        bool isVisible,
+        double width,
+        ColumnPin pin,
+        string? secondaryFormat)
     {
         Key = key;
         Header = header;
         _isVisible = isVisible;
         _width = width.ToString("0");
+        Pin = pin;
+        _secondaryFormat = secondaryFormat ?? string.Empty;
     }
 
     public string Key { get; }
     public string Header { get; }
+
+    /// <summary>Header pin side; preserved through the dialog so column pinning survives editing.</summary>
+    public ColumnPin Pin { get; }
 
     public bool IsVisible
     {
@@ -36,13 +49,32 @@ public sealed class ColumnEditRow : CommunityToolkit.Mvvm.ComponentModel.Observa
         set => SetProperty(ref _width, value);
     }
 
+    /// <summary>Second-row text template, e.g. <c>{bitrate}/{sampleRate}</c>.</summary>
+    public string SecondaryFormat
+    {
+        get => _secondaryFormat;
+        set => SetProperty(ref _secondaryFormat, value);
+    }
+
+    public static string FormatHint { get; } =
+        "次要信息格式；留空则不显示。可用占位符：" + SecondaryTextFormat.DescribeTokens() +
+        "。示例：{bitrate}/{sampleRate}";
+
+    /// <summary>Cover / status / index cells are single-line by design and cannot show a second line.</summary>
+    public bool SupportsSecondary => Key is not ("cover" or "status" or "index");
+
+    public Visibility SecondaryRowVisibility => SupportsSecondary ? Visibility.Visible : Visibility.Collapsed;
+
     public double ParsedWidth => double.TryParse(Width, out var parsed) && parsed > 20 ? parsed : 100;
 }
 
 public partial class ColumnsWindow : ThemedWindow
 {
+    private sealed record SortOption(string Label, string? Property);
+
     private readonly ObservableCollection<ColumnEditRow> _rows = [];
     private readonly ObservableCollection<ColumnPreset> _presets = [];
+    private readonly List<SortOption> _sortOptions = [];
     private readonly double _groupCoverSize;
 
     public ColumnsWindow(PlaylistViewLayout layout, IReadOnlyList<ColumnPreset> presets)
@@ -58,7 +90,13 @@ public partial class ColumnsWindow : ThemedWindow
                 continue;
             }
 
-            _rows.Add(new ColumnEditRow(column.Key, descriptor.Header, column.Visible, column.Width));
+            _rows.Add(new ColumnEditRow(
+                column.Key,
+                descriptor.Header,
+                column.Visible,
+                column.Width,
+                column.Pin,
+                column.SecondaryFormat));
         }
 
         foreach (var preset in presets)
@@ -68,13 +106,48 @@ public partial class ColumnsWindow : ThemedWindow
 
         ColumnList.ItemsSource = _rows;
         PresetList.ItemsSource = _presets;
-        SortColumnBox.ItemsSource = new[] { "（默认顺序）" }.Concat(
-            _rows.Where(r => r.IsVisible).Select(r => r.Header)).ToList();
 
-        var currentSortHeader = _rows.FirstOrDefault(r => r.Key == layout.SortColumn)?.Header;
-        SortColumnBox.SelectedItem = currentSortHeader ?? "（默认顺序）";
+        // Sorting does not require the column to be visible: hiding "album" or
+        // "album artist" is a normal way to keep the grouped view while saving width.
+        _sortOptions.Add(new SortOption("（默认顺序）", null));
+        foreach (var row in _rows)
+        {
+            var descriptor = ColumnCatalog.Find(row.Key);
+            if (descriptor is not { Sortable: true, SortProperty: not null })
+            {
+                continue;
+            }
+
+            _sortOptions.Add(new SortOption(row.Header, descriptor.SortProperty));
+        }
+
+        SortColumnBox.ItemsSource = _sortOptions;
+        var currentSort = _sortOptions.FirstOrDefault(option =>
+            option.Property is not null &&
+            string.Equals(option.Property, layout.SortColumn, StringComparison.OrdinalIgnoreCase));
+        SortColumnBox.SelectedItem = currentSort ?? _sortOptions[0];
         DescendingBox.IsChecked = layout.SortDescending;
         GroupDiscTrackBox.IsChecked = normalized.GroupSortByDiscTrack;
+
+        // Users commonly fill in per-column formats but forget the global switch. Turn it
+        // on automatically when any format is already configured (or when one is typed),
+        // so "确定" always produces the rows they just described.
+        ShowSecondaryBox.IsChecked = normalized.ShowSecondaryInfo ||
+                                     _rows.Any(r => !string.IsNullOrWhiteSpace(r.SecondaryFormat));
+        foreach (var row in _rows)
+        {
+            row.PropertyChanged += OnRowPropertyChanged;
+        }
+    }
+
+    private void OnRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ColumnEditRow.SecondaryFormat) &&
+            sender is ColumnEditRow row &&
+            !string.IsNullOrWhiteSpace(row.SecondaryFormat))
+        {
+            ShowSecondaryBox.IsChecked = true;
+        }
     }
 
     public ColumnsEditResult? Result { get; private set; }
@@ -94,6 +167,7 @@ public partial class ColumnsWindow : ThemedWindow
             {
                 row.IsVisible = column.Visible;
                 row.Width = column.Width.ToString("0");
+                row.SecondaryFormat = column.SecondaryFormat ?? string.Empty;
                 ordered.Add(row);
             }
         }
@@ -169,20 +243,26 @@ public partial class ColumnsWindow : ThemedWindow
     {
         // The dialog edits columns only; the grouped album-cover size and the per-group
         // disc/track ordering preference are adjusted outside and must survive a round-trip.
-        var layout = new PlaylistViewLayout { GroupCoverSize = _groupCoverSize };
+        var layout = new PlaylistViewLayout
+        {
+            GroupCoverSize = _groupCoverSize,
+            ShowSecondaryInfo = ShowSecondaryBox.IsChecked == true
+        };
         foreach (var row in _rows)
         {
             layout.Columns.Add(new PlaylistColumn
             {
                 Key = row.Key,
                 Visible = row.IsVisible,
-                Width = row.ParsedWidth
+                Width = row.ParsedWidth,
+                Pin = row.Pin,
+                SecondaryFormat = row.SecondaryFormat
             });
         }
 
-        if (SortColumnBox.SelectedItem is string header && header != "（默认顺序）")
+        if (SortColumnBox.SelectedItem is SortOption sortOption)
         {
-            layout.SortColumn = SortPropertyFor(header);
+            layout.SortColumn = sortOption.Property;
         }
 
         layout.SortDescending = DescendingBox.IsChecked == true;
@@ -190,11 +270,8 @@ public partial class ColumnsWindow : ThemedWindow
         return ViewLayoutFactory.Normalize(layout);
     }
 
-    private string? SortPropertyFor(string header)
-    {
-        var key = _rows.FirstOrDefault(r => r.Header == header)?.Key;
-        return key is null ? null : ColumnCatalog.Find(key)?.SortProperty;
-    }
+    private void OnShowFieldGuide(object sender, RoutedEventArgs e) =>
+        new FieldGuideWindow { Owner = this }.ShowDialog();
 
     private void OnOk(object sender, RoutedEventArgs e)
     {

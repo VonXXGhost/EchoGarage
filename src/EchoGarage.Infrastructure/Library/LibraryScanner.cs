@@ -227,6 +227,7 @@ public sealed class LibraryScanner : ILibraryScanner
             Artist = tags?.Artist ?? string.Empty,
             Album = album,
             AlbumArtist = albumArtist,
+            Composer = tags?.Composer ?? string.Empty,
             Genre = tags?.Genre ?? string.Empty,
             Comment = tags?.Comment ?? string.Empty,
             Year = tags?.Year,

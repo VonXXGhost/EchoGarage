@@ -40,6 +40,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="标题" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
@@ -53,12 +54,15 @@
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="专辑艺术家" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
                     <TextBox x:Name="AlbumArtistBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="流派" VerticalAlignment="Center"
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="作曲家" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="GenreBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="年份 / 音轨" VerticalAlignment="Center"
+                    <TextBox x:Name="ComposerBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Height="28" />
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="流派" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <Grid Grid.Row="5" Grid.Column="1" Margin="0,0,0,8">
+                    <TextBox x:Name="GenreBox" Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Height="28" />
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="年份 / 音轨" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                    <Grid Grid.Row="6" Grid.Column="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="90" />
                             <ColumnDefinition Width="16" />
@@ -70,9 +74,9 @@
                         <TextBox x:Name="TrackBox" Grid.Column="2" Height="28" ToolTip="音轨号" />
                         <TextBox x:Name="DiscBox" Grid.Column="4" Height="28" ToolTip="碟号" />
                     </Grid>
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="备注" VerticalAlignment="Top" Margin="0,6,0,0"
+                    <TextBlock Grid.Row="7" Grid.Column="0" Text="备注" VerticalAlignment="Top" Margin="0,6,0,0"
                                Foreground="{DynamicResource TextSecondaryBrush}" />
-                    <TextBox x:Name="CommentBox" Grid.Row="6" Grid.Column="1" Height="70" AcceptsReturn="True"
+                    <TextBox x:Name="CommentBox" Grid.Row="7" Grid.Column="1" Height="70" AcceptsReturn="True"
                              TextWrapping="Wrap" VerticalContentAlignment="Top" />
                 </Grid>
 

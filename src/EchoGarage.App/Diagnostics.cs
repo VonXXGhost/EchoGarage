@@ -33,7 +33,7 @@ internal static class Diagnostics
             }
             catch
             {
-                tags = new AudioTagData("样例", "艺术家", "专辑", "艺术家", "流派", string.Empty, 2024, 1, 1,
+                tags = new AudioTagData("样例", "艺术家", "专辑", "艺术家", "作曲家", "流派", string.Empty, 2024, 1, 1,
                     180000, 320, 44100, 2, "FLAC", null, null);
             }
 
@@ -51,6 +51,7 @@ internal static class Diagnostics
         }), directory, "dialog-smart.png", main);
 
         await CaptureWindowAsync(new ColumnsWindow(vm.CurrentLayout, vm.Presets.ToList()), directory, "dialog-columns.png", main);
+        await CaptureWindowAsync(new FieldGuideWindow(), directory, "dialog-field-guide.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
         await CaptureWindowAsync(new FileAssociationWindow(host), directory, "dialog-associations.png", main);
         await CaptureWindowAsync(new PlaylistPickerWindow(

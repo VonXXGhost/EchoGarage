@@ -42,7 +42,8 @@ public static class ViewLayoutFactory
             SortDescending = layout.SortDescending,
             GroupCoverSize = Math.Clamp(groupCoverSize, PlaylistViewLayout.MinGroupCoverSize,
                 PlaylistViewLayout.MaxGroupCoverSize),
-            GroupSortByDiscTrack = layout.GroupSortByDiscTrack
+            GroupSortByDiscTrack = layout.GroupSortByDiscTrack,
+            ShowSecondaryInfo = layout.ShowSecondaryInfo
         };
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -60,7 +61,8 @@ public static class ViewLayoutFactory
                 Visible = column.Visible,
                 // Pins only make sense for the columns a user can see and drag in the grouped
                 // header; older layouts deserialize without one and default to left.
-                Pin = column.Visible ? column.Pin : ColumnPin.Left
+                Pin = column.Visible ? column.Pin : ColumnPin.Left,
+                SecondaryFormat = SecondaryTextFormat.Normalize(column.SecondaryFormat)
             });
         }
 
@@ -87,14 +89,12 @@ public static class ViewLayoutFactory
 
         if (normalized.SortColumn is not null)
         {
-            // SortColumn stores a row *property* name (e.g. "DurationSort"), not a column key;
-            // validate it against the visible columns through the catalog mapping so sorting by
-            // any column survives a layout round-trip (previously only properties whose names
-            // happened to match their column key, like "Title", were kept).
-            var sortDescriptor = ColumnCatalog.FindBySortProperty(normalized.SortColumn);
-            if (sortDescriptor is null ||
-                !normalized.Columns.Any(c => c.Visible &&
-                    string.Equals(c.Key, sortDescriptor.Key, StringComparison.OrdinalIgnoreCase)))
+            // SortColumn stores a row *property* name (e.g. "DurationSort"), not a column key.
+            // It is validated against the catalog, but does NOT require the column to be visible:
+            // sorting by a hidden column is useful (e.g. sort by album artist while its column is
+            // hidden — the grouped list still shows the album artist in the group header), and
+            // album/album-artist sorts are what enable the grouped view.
+            if (ColumnCatalog.FindBySortProperty(normalized.SortColumn) is null)
             {
                 normalized.SortColumn = null;
                 normalized.SortDescending = false;

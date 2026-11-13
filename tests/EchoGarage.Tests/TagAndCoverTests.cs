@@ -29,6 +29,7 @@ public sealed class TagAndCoverTests : IDisposable
             Artist = "艺术家 A",
             Album = "专辑 A",
             AlbumArtist = "专辑艺术家 A",
+            Composer = "作曲家 A",
             Genre = "电子",
             Comment = "备注",
             Year = 2024,
@@ -45,6 +46,7 @@ public sealed class TagAndCoverTests : IDisposable
         Assert.Equal("艺术家 A", stored.Artist);
         Assert.Equal("专辑 A", stored.Album);
         Assert.Equal("专辑艺术家 A", stored.AlbumArtist);
+        Assert.Equal("作曲家 A", stored.Composer);
         Assert.Equal("电子", stored.Genre);
         Assert.Equal("备注", stored.Comment);
         Assert.Equal(2024, stored.Year);

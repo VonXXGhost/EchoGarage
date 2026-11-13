@@ -51,7 +51,6 @@
     <SolidColorBrush x:Key="CoverBoxBrush" Color="#1E242D" />
     <SolidColorBrush x:Key="EmptyGlyphBrush" Color="#2A323D" />
     <SolidColorBrush x:Key="CoverNoteBrush" Color="#2E3742" />
-    <SolidColorBrush x:Key="RatingBrush" Color="#E0B458" />
 
     <FontFamily x:Key="UiFont">Microsoft YaHei UI, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas, Cascadia Mono, Microsoft YaHei UI</FontFamily>

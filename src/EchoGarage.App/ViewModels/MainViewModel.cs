@@ -301,6 +301,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public event EventHandler? CurrentRowChanged;
 
     /// <summary>
+    /// Raised after <see cref="RebuildGroupedView"/> replaced the header/row cell list (layout or
+    /// pin change). The window uses it to re-stretch the left flow up to the right-pinned block
+    /// before the new cells are rendered.
+    /// </summary>
+    public event EventHandler? GroupedColumnsRebuilt;
+
+    /// <summary>
     /// Set by the main window so layout changes can capture the live DataGrid column
     /// widths/order even when the switch is initiated from the view model.
     /// </summary>
@@ -779,6 +786,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         GroupedLeftColumns.Clear();
         GroupedRightColumns.Clear();
+        ApplySecondaryTexts();
         if (!IsGroupedViewActive)
         {
             foreach (var row in Tracks)
@@ -787,6 +795,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 row.RightCells = [];
             }
 
+            GroupedColumnsRebuilt?.Invoke(this, EventArgs.Empty);
             return;
         }
 
@@ -871,6 +880,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 Template = templates[h.Key]
             }).ToList();
         }
+
+        GroupedColumnsRebuilt?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Recomputes the optional second row line for every track row from the current layout.
+    /// Only visible columns with a non-blank secondary format contribute; when the feature
+    /// toggle is off all rows fall back to a single line.
+    /// </summary>
+    private void ApplySecondaryTexts()
+    {
+        var formats = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (CurrentLayout.ShowSecondaryInfo)
+        {
+            foreach (var column in CurrentLayout.Columns.Where(c =>
+                         c.Visible && !string.IsNullOrWhiteSpace(c.SecondaryFormat)))
+            {
+                formats[column.Key] = column.SecondaryFormat;
+            }
+        }
+
+        foreach (var row in Tracks)
+        {
+            row.ApplySecondaryFormats(formats);
+        }
     }
 
     /// <summary>
@@ -929,14 +963,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnGroupByAlbumChanged(bool value)
     {
+        if (value && !PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn))
+        {
+            // Grouping renders only for an album-oriented sort; switch automatically instead
+            // of asking the user to find the (possibly hidden) album / album artist column.
+            CurrentLayout.SortColumn = PlaylistSortPolicy.Album;
+            CurrentLayout.SortDescending = false;
+            PersistCurrentLayout(CurrentLayout.Clone(), captureFromView: false);
+            SetStatus("已开启按专辑分组，并切换为按专辑排序。");
+        }
+
         OnPropertyChanged(nameof(IsGroupedViewActive));
         ApplySortAndGrouping();
         LayoutChanged?.Invoke(this, EventArgs.Empty);
         SortChanged?.Invoke(this, EventArgs.Empty);
-        if (value && !PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn))
-        {
-            SetStatus("已开启按专辑分组：请按“专辑”或“专辑艺术家”列排序，分组列表才会显示。");
-        }
     }
 
     public void SortBy(string? sortProperty, bool? descending = null)
@@ -1049,11 +1089,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void ApplyPreset(ColumnPreset preset)
     {
-        // Presets describe columns only; keep the user's current grouped-cover size and
-        // the per-group disc/track ordering preference.
+        // Presets describe columns only; keep the user's current grouped-cover size, the
+        // per-group disc/track ordering preference and the second-line display switch.
         var applied = preset.ToLayout();
         applied.GroupCoverSize = CurrentLayout.GroupCoverSize;
         applied.GroupSortByDiscTrack = CurrentLayout.GroupSortByDiscTrack;
+        applied.ShowSecondaryInfo = CurrentLayout.ShowSecondaryInfo;
         CurrentLayout = ViewLayoutFactory.Normalize(applied);
         ApplySortAndGrouping();
         PersistCurrentLayout(null, captureFromView: false);

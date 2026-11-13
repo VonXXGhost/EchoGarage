@@ -55,15 +55,4 @@ public static class DisplayFormatter
 
         return utc.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
     }
-
-    public static string Rating(int rating)
-    {
-        if (rating <= 0)
-        {
-            return string.Empty;
-        }
-
-        var stars = Math.Clamp(rating, 1, 5);
-        return new string('★', stars) + new string('☆', 5 - stars);
-    }
 }

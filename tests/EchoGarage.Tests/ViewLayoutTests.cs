@@ -115,17 +115,37 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
-    public void Normalize_ClearsSortPropertyWhenItsColumnIsHidden()
+    public void Normalize_KeepsSortPropertyForHiddenColumns()
     {
-        // albumArtist is hidden in the default layout.
+        // Sorting must not depend on the column being visible: the grouped list can sort by
+        // album/album artist (which drives grouping) while the column itself is hidden, because
+        // the group header already shows that information.
+        foreach (var descriptor in ColumnCatalog.All.Where(c => !string.IsNullOrWhiteSpace(c.SortProperty)))
+        {
+            var layout = ViewLayoutFactory.CreateDefault();
+            layout.Columns.First(c => c.Key == descriptor.Key).Visible = false;
+            layout.SortColumn = descriptor.SortProperty;
+            layout.SortDescending = true;
+
+            var normalized = ViewLayoutFactory.Normalize(layout);
+
+            Assert.Equal(descriptor.SortProperty, normalized.SortColumn);
+            Assert.True(normalized.SortDescending);
+        }
+    }
+
+    [Fact]
+    public void SerializeRoundTrip_PreservesSortOnHiddenColumn()
+    {
         var layout = ViewLayoutFactory.CreateDefault();
+        layout.Columns.Single(c => c.Key == "albumArtist").Visible = false;
+        layout.Columns.Single(c => c.Key == "album").Visible = false;
         layout.SortColumn = "AlbumArtist";
-        layout.SortDescending = true;
 
-        var normalized = ViewLayoutFactory.Normalize(layout);
+        var restored = ViewLayoutFactory.Deserialize(ViewLayoutFactory.Serialize(layout));
 
-        Assert.Null(normalized.SortColumn);
-        Assert.False(normalized.SortDescending);
+        Assert.Equal("AlbumArtist", restored.SortColumn);
+        Assert.False(restored.Columns.Single(c => c.Key == "albumArtist").Visible);
     }
 
     [Fact]
@@ -193,6 +213,49 @@ public sealed class ViewLayoutTests
         var restored = ViewLayoutFactory.Deserialize(json);
         Assert.False(restored.GroupSortByDiscTrack);
         Assert.False(restored.Clone().GroupSortByDiscTrack);
+    }
+
+    [Fact]
+    public void Normalize_CleansSecondaryFormatAndKeepsItForHiddenColumns()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.Columns.Single(c => c.Key == "duration").SecondaryFormat = "  {bitrate}/{sampleRate}  ";
+        // Hidden columns keep their configuration so toggling visibility does not lose it.
+        layout.Columns.Single(c => c.Key == "genre").Visible = false;
+        layout.Columns.Single(c => c.Key == "genre").SecondaryFormat = "{composer}";
+        layout.Columns.Single(c => c.Key == "title").SecondaryFormat = "   ";
+
+        var normalized = ViewLayoutFactory.Normalize(layout);
+
+        Assert.Equal("{bitrate}/{sampleRate}", normalized.Columns.Single(c => c.Key == "duration").SecondaryFormat);
+        Assert.Equal("{composer}", normalized.Columns.Single(c => c.Key == "genre").SecondaryFormat);
+        Assert.Null(normalized.Columns.Single(c => c.Key == "title").SecondaryFormat);
+    }
+
+    [Fact]
+    public void SerializeRoundTrip_PreservesSecondaryInfoSettings()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.ShowSecondaryInfo = true;
+        layout.Columns.Single(c => c.Key == "title").SecondaryFormat = "{genre}";
+        layout.Columns.Single(c => c.Key == "duration").SecondaryFormat = "{bitrate}/{sampleRate}";
+
+        var restored = ViewLayoutFactory.Deserialize(ViewLayoutFactory.Serialize(layout));
+
+        Assert.True(restored.ShowSecondaryInfo);
+        Assert.Equal("{genre}", restored.Columns.Single(c => c.Key == "title").SecondaryFormat);
+        Assert.Equal("{bitrate}/{sampleRate}", restored.Columns.Single(c => c.Key == "duration").SecondaryFormat);
+        Assert.True(restored.Clone().ShowSecondaryInfo);
+        Assert.Equal("{genre}", restored.Clone().Columns.Single(c => c.Key == "title").SecondaryFormat);
+    }
+
+    [Fact]
+    public void DefaultLayout_HasSecondaryInfoDisabled()
+    {
+        var layout = ViewLayoutFactory.CreateDefault();
+
+        Assert.False(layout.ShowSecondaryInfo);
+        Assert.All(layout.Columns, c => Assert.Null(c.SecondaryFormat));
     }
 
     [Fact]

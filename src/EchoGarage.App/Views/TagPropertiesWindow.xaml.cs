@@ -30,6 +30,7 @@ public partial class TagPropertiesWindow : ThemedWindow
         ArtistBox.Text = current.Artist;
         AlbumBox.Text = current.Album;
         AlbumArtistBox.Text = current.AlbumArtist;
+        ComposerBox.Text = current.Composer;
         GenreBox.Text = current.Genre;
         YearBox.Text = current.Year?.ToString() ?? string.Empty;
         TrackBox.Text = current.TrackNumber > 0 ? current.TrackNumber.ToString() : string.Empty;
@@ -122,6 +123,7 @@ public partial class TagPropertiesWindow : ThemedWindow
             Artist = ArtistBox.Text.Trim(),
             Album = AlbumBox.Text.Trim(),
             AlbumArtist = AlbumArtistBox.Text.Trim(),
+            Composer = ComposerBox.Text.Trim(),
             Genre = GenreBox.Text.Trim(),
             Comment = CommentBox.Text.Trim(),
             Year = ParseInt(YearBox.Text),

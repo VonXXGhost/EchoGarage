@@ -19,6 +19,7 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
         COALESCE(NULLIF(t.Artist, ''), i.ArtistSnapshot) AS Artist,
         COALESCE(NULLIF(t.Album, ''), i.AlbumSnapshot) AS Album,
         COALESCE(t.AlbumArtist, '') AS AlbumArtist,
+        COALESCE(t.Composer, '') AS Composer,
         COALESCE(t.Genre, '') AS Genre,
         COALESCE(t.Comment, '') AS Comment,
         t.Year AS Year,
@@ -39,7 +40,7 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
         """;
 
     private const string LibraryTrackColumns = """
-        Id, Path, FolderId, IsInLibrary, IsMissing, Title, Artist, Album, AlbumArtist, Genre, Comment,
+        Id, Path, FolderId, IsInLibrary, IsMissing, Title, Artist, Album, AlbumArtist, Composer, Genre, Comment,
         Year, TrackNumber, DiscNumber, Rating, DurationMs, Bitrate, SampleRate, Channels, Codec, FileSize,
         ModifiedAtUtc, AddedAtUtc, LastPlayedAtUtc, PlayCount, CoverKey
         """;

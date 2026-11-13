@@ -31,7 +31,6 @@ public static class SmartFieldCatalog
         new("path", "文件路径", false, TextOperators),
         new("year", "年份", true, NumberOperators),
         new("durationSeconds", "时长（秒）", true, NumberOperators),
-        new("rating", "评分", true, NumberOperators),
         new("trackNumber", "音轨号", true, NumberOperators)
     ];
 
@@ -76,7 +75,6 @@ public static class SmartQueryBuilder
     {
         ["year"] = "COALESCE(t.Year, 0)",
         ["durationSeconds"] = "t.DurationMs / 1000.0",
-        ["rating"] = "COALESCE(t.Rating, 0)",
         ["trackNumber"] = "COALESCE(t.TrackNumber, 0)"
     };
 

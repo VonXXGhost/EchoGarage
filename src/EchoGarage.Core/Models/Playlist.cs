@@ -63,7 +63,20 @@ public sealed class PlaylistColumn
     /// <summary>Header anchor in the grouped view. Stored per layout so each source remembers it.</summary>
     public ColumnPin Pin { get; set; } = ColumnPin.Left;
 
-    public PlaylistColumn Clone() => new() { Key = Key, Width = Width, Visible = Visible, Pin = Pin };
+    /// <summary>
+    /// Optional format of the secondary (second-row) text shown under this column, e.g.
+    /// "{genre}" or "{bitrate}/{sampleRate}". Empty means no secondary text.
+    /// </summary>
+    public string? SecondaryFormat { get; set; }
+
+    public PlaylistColumn Clone() => new()
+    {
+        Key = Key,
+        Width = Width,
+        Visible = Visible,
+        Pin = Pin,
+        SecondaryFormat = SecondaryFormat
+    };
 }
 
 public sealed class PlaylistViewLayout
@@ -89,6 +102,12 @@ public sealed class PlaylistViewLayout
     /// </summary>
     public bool GroupSortByDiscTrack { get; set; } = true;
 
+    /// <summary>
+    /// When true, list rows show an optional secondary line per column (see
+    /// <see cref="PlaylistColumn.SecondaryFormat"/>), rendered smaller and dimmer than the title.
+    /// </summary>
+    public bool ShowSecondaryInfo { get; set; }
+
     public PlaylistViewLayout Clone() => new()
     {
         PresetName = PresetName,
@@ -96,7 +115,8 @@ public sealed class PlaylistViewLayout
         SortColumn = SortColumn,
         SortDescending = SortDescending,
         GroupCoverSize = GroupCoverSize,
-        GroupSortByDiscTrack = GroupSortByDiscTrack
+        GroupSortByDiscTrack = GroupSortByDiscTrack,
+        ShowSecondaryInfo = ShowSecondaryInfo
     };
 }
 

@@ -31,6 +31,7 @@ public sealed class TagLibTagService : ITagService
         var title = tag?.Title ?? string.Empty;
         var artist = FirstNonEmpty(tag?.JoinedPerformers, tag?.FirstPerformer);
         var albumArtist = FirstNonEmpty(tag?.JoinedAlbumArtists, tag?.FirstAlbumArtist);
+        var composer = FirstNonEmpty(tag?.JoinedComposers, tag?.FirstComposer);
         var album = tag?.Album ?? string.Empty;
         var genre = tag?.JoinedGenres ?? string.Empty;
         var comment = tag?.Comment ?? string.Empty;
@@ -40,6 +41,7 @@ public sealed class TagLibTagService : ITagService
             artist,
             album,
             albumArtist,
+            composer,
             genre,
             comment,
             tag?.Year is { } year && year != 0 ? (int)year : null,
@@ -71,6 +73,7 @@ public sealed class TagLibTagService : ITagService
         tag.Performers = Split(edit.Artist);
         tag.Album = edit.Album;
         tag.AlbumArtists = Split(edit.AlbumArtist);
+        tag.Composers = Split(edit.Composer);
         tag.Genres = Split(edit.Genre);
         tag.Comment = edit.Comment;
         tag.Year = (uint)Math.Max(0, edit.Year);

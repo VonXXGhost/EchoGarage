@@ -41,11 +41,20 @@ public sealed class SqliteDatabase
         await connection.ExecuteAsync(new CommandDefinition("PRAGMA foreign_keys=ON;", cancellationToken: cancellationToken));
 
         var version = await connection.ExecuteScalarAsync<long>("PRAGMA user_version;");
-        if (version >= 1)
+        if (version < 1)
         {
-            return;
+            await InitializeVersion1Async(connection, cancellationToken);
+            version = 1;
         }
 
+        if (version < 2)
+        {
+            await MigrateToVersion2Async(connection, cancellationToken);
+        }
+    }
+
+    private async Task InitializeVersion1Async(SqliteConnection connection, CancellationToken cancellationToken)
+    {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await connection.ExecuteAsync(new CommandDefinition("""
             CREATE TABLE IF NOT EXISTS library_folders (
@@ -119,6 +128,17 @@ public sealed class SqliteDatabase
 
         await transaction.CommitAsync(cancellationToken);
         _logger.Info("SQLite schema initialized (version 1).");
+    }
+
+    private async Task MigrateToVersion2Async(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // Composer is a cached tag value derived from the file (see ADR-003); existing rows
+        // start empty and are repaired by the next scan that touches the file.
+        await connection.ExecuteAsync(new CommandDefinition("""
+            ALTER TABLE tracks ADD COLUMN Composer TEXT NOT NULL DEFAULT '';
+            PRAGMA user_version = 2;
+            """, cancellationToken: cancellationToken));
+        _logger.Info("SQLite schema migrated to version 2 (Composer).");
     }
 
     public async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)

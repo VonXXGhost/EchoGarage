@@ -66,6 +66,10 @@ public partial class MainWindow : Window
         TrackGrid.AddHandler(ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
         GroupedList.SizeChanged += (_, _) => UpdateGroupedHeaderInset();
+        GroupedHeaderGrid.SizeChanged += (_, _) => UpdateGroupedHeaderFill();
+        // Pin and layout changes replace the grouped header cells; re-stretch the left flow right
+        // away so the new cells are arranged without a blank strip before the pinned block.
+        _vm.GroupedColumnsRebuilt += (_, _) => UpdateGroupedHeaderFill();
 
         ApplyWindowPlacement();
         HookSeekSlider();
@@ -92,6 +96,8 @@ public partial class MainWindow : Window
         if (e.PropertyName is nameof(MainViewModel.GroupCoverSize))
         {
             ApplyGroupCoverMetrics();
+            // The cover gutter width feeds the width left for the pinned song columns.
+            UpdateGroupedHeaderFill();
         }
     }
 
@@ -311,7 +317,14 @@ public partial class MainWindow : Window
             }
 
             var width = gridColumn.ActualWidth > 10 ? gridColumn.ActualWidth : stored.Width;
-            ordered.Add(new PlaylistColumn { Key = stored.Key, Width = width, Visible = true });
+            ordered.Add(new PlaylistColumn
+            {
+                Key = stored.Key,
+                Width = width,
+                Visible = true,
+                Pin = stored.Pin,
+                SecondaryFormat = stored.SecondaryFormat
+            });
         }
 
         // Columns that exist in the layout but are not rendered right now keep their
@@ -462,15 +475,37 @@ public partial class MainWindow : Window
 
     private void OnGroupedColumnThumbDragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
+        if (sender is not FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
         {
-            // The header cell and every realized row cell bind to this same instance, so updating
-            // the width here resizes the whole column live while the gripper is dragged.
-            header.Width = Math.Clamp(header.Width + e.HorizontalChange,
-                header.MinWidth, MaxAllowedGroupedColumnWidth(header));
-            e.Handled = true;
+            return;
         }
+
+        if (IsSeamResizeGripper(header))
+        {
+            // This gripper sits on the divider between the stretched left flow and the pinned
+            // block; it moves the divider instead of the left column's own persisted width.
+            ResizeFirstRightColumn(e.HorizontalChange);
+            e.Handled = true;
+            return;
+        }
+
+        // The header cell and every realized row cell bind to this same instance, so updating
+        // the width here resizes the whole column live while the gripper is dragged.
+        header.Width = Math.Clamp(header.Width + e.HorizontalChange,
+            header.MinWidth, MaxAllowedGroupedColumnWidth(header));
+        UpdateGroupedHeaderFill();
+        e.Handled = true;
     }
+
+    /// <summary>
+    /// True for the trailing left-pinned header when a right-pinned block exists: its right
+    /// gripper lies on the same divider as the block's left edge, so it has the divider semantics
+    /// below. (Resizing the left column itself would be swallowed by the stretched display width.)
+    /// </summary>
+    private bool IsSeamResizeGripper(GroupedColumnHeaderViewModel header) =>
+        header.Pin == ColumnPin.Left &&
+        ReferenceEquals(header, _vm.GroupedLeftColumns.LastOrDefault()) &&
+        _vm.GroupedRightColumns.Count > 0;
 
     /// <summary>
     /// Largest width a header may take without dragging the pinned block out of its visible area:
@@ -512,13 +547,30 @@ public partial class MainWindow : Window
 
     private void OnGroupedColumnThumbDragCompleted(object sender, DragCompletedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
+        if (sender is not FrameworkElement { DataContext: GroupedColumnHeaderViewModel header })
         {
-            _vm.PersistGroupedColumnWidth(header.Key, header.Width);
+            return;
+        }
+
+        var target = IsSeamResizeGripper(header) ? _vm.GroupedRightColumns.FirstOrDefault() : header;
+        if (target is not null)
+        {
+            _vm.PersistGroupedColumnWidth(target.Key, target.Width);
         }
     }
 
     private void OnGroupedBoundaryThumbDragDelta(object sender, DragDeltaEventArgs e)
+    {
+        ResizeFirstRightColumn(e.HorizontalChange);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Moves the divider between the left flow and the pinned block: dragging it to the left
+    /// widens the first pinned column, which shrinks the stretched left flow (the pinned block's
+    /// right edge stays glued to the list border, so the two blocks only redistribute space).
+    /// </summary>
+    private void ResizeFirstRightColumn(double horizontalChange)
     {
         var firstRight = _vm.GroupedRightColumns.FirstOrDefault();
         if (firstRight is null)
@@ -526,11 +578,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        // The pinned block's left edge is the boundary: dragging it to the left widens the first
-        // pinned column, which compresses the left flow without moving the pinned block.
-        firstRight.Width = Math.Clamp(firstRight.Width - e.HorizontalChange,
+        firstRight.Width = Math.Clamp(firstRight.Width - horizontalChange,
             firstRight.MinWidth, MaxAllowedGroupedColumnWidth(firstRight));
-        e.Handled = true;
+        UpdateGroupedHeaderFill();
     }
 
     private void OnGroupedBoundaryThumbDragCompleted(object sender, DragCompletedEventArgs e)
@@ -555,6 +605,7 @@ public partial class MainWindow : Window
 
         _vm.GroupCoverSize = Math.Clamp(_vm.GroupCoverSize + e.HorizontalChange,
             PlaylistViewLayout.MinGroupCoverSize, maxCoverSize);
+        UpdateGroupedHeaderFill();
         e.Handled = true;
     }
 
@@ -580,6 +631,50 @@ public partial class MainWindow : Window
         {
             GroupedRightHeaderItems.Margin = new Thickness(0, 0, inset, 0);
             _host.Logger.Debug($"Grouped header inset: {inset:F1} (viewer={viewer is not null}, bar={bar is not null})");
+        }
+
+        // The inset changes how much width the left flow has, so re-stretch it after every pass
+        // (also when only the list/viewport size changed while the inset stayed the same).
+        UpdateGroupedHeaderFill();
+    }
+
+    /// <summary>
+    /// Stretches the trailing left-pinned column so the left flow touches the right-pinned block.
+    /// The logical column widths (and their persistence) stay untouched; only the display width
+    /// grows, which makes the divider between the two blocks a pure space-distribution control.
+    /// </summary>
+    private void UpdateGroupedHeaderFill()
+    {
+        if (GroupedHeaderGrid is null || _vm.GroupedLeftColumns.Count == 0)
+        {
+            return;
+        }
+
+        var left = _vm.GroupedLeftColumns;
+        if (_vm.GroupedRightColumns.Count == 0 || GroupedHeaderGrid.ActualWidth <= 0)
+        {
+            ApplyLeftFlowFill(left, 0);
+            return;
+        }
+
+        // Same width the left flow gets in the song rows: the header spans the list's full width,
+        // so subtract the cover gutter and the scroll bar inset that the pinned block leaves out.
+        var inset = GroupedRightHeaderItems?.Margin.Right ?? 0;
+        var available = GroupedHeaderGrid.ActualWidth
+                        - _vm.GroupCoverColumnWidth
+                        - inset
+                        - _vm.GroupedRightColumns.Sum(h => h.Width);
+        var fill = GroupedColumnWidths.ComputeTrailingFill(
+            available, left.Select(h => h.Width).ToList());
+        ApplyLeftFlowFill(left, fill);
+    }
+
+    private static void ApplyLeftFlowFill(
+        IReadOnlyList<GroupedColumnHeaderViewModel> left, double fill)
+    {
+        for (var i = 0; i < left.Count; i++)
+        {
+            left[i].FillWidth = i == left.Count - 1 ? fill : 0;
         }
     }
 
@@ -795,39 +890,10 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void OnMenuButtonClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button button || button.Tag is not ContextMenu menu)
-        {
-            return;
-        }
-
-        OpenMenuButtonMenu(button, menu);
-        e.Handled = true;
-    }
-
-    private void OnMenuButtonMouseEnter(object sender, MouseEventArgs e)
-    {
-        if (sender is Button { Tag: ContextMenu menu } button)
-        {
-            OpenMenuButtonMenu(button, menu);
-        }
-    }
-
-    private void OpenMenuButtonMenu(Button button, ContextMenu menu)
-    {
-        if (menu.IsOpen && ReferenceEquals(menu.PlacementTarget, button))
-        {
-            return;
-        }
-
-        menu.DataContext = _vm;
-        menu.PlacementTarget = button;
-        menu.Placement = PlacementMode.Bottom;
-        menu.IsOpen = true;
-    }
-
     private void OnExitMenuClick(object sender, RoutedEventArgs e) => Close();
+
+    private void OnFieldGuideMenuClick(object sender, RoutedEventArgs e) =>
+        new FieldGuideWindow { Owner = this }.ShowDialog();
 
     private void OnPlaySelectedClick(object sender, RoutedEventArgs e)
     {

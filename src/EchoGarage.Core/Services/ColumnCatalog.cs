@@ -10,8 +10,7 @@ public enum ColumnKind
     Index,
     Duration,
     FileSize,
-    Date,
-    Rating
+    Date
 }
 
 /// <summary>
@@ -50,7 +49,6 @@ public static class ColumnCatalog
         new("bitrate", "比特率", 72, 60, ColumnKind.Text, SortProperty: "BitrateSort"),
         new("sampleRate", "采样率", 72, 60, ColumnKind.Text, SortProperty: "SampleRateSort"),
         new("codec", "格式", 62, 48, ColumnKind.Text, SortProperty: "Codec"),
-        new("rating", "评分", 72, 56, ColumnKind.Rating, SortProperty: "RatingSort"),
         new("addedAt", "添加时间", 100, 80, ColumnKind.Date, SortProperty: "AddedSort"),
         new("fileSize", "大小", 72, 60, ColumnKind.FileSize, SortProperty: "FileSizeSort"),
         new("path", "文件路径", 320, 120, ColumnKind.Text, SortProperty: "PathText"),

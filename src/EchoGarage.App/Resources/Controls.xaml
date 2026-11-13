@@ -465,16 +465,24 @@
                     <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="10,6">
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ContentPresenter Grid.Column="0" ContentSource="Header" RecognizesAccessKey="True"
+                            <TextBlock x:Name="CheckGlyph" Grid.Column="0" Text="✓" Width="16"
+                                       Foreground="{DynamicResource AccentBrush}" Visibility="Collapsed"
+                                       VerticalAlignment="Center" />
+                            <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
                                               VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
-                                       Foreground="{DynamicResource TextMutedBrush}" Margin="24,0,0,0" />
+                            <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                                       Foreground="{DynamicResource TextMutedBrush}" Margin="24,0,0,0"
+                                       VerticalAlignment="Center" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible" />
+                        </Trigger>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
                         </Trigger>
@@ -485,6 +493,57 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!--
+      Top-level menu bar items ("文件 / 播放列表 / 视图"). Uses the system Menu so hovering
+      another top-level item while a submenu is open switches menus, which the old
+      Button + ContextMenu implementation could not do.
+    -->
+    <Style x:Key="TopLevelMenuItem" TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Padding" Value="9,5" />
+        <Setter Property="Margin" Value="2,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Grid>
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
+                               IsOpen="{TemplateBinding IsSubmenuOpen}" Focusable="False"
+                               PopupAnimation="Fade">
+                            <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                                    BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
+                                    CornerRadius="6" Padding="4" MinWidth="200" Margin="0,2,0,0"
+                                    Effect="{StaticResource PopupShadow}">
+                                <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSubmenuOpen" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Menu">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <Style TargetType="Separator">
@@ -585,7 +644,9 @@
     <Style TargetType="DataGridRow">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="Height" Value="32" />
+        <!-- MinHeight (not Height) so the optional second text line can grow the row; 40px keeps
+             single-line rows airy as well. -->
+        <Setter Property="MinHeight" Value="40" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="ToolTip" Value="{Binding RowToolTip}" />
         <Setter Property="Template">

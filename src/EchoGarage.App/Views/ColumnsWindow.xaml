@@ -33,9 +33,17 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="10,8">
+                <StackPanel Grid.Row="0" Margin="10,10,10,4">
+                    <CheckBox x:Name="ShowSecondaryBox" Content="列表行显示次要信息"
+                              ToolTip="勾选后，每个主列下方可再显示一行较小、较淡的次要信息。" />
+                    <TextBlock Text="在下方各列输入次行格式（留空则不显示）。可用 {token} 组合，例如 {bitrate}/{sampleRate} → 402K/48K。"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="10.5" TextWrapping="Wrap"
+                               Margin="0,5,0,0" />
+                </StackPanel>
+                <Grid Grid.Row="1" Margin="10,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="80" />
@@ -45,7 +53,7 @@
                     <TextBlock Grid.Column="1" Text="宽度" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" />
                     <TextBlock Grid.Column="2" Text="顺序" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" />
                 </Grid>
-                <ListBox x:Name="ColumnList" Grid.Row="1" Background="Transparent" BorderThickness="0"
+                <ListBox x:Name="ColumnList" Grid.Row="2" Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
@@ -73,30 +81,53 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="80" />
-                                    <ColumnDefinition Width="70" />
-                                </Grid.ColumnDefinitions>
-                                <CheckBox Grid.Column="0" Content="{Binding Header}" IsChecked="{Binding IsVisible, Mode=TwoWay}"
-                                          VerticalAlignment="Center" />
-                                <TextBox Grid.Column="1" Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         Height="24" Margin="0,2,10,2" />
-                                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                    <Button Content="↑" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="11"
-                                            Click="OnMoveUp" />
-                                    <Button Content="↓" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="11"
-                                            Click="OnMoveDown" />
-                                </StackPanel>
-                            </Grid>
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="70" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0" Content="{Binding Header}" IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <TextBox Grid.Column="1" Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Height="24" Margin="0,2,10,2" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <Button Content="↑" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="11"
+                                                Click="OnMoveUp" />
+                                        <Button Content="↓" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="11"
+                                                Click="OnMoveDown" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,2,0,0" Visibility="{Binding SecondaryRowVisibility}">
+                                    <TextBox Height="22" FontSize="11"
+                                             Text="{Binding SecondaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="{Binding FormatHint}" />
+                                    <TextBlock IsHitTestVisible="False" Text="次行格式（可选，例如 {genre}）"
+                                               Foreground="{DynamicResource TextMutedBrush}" FontSize="10.5"
+                                               VerticalAlignment="Center" Margin="9,0,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SecondaryFormat}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
             </Grid>
         </Border>
 
-        <StackPanel Grid.Row="1" Grid.Column="1">
+        <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
             <TextBlock Text="快速选择显示预设" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
             <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1" CornerRadius="6" Height="170">
@@ -136,14 +167,17 @@
             <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,16,0,14" />
 
             <TextBlock Text="排序" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
-            <ComboBox x:Name="SortColumnBox" />
+            <ComboBox x:Name="SortColumnBox" DisplayMemberPath="Label" />
             <CheckBox x:Name="DescendingBox" Content="降序" Margin="0,10,0,0" />
             <CheckBox x:Name="GroupDiscTrackBox" Content="分组内按碟片号 / 曲目号排序" Margin="0,10,0,0" />
-            <TextBlock Text="勾选后，专辑分组内的歌曲始终按碟片号 → 曲目号升序排列；分组列表仅在按“专辑”或“专辑艺术家”排序时显示，其他排序方式保持普通列表。"
+            <TextBlock Text="分组列表仅在按“专辑”或“专辑艺术家”排序时显示；这两列可以隐藏，分组标题仍会显示专辑与专辑艺术家。"
                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
-            <TextBlock Text="排序也可以在表头上点击列名切换。" Foreground="{DynamicResource TextMutedBrush}"
-                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
-        </StackPanel>
+            <TextBlock Text="排序可以选用未显示的列（例如隐藏“专辑”后仍可按专辑排序并显示分组）；表头上点击列名也可以切换排序。"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+            <Button Content="显示字段说明…" Style="{StaticResource FlatButton}" HorizontalAlignment="Left"
+                    Margin="0,10,0,0" Click="OnShowFieldGuide" />
+            </StackPanel>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="取消" Style="{StaticResource FlatButton}" Click="OnCancel" IsCancel="True" Margin="0,0,8,0" />

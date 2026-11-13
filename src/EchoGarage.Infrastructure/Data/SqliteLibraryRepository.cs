@@ -8,18 +8,18 @@ namespace EchoGarage.Infrastructure.Data;
 public sealed class SqliteLibraryRepository : ILibraryRepository
 {
     private const string TrackColumns = """
-        Id, Path, FolderId, IsInLibrary, IsMissing, Title, Artist, Album, AlbumArtist, Genre, Comment,
+        Id, Path, FolderId, IsInLibrary, IsMissing, Title, Artist, Album, AlbumArtist, Composer, Genre, Comment,
         Year, TrackNumber, DiscNumber, Rating, DurationMs, Bitrate, SampleRate, Channels, Codec, FileSize,
         ModifiedAtUtc, AddedAtUtc, LastPlayedAtUtc, PlayCount, CoverKey
         """;
 
     private const string UpsertSql = """
         INSERT INTO tracks (
-            Path, FolderId, IsInLibrary, IsMissing, Title, Artist, Album, AlbumArtist, Genre, Comment,
+            Path, FolderId, IsInLibrary, IsMissing, Title, Artist, Album, AlbumArtist, Composer, Genre, Comment,
             Year, TrackNumber, DiscNumber, Rating, DurationMs, Bitrate, SampleRate, Channels, Codec, FileSize,
             ModifiedAtUtc, AddedAtUtc, LastPlayedAtUtc, PlayCount, CoverKey)
         VALUES (
-            @Path, @FolderId, @IsInLibrary, @IsMissing, @Title, @Artist, @Album, @AlbumArtist, @Genre, @Comment,
+            @Path, @FolderId, @IsInLibrary, @IsMissing, @Title, @Artist, @Album, @AlbumArtist, @Composer, @Genre, @Comment,
             @Year, @TrackNumber, @DiscNumber, @Rating, @DurationMs, @Bitrate, @SampleRate, @Channels, @Codec, @FileSize,
             @ModifiedAtUtc, @AddedAtUtc, @LastPlayedAtUtc, @PlayCount, @CoverKey)
         ON CONFLICT(Path) DO UPDATE SET
@@ -30,6 +30,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             Artist = excluded.Artist,
             Album = excluded.Album,
             AlbumArtist = excluded.AlbumArtist,
+            Composer = excluded.Composer,
             Genre = excluded.Genre,
             Comment = excluded.Comment,
             Year = excluded.Year,

@@ -3,6 +3,7 @@ using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Configuration;
 using EchoGarage.Infrastructure.Data;
 using EchoGarage.Infrastructure.Logging;
+using Microsoft.Data.Sqlite;
 
 namespace EchoGarage.Tests;
 
@@ -48,6 +49,76 @@ public sealed class RepositoryTests : IDisposable
             AddedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             Codec = "WAV"
         };
+    }
+
+    [Fact]
+    public async Task Database_MigratesVersion1ToVersion2_AndAddsComposerColumn()
+    {
+        // Build a database that looks like the old (v1) schema, then let InitializeAsync
+        // upgrade it. Old rows must keep working with an empty Composer value.
+        var paths = new AppPaths(_workspace.Combine("migrate"));
+        paths.EnsureCreated();
+        var options = new SqliteConnectionStringBuilder
+        {
+            DataSource = paths.DatabaseFile,
+            Mode = SqliteOpenMode.ReadWriteCreate
+        };
+        await using (var connection = new SqliteConnection(options.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE tracks (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Path TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    Title TEXT NOT NULL DEFAULT '',
+                    Album TEXT NOT NULL DEFAULT '',
+                    AlbumArtist TEXT NOT NULL DEFAULT '');
+                INSERT INTO tracks (Path, Title, Album, AlbumArtist) VALUES ('old/one.wav', 'Old', 'Album', 'Artist');
+                PRAGMA user_version = 1;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var logger = new FileLogger(paths);
+        var database = new SqliteDatabase(paths, logger);
+        await database.InitializeAsync();
+
+        await using var upgraded = new SqliteConnection(options.ToString());
+        await upgraded.OpenAsync();
+        await using var columns = upgraded.CreateCommand();
+        columns.CommandText = "PRAGMA table_info(tracks);";
+        var names = new List<string>();
+        await using (var reader = await columns.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                names.Add(reader.GetString(1));
+            }
+        }
+
+        Assert.Contains("Composer", names);
+        await using var versionCommand = upgraded.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version;";
+        var version = Convert.ToInt64(await versionCommand.ExecuteScalarAsync());
+        Assert.Equal(2, version);
+
+        await using var legacy = upgraded.CreateCommand();
+        legacy.CommandText = "SELECT Composer FROM tracks WHERE Path = 'old/one.wav';";
+        Assert.Equal(string.Empty, Convert.ToString(await legacy.ExecuteScalarAsync()));
+    }
+
+    [Fact]
+    public async Task Upsert_RoundTripsComposer()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var track = MakeTrack("composer.wav", folderId: folder.Id);
+        track.Composer = "Composer A";
+        await _library.UpsertTrackAsync(track);
+
+        var stored = await _library.GetTrackByPathAsync(track.Path);
+        Assert.NotNull(stored);
+        Assert.Equal("Composer A", stored!.Composer);
     }
 
     [Fact]
