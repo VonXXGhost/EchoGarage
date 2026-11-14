@@ -82,24 +82,17 @@ public static class WaveformMath
     /// <summary>取消检查间隔（帧）。</summary>
     public const int CancelCheckFrames = 64;
 
-    /// <summary>第一段的固定归一化窗口下限（dB）。</summary>
-    public const double InitialWindowFloorDb = -48.0;
-
-    /// <summary>第一段的固定归一化窗口上限（dB）。</summary>
-    public const double InitialWindowCeilingDb = 0.0;
-
-    /// <summary>前缀覆盖率达到它之后才允许切到前缀分位窗口。</summary>
-    public const double PrefixWindowCoverage = 0.25;
-
-    /// <summary>前缀窗口相对固定窗口的死区（dB）：差得不够多就不切，避免抖动。</summary>
-    public const double PrefixWindowDeadZoneDb = 3.0;
+    /// <summary>
+    /// 渐进分析期间固定的归一化窗口下限（dB）。分析过程中一直用 48 dB 的总量程，保证已经画出的
+    /// 列在后续快照里高度不变；完成时才切到全曲 p5 / p99.5（ADR-015 §6.10 的“整体重排”）。
+    /// </summary>
+    public const double StreamingWindowFloorDb = -48.0;
 
     /// <summary>
-    /// 完成窗口相对上次窗口的参考死区（dB）。ADR-015 §6.10 用它抑制完成时的小幅重排；
-    /// 但“完成快照必须与整曲分析逐字节一致”是更强的约束，所以实现里完成时总是用全曲分位重算
-    /// （见 WaveformAnalyzer 的注释）。
+    /// 渐进分析期间固定的归一化窗口上限（dB）：取 0 dBFS（电平最大值），不随已分析内容的上限变化，
+    /// 这样波形在生成过程中不会“长高 / 缩矮”（owner 2026-11-14 反馈）。
     /// </summary>
-    public const double FinalWindowDeadZoneDb = 1.5;
+    public const double StreamingWindowCeilingDb = 0.0;
 
     /// <summary>包络 attack 系数：a = 1 − exp(−0.010 / 0.060) ≈ 0.1535。</summary>
     public static readonly double EnvelopeAttackCoefficient = 1.0 - Math.Exp(-HopSeconds / EnvelopeAttackSeconds);
@@ -208,17 +201,12 @@ public static class WaveformMath
         return (floor, ceiling);
     }
 
-    /// <summary>ADR-015 §6.10 的初始固定窗口（−48…0 dB）。</summary>
-    public static (double FloorDb, double CeilingDb) InitialWindow() =>
-        (InitialWindowFloorDb, InitialWindowCeilingDb);
-
     /// <summary>
-    /// 归一化窗口是否需要切换（死区判定）：任一边界变化达到 <paramref name="deadZoneDb"/> 才切。
+    /// 渐进分析期间使用的固定窗口（−48…0 dB）。上限锁在 0 dBFS，避免分析进度推进时高度整体重排；
+    /// 完成后的最终窗口由 <see cref="StretchWindow"/> 给出，控件只重建一次。
     /// </summary>
-    public static bool ShouldSwitchWindow(
-        double floorDb, double ceilingDb, double candidateFloorDb, double candidateCeilingDb, double deadZoneDb) =>
-        Math.Abs(candidateFloorDb - floorDb) >= deadZoneDb ||
-        Math.Abs(candidateCeilingDb - ceilingDb) >= deadZoneDb;
+    public static (double FloorDb, double CeilingDb) StreamingWindow() =>
+        (StreamingWindowFloorDb, StreamingWindowCeilingDb);
 
     /// <summary>
     /// 把一列 RMS 按 dB 窗口映射为 0..255：静音列 0；v &gt; 0 但四舍五入为 0 时取 1（ADR-015 §6.6）。

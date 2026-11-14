@@ -42,7 +42,7 @@ public sealed class WaveformAnalyzerTests : IDisposable
     }
 
     [Fact]
-    public async Task Analyze_DoubledAmplitude_RaisesHeightInFixedWindowPrefixSnapshot()
+    public async Task Analyze_DoubledAmplitude_RaisesHeightInFixedStreamingWindowSnapshot()
     {
         // 整曲归一化是振幅无关的（p5/p99.5 一起平移），振幅差异只能在固定窗口（−48…0 dB）的
         // 首个前缀快照里观察：每列的 dB 应整体 +6 dB → 高度单调增加。
@@ -61,8 +61,8 @@ public sealed class WaveformAnalyzerTests : IDisposable
 
         var quietSum = quietFirst.Height.Sum(height => (int)height);
         var loudSum = loudFirst.Height.Sum(height => (int)height);
-        Assert.Equal(WaveformMath.InitialWindowFloorDb, quietFirst.FloorDb);
-        Assert.Equal(WaveformMath.InitialWindowCeilingDb, quietFirst.CeilingDb);
+        Assert.Equal(WaveformMath.StreamingWindowFloorDb, quietFirst.FloorDb);
+        Assert.Equal(WaveformMath.StreamingWindowCeilingDb, quietFirst.CeilingDb);
         Assert.True(loudSum > quietSum, $"振幅翻倍后高度应增加：quiet={quietSum} loud={loudSum}");
         var meanDelta = (loudSum - quietSum) / (double)quietFirst.Height.Length;
         Assert.InRange(meanDelta, 20.0, 60.0); // 6 dB / 48 dB 量程 ≈ 32
@@ -118,6 +118,38 @@ public sealed class WaveformAnalyzerTests : IDisposable
         Assert.Equal(final.ColumnCount, final.ValidCount);
         Assert.Equal(final.ValidCount, final.Height.Length);
         Assert.False(progress.Items[0].IsComplete);
+    }
+
+    [Fact]
+    public async Task Analyze_ProgressSnapshots_KeepFixedWindowUntilComplete()
+    {
+        // owner 2026-11-14：波形生成过程中不能“长高 / 缩矮”。渐进快照必须一直用固定窗口
+        // （−48…0 dB，上限 0 dBFS），只有最终完成快照才允许换成整曲 p5 / p99.5。
+        var wav = WriteShaped("stable-window.wav", seconds: 6.0, scale: 1.0);
+        var progress = new SyncProgress<WaveformPeaks>();
+        var analyzer = new WaveformAnalyzer(publishChunkColumns: 40);
+
+        await analyzer.AnalyzeAsync(wav, progress);
+
+        var streaming = progress.Items.Where(item => !item.IsComplete).ToList();
+        Assert.True(streaming.Count > 1, "6 s 音频按 40 列分块应发布多次渐进快照");
+        Assert.All(streaming, snapshot =>
+        {
+            Assert.Equal(WaveformMath.StreamingWindowFloorDb, snapshot.FloorDb);
+            Assert.Equal(WaveformMath.StreamingWindowCeilingDb, snapshot.CeilingDb);
+        });
+
+        // 已画出的列在后续快照里高度必须完全一致：这就是“生成过程中不变形”的直接检验。
+        for (var i = 1; i < streaming.Count; i++)
+        {
+            var previous = streaming[i - 1];
+            var current = streaming[i];
+            Assert.True(previous.ValidCount <= current.ValidCount);
+            for (var column = 0; column < previous.ValidCount; column++)
+            {
+                Assert.Equal(previous.Height[column], current.Height[column]);
+            }
+        }
     }
 
     [Fact]

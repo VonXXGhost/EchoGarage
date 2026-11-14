@@ -74,8 +74,9 @@ public sealed class WaveformAnalyzer : IWaveformAnalyzer
         var buffered = 0;
         var framesDone = 0;
         var nextPublish = _publishChunkColumns;
-        var prefixWindowDecided = false;
-        var (floorDb, ceilingDb) = WaveformMath.InitialWindow();
+        // 渐进快照一律用固定窗口（−48…0 dB）：上限锁在 0 dBFS，已发布的列不会因为后续内容更响
+        // 而整体变矮 / 变高，波形在生成过程中只会向右延伸（owner 2026-11-14 反馈）。
+        var (streamingFloorDb, streamingCeilingDb) = WaveformMath.StreamingWindow();
 
         while (framesDone < frameCount)
         {
@@ -142,21 +143,7 @@ public sealed class WaveformAnalyzer : IWaveformAnalyzer
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // 前缀覆盖率达到 25% 后，允许把固定窗口换成前缀分位窗口（只做一次，差得不够多就不切）。
-                if (!prefixWindowDecided &&
-                    state.Columns >= Math.Ceiling(columnCapacity * WaveformMath.PrefixWindowCoverage))
-                {
-                    prefixWindowDecided = true;
-                    var candidate = WaveformMath.StretchWindow(state.CollectDecibels(state.Columns));
-                    if (WaveformMath.ShouldSwitchWindow(
-                            floorDb, ceilingDb, candidate.FloorDb, candidate.CeilingDb,
-                            WaveformMath.PrefixWindowDeadZoneDb))
-                    {
-                        (floorDb, ceilingDb) = candidate;
-                    }
-                }
-
-                progress?.Report(state.CreateSnapshot(state.Columns, floorDb, ceilingDb));
+                progress?.Report(state.CreateSnapshot(state.Columns, streamingFloorDb, streamingCeilingDb));
                 nextPublish += _publishChunkColumns;
                 publishDue = true;
             }
@@ -171,8 +158,9 @@ public sealed class WaveformAnalyzer : IWaveformAnalyzer
         // 奇数帧时最后一列只有一帧，仍需收尾。
         state.FlushPartialColumn();
 
-        // 完成时总是用全曲 p5 / p99.5 重算所有高度：这是“分块分析与整曲分析逐字节一致”的保证。
-        // （ADR §6.10 的 1.5 dB 完成死区在这里不适用，否则最终归一化会依赖此前发布过哪些前缀窗口。）
+        // 完成时用全曲 p5 / p99.5 重算所有高度并发布最终快照（owner 2026-11-14 的归一化策略：
+        // 分析过程中锁死窗口、零重排，只在分析完成时做这一次整曲归一化）。这也是
+        // “分块分析与整曲分析逐字节一致”的保证：最终结果不依赖此前发布过哪些前缀快照。
         var finalWindow = WaveformMath.StretchWindow(state.CollectDecibels(state.Columns));
         var final = state.CreateSnapshot(columnCapacity, finalWindow.FloorDb, finalWindow.CeilingDb);
         progress?.Report(final);

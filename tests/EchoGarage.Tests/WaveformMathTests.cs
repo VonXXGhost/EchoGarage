@@ -97,11 +97,13 @@ public sealed class WaveformMathTests
     }
 
     [Fact]
-    public void ShouldSwitchWindow_RespectsDeadZone()
+    public void StreamingWindow_IsFixedAtZeroDbfsCeiling()
     {
-        Assert.False(WaveformMath.ShouldSwitchWindow(-48, 0, -46, 0, 3.0));
-        Assert.True(WaveformMath.ShouldSwitchWindow(-48, 0, -44, 0, 3.0));
-        Assert.True(WaveformMath.ShouldSwitchWindow(-48, 0, -48, 4, 3.0));
+        // 分析过程中的归一化窗口锁在 −48…0 dB：上限是 0 dBFS（电平最大值），不会随内容变化。
+        var (floor, ceiling) = WaveformMath.StreamingWindow();
+
+        Assert.Equal(-48.0, floor);
+        Assert.Equal(0.0, ceiling);
     }
 
     // ---- 份额量化（§6.7）----
