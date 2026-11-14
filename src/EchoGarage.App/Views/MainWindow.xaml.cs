@@ -91,6 +91,9 @@ public partial class MainWindow : Window
         ApplyWindowPlacement();
         HookSeekSlider();
         HookWaveformSeek();
+        // Build the track context menu before it opens; see OnTrackMenuOpening.
+        TrackGrid.ContextMenuOpening += OnTrackMenuOpening;
+        GroupedList.ContextMenuOpening += OnTrackMenuOpening;
         Loaded += OnLoaded;
         // Tags of files outside the library folders are never picked up by the scanner or the
         // watcher, so refresh the visible rows whenever the window is activated again.
@@ -523,30 +526,35 @@ public partial class MainWindow : Window
     }
 
     // =====================================================================
-    // Conversion
+    // Track context menu content
     // =====================================================================
     /// <summary>
-    /// The context menu is shared and the conversion submenu is populated from the current presets.
-    /// Populate it as soon as the menu opens: a MenuItem without children never opens its submenu,
-    /// so waiting for SubmenuOpened alone would make "转换" look unresponsive.
+    /// The track context menu is shared by the grid and the grouped list, and its submenus
+    /// (conversion presets, file operations) are rebuilt from current state. Rebuild them in
+    /// <see cref="FrameworkElement.ContextMenuOpening"/> — i.e. before the menu is shown —
+    /// because a MenuItem without children never opens its submenu, while touching the items
+    /// of an already displayed menu (Opened / SubmenuOpened) makes WPF recreate the visual
+    /// containers and the whole menu chain collapses as soon as the pointer enters a submenu.
     /// </summary>
-    private void OnTrackMenuOpened(object sender, RoutedEventArgs e)
+    private void OnTrackMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (sender is ContextMenu menu)
+        if (sender is not FrameworkElement element || element.ContextMenu is not { } menu)
         {
-            var items = menu.Items.OfType<MenuItem>().ToList();
-            var conversion = items.FirstOrDefault(item => item.Header as string == "转换");
-            if (conversion is not null)
-            {
-                RebuildConversionMenu(conversion);
-            }
+            return;
+        }
 
-            var fileOperations = items.FirstOrDefault(item => item.Header as string == "文件操作");
-            if (fileOperations is not null)
-            {
-                fileOperations.IsEnabled = _vm.GetFileOperationTargets().Count > 0;
-                RebuildFileOperationMenu(fileOperations);
-            }
+        var items = menu.Items.OfType<MenuItem>().ToList();
+        var conversion = items.FirstOrDefault(item => item.Header as string == "转换");
+        if (conversion is not null)
+        {
+            RebuildConversionMenu(conversion);
+        }
+
+        var fileOperations = items.FirstOrDefault(item => item.Header as string == "文件操作");
+        if (fileOperations is not null)
+        {
+            fileOperations.IsEnabled = _vm.GetFileOperationTargets().Count > 0;
+            RebuildFileOperationMenu(fileOperations);
         }
     }
 
@@ -554,17 +562,9 @@ public partial class MainWindow : Window
     // File operations (ADR-021)
     // =====================================================================
 
-    private void OnFileOperationMenuOpened(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem menu)
-        {
-            RebuildFileOperationMenu(menu);
-        }
-    }
-
     /// <summary>
     /// 「文件操作」二级菜单：复制到 / 移动到（各自三级菜单列出记住的目标文件夹）+ 删除文件。
-    /// 和「转换」一样在菜单打开时重建，因为 MenuItem 没有子项时不会弹出子菜单。
+    /// 内容在菜单显示前的 ContextMenuOpening 里一次构建完成，菜单显示期间不再修改子项。
     /// </summary>
     private void RebuildFileOperationMenu(MenuItem menu)
     {
@@ -622,14 +622,6 @@ public partial class MainWindow : Window
         var manage = new MenuItem { Header = "管理目标文件夹…" };
         manage.Click += (_, _) => OpenSettings();
         parent.Items.Add(manage);
-    }
-
-    private void OnConversionMenuOpened(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem menu)
-        {
-            RebuildConversionMenu(menu);
-        }
     }
 
     private void RebuildConversionMenu(MenuItem menu)

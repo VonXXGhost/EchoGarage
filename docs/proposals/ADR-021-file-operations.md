@@ -70,10 +70,12 @@
 
 - `AppSettings.FileDestinations: List<string>`，加载时经 `FileDestinations.Normalize` 归一化；
   设置页新增「文件操作目标文件夹」区块（列表 + 添加 / 移除 / 上移 / 下移，最多 20 个）。
-- 右键菜单在 `ContextMenu.Opened` 与 `MenuItem.SubmenuOpened` 时重建
-  （WPF 中 `MenuItem` 没有子项就不会弹出二级菜单，与「转换」菜单同一模式）：
+- 右键菜单子项在列表控件的 `ContextMenuOpening`（菜单显示之前）一次性构建
+  （WPF 中 `MenuItem` 没有子项就不会弹出二级菜单）：
   二级 `复制 到 / 移动 到` 各自再填充三级目标目录；末尾固定追加
   `选择文件夹…`（临时目标，不入库）与 `管理目标文件夹…`（打开设置页）。
+  不在 `ContextMenu.Opened` / `MenuItem.SubmenuOpened` 里改子项——那会在菜单已显示后重建
+  可视化容器，鼠标移入二级菜单时整条菜单链会被收起（已在实机反馈中确认并修复）。
 - 多选时作用于所有选中行，未多选时作用于当前行；没有选中项时整个「文件操作」菜单禁用。
 
 ## 备选方案
