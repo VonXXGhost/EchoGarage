@@ -29,21 +29,21 @@
   顶栏移除品牌文字并支持悬停展开菜单、重做透明底播放三角图标），**已获 owner 批准（2026-11-14）并归档到 `docs/kb/`**。
 - 2026-11-14：owner 批准全部待批提案并归档：`ADR-013`（列表行次要信息与作曲家标签）、
   `KB-013`（来源切换后的布局记忆）、`KB-014`（分组表头左右固定 / 拖拽边界 / 音量滚轮 / 原生菜单栏 / 图标重做）。
-- 2026-11-14：新增提案 `ADR-014-cache-repair-schema-v3.md`（schema v3 数据修复迁移：
-  失效旧缓存行的 DurationMs，让下次启动扫描回填 ADR-013 新增的 Composer 列），待 owner 批准。
-- 2026-11-14：新增提案 `ADR-016-search-hotkeys-playback-mode.md`（列宽拖拽即时持久化修复、
-  可配置 / 全局播放快捷键、当前播放列表搜索、顺序 / 随机播放），待 owner 批准。
-- 2026-11-14：新增提案 `ADR-017-audio-conversion.md`（预设驱动的音频编码转换：AAC/Nero、FLAC、MP3、WAV，
+- 2026-11-14：`ADR-014-cache-repair-schema-v3.md`（schema v3 数据修复迁移：失效旧缓存行的 DurationMs，
+  让下次启动扫描回填 ADR-013 新增的 Composer 列）**已获 owner 批准并归档到 `docs/adr/`**。
+- 2026-11-14：`ADR-016-search-hotkeys-playback-mode.md`（列宽拖拽即时持久化修复、
+  可配置 / 全局播放快捷键、当前播放列表搜索、顺序 / 随机播放）**已获 owner 批准并归档到 `docs/adr/`**。
+- 2026-11-14：`ADR-017-audio-conversion.md`（预设驱动的音频编码转换：AAC/Nero、FLAC、MP3、WAV，
   外部命令行编码器、输出位置与文件名模板、重采样、标签复制、右键与可配置快捷键）。
   owner 已确认关键取舍（FLAC/LAME 随发布包附带、Nero AAC 自备、冲突默认询问、默认模板 `%artist% - %title%`、
-  每个预设自带快捷键），**已实现（2026-11-14，178 项测试通过），待 owner 验收后归档**。
-- 2026-11-14：新增提案 `ADR-018-track-metadata-refresh.md`（播放列表外部文件的标签缓存刷新：
+  每个预设自带快捷键），**已实现（2026-11-14，178 项测试通过），已获 owner 批准并归档到 `docs/adr/`**。
+- 2026-11-14：`ADR-018-track-metadata-refresh.md`（播放列表外部文件的标签缓存刷新：
   窗口激活 / 切换来源时后台比对文件大小与修改时间，变化则重新索引；解决媒体库扫描与文件监听
-  覆盖不到外部文件、重启后仍显示旧标签的问题），待 owner 批准。
-- 2026-11-14：新增提案 `ADR-019-tag-editor-and-cover-conversion.md`（`#` 列显示碟片号.音轨号、标签编辑页 2 列表格 +
-  额外标签只读展示、封面信息与保存时 JPG / 最大边长转换规则），待 owner 批准。
-- 2026-11-14：新增提案 `ADR-020-playing-file-write-lock.md`（播放中文件被播放器句柄占用导致标签写入失败：
+  覆盖不到外部文件、重启后仍显示旧标签的问题）**已获 owner 批准并归档到 `docs/adr/`**。
+- 2026-11-14：`ADR-019-tag-editor-and-cover-conversion.md`（`#` 列显示碟片号.音轨号、标签编辑页 2 列表格 +
+  额外标签只读展示、封面信息与保存时 JPG / 最大边长转换规则）**已获 owner 批准并归档到 `docs/adr/`**。
+- 2026-11-14：`ADR-020-playing-file-write-lock.md`（播放中文件被播放器句柄占用导致标签写入失败：
   播放器改用共享读取句柄（`SharedAudioFileReader`），写标签时检测占用、临时副本 + `File.Replace` 原子替换，
-  播放不中断且位置连续），待 owner 批准。
-- 待批准提案：`ADR-014`、`ADR-016`、`ADR-017`、`ADR-018`、`ADR-019`、`ADR-020`。
+  播放不中断且位置连续）**已获 owner 批准并归档到 `docs/adr/`**。
+- 当前状态：无待批准提案。
 

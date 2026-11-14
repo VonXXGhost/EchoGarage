@@ -19,7 +19,13 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-010](ADR-010-metadata-cache-invalidation.md) | 媒体库缓存可用性失效 | Accepted | 2026-11-11 | 缓存行缺少时长（DurationMs<=0）视为失效并在扫描时重建；启动时自动修复旧缓存 |
 | [ADR-012](ADR-012-test-playback-volume.md) | 测试运行时的输出音量 | Accepted | 2026-11-12 | 实际运行并播放音频的测试必须先静音/调到最低音量（音量相关测试除外），并使用独立数据目录副本 |
 | [ADR-013](ADR-013-secondary-row-info-and-composer.md) | 列表行次要信息与作曲家标签 | Accepted | 2026-11-14 | 每列可选次行复合格式（默认关闭、填格式自动启用）；Composer 标签贯通文件/缓存/编辑；SQLite schema v2；两行渲染 |
+| [ADR-014](ADR-014-cache-repair-schema-v3.md) | 缓存修复迁移：schema v3 回填作曲家 | Accepted | 2026-11-14 | schema v3 数据修复迁移把 `FolderId IS NOT NULL` 的缓存行 `DurationMs` 清零，复用「无时长=缓存失效」规则让扫描回填 Composer |
 | [ADR-015](ADR-015-waveform-seekbar.md) | 播放进度条的波形视图 | Accepted | 2026-11-14 | 进度条可切整曲三频段波形：平底三层堆叠、逐曲分位拉伸 + 频段份额幂次、50 列/秒 EGWV 缓存 + LRU、按段渐进渲染、点击/拖动跳转 |
+| [ADR-016](ADR-016-search-hotkeys-playback-mode.md) | 列表搜索、可配置（全局）播放快捷键、顺序 / 随机播放与列宽即时记忆 | Accepted | 2026-11-14 | 列宽拖拽即时落盘；快捷键可配置且可选全局注册（RegisterHotKey）；内联搜索 + Ctrl+F 高级搜索；顺序 / 随机播放模式记忆 |
+| [ADR-017](ADR-017-audio-conversion.md) | 音频转换（编码转换） | Accepted | 2026-11-14 | 预设驱动的转换器：格式 / 输出位置 / 文件名模板 / 高质量重采样 / 标签复制，右键与快捷键触发 |
+| [ADR-018](ADR-018-track-metadata-refresh.md) | 播放列表外部文件的标签缓存刷新策略 | Accepted | 2026-11-14 | 外部文件缓存行按 `FileSize` + `ModifiedAtUtc` 比对，窗口激活 / 切换来源时后台刷新标签，不阻塞列表加载 |
+| [ADR-019](ADR-019-tag-editor-and-cover-conversion.md) | 标签编辑页重设计、额外标签展示、封面 JPG 转换与多文件批量编辑 | Accepted | 2026-11-14 | `#` 列显示「碟片号.音轨号」；标签编辑改两列表格 + 额外标签只读；封面可转 JPG 并限制最大边长；支持多文件批量编辑 |
+| [ADR-020](ADR-020-playing-file-write-lock.md) | 播放中文件的标签写入（共享句柄 + 临时副本原子替换） | Accepted | 2026-11-14 | 播放器共享句柄 + 写标签时临时副本 `File.Replace` 原子替换，播放中改标签不再中断播放 |
 
 ## 相关长期知识（KB）
 
@@ -53,5 +59,6 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 > 2026-11-13：owner 提出表头左右固定与拖拽边缘限制、音量区滚轮 5%、顶栏去品牌并悬停展开菜单、重做透明底图标；实现与验证见 `docs/kb/KB-014-header-pinning-and-toolbar-refresh.md`。
 > 2026-11-14：owner 批准全部待批提案并归档：`ADR-013`（列表行次要信息与作曲家标签）、`KB-013`（来源切换后的布局记忆）、`KB-014`（分组表头左右固定 / 拖拽边界 / 音量滚轮 / 原生菜单栏 / 图标重做）。同日补充：移除界面中的评分与播放次数等动态统计显示（数据库历史字段保留，不再新增此类功能）。
 > 2026-11-14：owner 批准 `ADR-015`（播放进度条的波形视图）并归档；决策含全局记忆波形形态、LRU 可调、清空缓存菜单、`--waveform` 诊断开关、按时间段渐进渲染。实现待后续排期。
+> 2026-11-14：owner 批准全部待批提案并归档：`ADR-014`（schema v3 缓存修复）、`ADR-016`（搜索 / 快捷键 / 播放模式 / 列宽记忆）、`ADR-017`（音频转换）、`ADR-018`（外部文件标签缓存刷新）、`ADR-019`（标签编辑页与封面转换）、`ADR-020`（播放中写标签）。自此 `docs/proposals/` 不再有待批 ADR。
 
 
