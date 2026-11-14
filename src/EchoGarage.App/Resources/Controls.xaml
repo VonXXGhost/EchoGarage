@@ -755,9 +755,10 @@
     </Style>
 
     <!-- ============ Waveform seek bar (ADR-015) ============ -->
+    <!-- 波形高度跟随传输条剩余空间（owner 2026-11-14 反馈：尽量填满上下空间），不再固定 28 px。 -->
     <Style TargetType="{x:Type controls:WaveformSeekBar}">
-        <Setter Property="Height" Value="28" />
-        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="MinHeight" Value="28" />
         <Setter Property="Focusable" Value="True" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="LowBrush" Value="{DynamicResource WaveformLowBrush}" />
@@ -770,49 +771,42 @@
         <Setter Property="FocusBrush" Value="{DynamicResource AccentBrush}" />
     </Style>
 
-    <!-- 进度区左端的形态切换按钮：三根高低不同的竖条（低频宽、高频窄）。 -->
+    <!-- 进度区左端的形态切换按钮：与右侧顺序 / 随机按钮一致，只靠图标区分当前形态，
+         不画“已启用”底色（owner 2026-11-14 反馈）。 -->
     <Style x:Key="WaveformModeToggle" TargetType="ToggleButton">
-        <Setter Property="Width" Value="24" />
-        <Setter Property="Height" Value="24" />
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Padding" Value="0" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
-        <Setter Property="ToolTip" Value="波形进度条" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="ToolTip" Value="切换为波形进度条" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
-                    <Border x:Name="ToggleChrome" Background="Transparent" CornerRadius="4">
-                        <Grid Width="14" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="4" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="3" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="2" />
-                            </Grid.ColumnDefinitions>
-                            <Rectangle Grid.Column="0" Width="4" Height="6" RadiusX="1" RadiusY="1"
-                                       VerticalAlignment="Bottom" Fill="{TemplateBinding Foreground}" />
-                            <Rectangle Grid.Column="2" Width="3" Height="9" RadiusX="1" RadiusY="1"
-                                       VerticalAlignment="Bottom" Fill="{TemplateBinding Foreground}" />
-                            <Rectangle Grid.Column="4" Width="2" Height="13" RadiusX="1" RadiusY="1"
-                                       VerticalAlignment="Bottom" Fill="{TemplateBinding Foreground}" />
-                        </Grid>
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                         </Trigger>
-                        <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="ToggleChrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
-                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowSelectedBrush}" />
                         </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="ToggleChrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
-                            <Setter TargetName="ToggleChrome" Property="BorderThickness" Value="1" />
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter Property="ToolTip" Value="切换为滑杆进度条" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>

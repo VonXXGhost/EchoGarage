@@ -894,9 +894,9 @@
                             ToolTip="下一首" />
                 </StackPanel>
 
-                <Grid Grid.Column="1" Margin="20,0" VerticalAlignment="Center">
+                <Grid Grid.Column="1" Margin="20,0" VerticalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="30" />
                         <ColumnDefinition Width="46" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="46" />
@@ -905,7 +905,48 @@
                                   VerticalAlignment="Center"
                                   IsChecked="{Binding IsWaveformMode, Mode=TwoWay}"
                                   AutomationProperties.AutomationId="WaveformModeToggle"
-                                  AutomationProperties.Name="波形进度条" />
+                                  AutomationProperties.Name="进度条形态">
+                        <Grid Width="16" Height="16">
+                            <!-- 滑杆形态：水平轨道 + 圆形滑块 -->
+                            <Grid>
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                         Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Path Width="16" Height="16"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      Data="M2.5,8 H13.5" />
+                                <Ellipse Width="5" Height="5"
+                                         Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                            <!-- 波形形态：高低不一的竖条 -->
+                            <Grid>
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                         Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Path Width="16" Height="16"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      Data="M3.5,6 V10 M8,2.5 V13.5 M12.5,5 V11" />
+                            </Grid>
+                        </Grid>
+                    </ToggleButton>
                     <TextBlock Grid.Column="1" Text="{Binding PositionText}" Foreground="{DynamicResource TextSecondaryBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
                     <Grid Grid.Column="2">
@@ -916,6 +957,7 @@
                                 IsMoveToPointEnabled="False"
                                 Visibility="{Binding IsWaveformMode, Converter={StaticResource InverseBoolToVisibility}}" />
                         <controls:WaveformSeekBar x:Name="WaveformView"
+                                  Margin="0,4"
                                   AutomationProperties.AutomationId="WaveformSeekBar"
                                   AutomationProperties.Name="播放进度"
                                   AutomationProperties.HelpText="左右方向键跳转 5 秒，Shift 加方向键跳转 1 秒"
