@@ -52,10 +52,11 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Database_MigratesVersion1ToVersion2_AndAddsComposerColumn()
+    public async Task Database_MigratesVersion1ToVersion3_AddsComposerAndInvalidatesDuration()
     {
         // Build a database that looks like the old (v1) schema, then let InitializeAsync
-        // upgrade it. Old rows must keep working with an empty Composer value.
+        // upgrade it. Old rows must keep working with an empty Composer value, and the
+        // duration cache must be invalidated so the next scan re-reads the file tags.
         var paths = new AppPaths(_workspace.Combine("migrate"));
         paths.EnsureCreated();
         var options = new SqliteConnectionStringBuilder
@@ -71,10 +72,13 @@ public sealed class RepositoryTests : IDisposable
                 CREATE TABLE tracks (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Path TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    FolderId INTEGER NULL,
                     Title TEXT NOT NULL DEFAULT '',
                     Album TEXT NOT NULL DEFAULT '',
-                    AlbumArtist TEXT NOT NULL DEFAULT '');
-                INSERT INTO tracks (Path, Title, Album, AlbumArtist) VALUES ('old/one.wav', 'Old', 'Album', 'Artist');
+                    AlbumArtist TEXT NOT NULL DEFAULT '',
+                    DurationMs INTEGER NOT NULL DEFAULT 0);
+                INSERT INTO tracks (Path, FolderId, Title, Album, AlbumArtist, DurationMs)
+                VALUES ('old/one.wav', 1, 'Old', 'Album', 'Artist', 2000);
                 PRAGMA user_version = 1;
                 """;
             await command.ExecuteNonQueryAsync();
@@ -101,11 +105,65 @@ public sealed class RepositoryTests : IDisposable
         await using var versionCommand = upgraded.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
         var version = Convert.ToInt64(await versionCommand.ExecuteScalarAsync());
-        Assert.Equal(2, version);
+        Assert.Equal(3, version);
 
         await using var legacy = upgraded.CreateCommand();
-        legacy.CommandText = "SELECT Composer FROM tracks WHERE Path = 'old/one.wav';";
-        Assert.Equal(string.Empty, Convert.ToString(await legacy.ExecuteScalarAsync()));
+        legacy.CommandText = "SELECT Composer, DurationMs FROM tracks WHERE Path = 'old/one.wav';";
+        await using var legacyReader = await legacy.ExecuteReaderAsync();
+        Assert.True(await legacyReader.ReadAsync());
+        Assert.Equal(string.Empty, legacyReader.GetString(0));
+        Assert.Equal(0, legacyReader.GetInt64(1));
+    }
+
+    [Fact]
+    public async Task Database_MigratesVersion2ToVersion3_AndKeepsComposer()
+    {
+        // A v2 library already has the Composer column but its cached value is empty because
+        // the v2 migration did not force a rescan. The v3 migration invalidates DurationMs.
+        var paths = new AppPaths(_workspace.Combine("migrate-v2"));
+        paths.EnsureCreated();
+        var options = new SqliteConnectionStringBuilder
+        {
+            DataSource = paths.DatabaseFile,
+            Mode = SqliteOpenMode.ReadWriteCreate
+        };
+        await using (var connection = new SqliteConnection(options.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE tracks (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Path TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    FolderId INTEGER NULL,
+                    Title TEXT NOT NULL DEFAULT '',
+                    Album TEXT NOT NULL DEFAULT '',
+                    AlbumArtist TEXT NOT NULL DEFAULT '',
+                    Composer TEXT NOT NULL DEFAULT '',
+                    DurationMs INTEGER NOT NULL DEFAULT 0);
+                INSERT INTO tracks (Path, FolderId, Title, Album, AlbumArtist, Composer, DurationMs)
+                VALUES ('old/two.wav', 1, 'Old', 'Album', 'Artist', 'Some Composer', 5000);
+                PRAGMA user_version = 2;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var logger = new FileLogger(paths);
+        var database = new SqliteDatabase(paths, logger);
+        await database.InitializeAsync();
+
+        await using var upgraded = new SqliteConnection(options.ToString());
+        await upgraded.OpenAsync();
+        await using var versionCommand = upgraded.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version;";
+        Assert.Equal(3, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
+
+        await using var legacy = upgraded.CreateCommand();
+        legacy.CommandText = "SELECT Composer, DurationMs FROM tracks WHERE Path = 'old/two.wav';";
+        await using var legacyReader = await legacy.ExecuteReaderAsync();
+        Assert.True(await legacyReader.ReadAsync());
+        Assert.Equal("Some Composer", legacyReader.GetString(0));
+        Assert.Equal(0, legacyReader.GetInt64(1));
     }
 
     [Fact]

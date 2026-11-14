@@ -50,6 +50,12 @@ public sealed class SqliteDatabase
         if (version < 2)
         {
             await MigrateToVersion2Async(connection, cancellationToken);
+            version = 2;
+        }
+
+        if (version < 3)
+        {
+            await MigrateToVersion3Async(connection, cancellationToken);
         }
     }
 
@@ -139,6 +145,19 @@ public sealed class SqliteDatabase
             PRAGMA user_version = 2;
             """, cancellationToken: cancellationToken));
         _logger.Info("SQLite schema migrated to version 2 (Composer).");
+    }
+
+    private async Task MigrateToVersion3Async(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // Version 2 added the Composer column without invalidating existing cache rows, so
+        // libraries created before that migration keep an empty Composer until a file changes.
+        // Resetting DurationMs marks every library row as stale (ADR-010: DurationMs <= 0 means
+        // the cache row must be rebuilt), and the next startup scan re-reads the file tags.
+        await connection.ExecuteAsync(new CommandDefinition("""
+            UPDATE tracks SET DurationMs = 0 WHERE FolderId IS NOT NULL;
+            PRAGMA user_version = 3;
+            """, cancellationToken: cancellationToken));
+        _logger.Info("SQLite schema migrated to version 3 (metadata repair for Composer).");
     }
 
     public async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)

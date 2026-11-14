@@ -25,6 +25,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _statusTimer;
     private readonly DispatcherTimer _watcherTimer;
     private readonly DispatcherTimer _settingsTimer;
+    private readonly DispatcherTimer _filterTimer;
     private readonly HashSet<string> _pendingWatchPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _selectionGate = new(1, 1);
 
@@ -35,6 +36,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isSeeking;
     private bool _isDisposed;
     private int _consecutiveFailures;
+    private List<TrackRowViewModel>? _shuffleOrder;
 
     /// <summary>
     /// The source whose tracks and layout are currently shown. This is deliberately separate
@@ -49,12 +51,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int _nowPlayingCoverVersion;
     private string? _currentCoverPath;
 
+    /// <summary>Subtitle for the current source without any search filter applied.</summary>
+    private string _basePlaylistSubtitle = string.Empty;
+
+    /// <summary>Field restrictions from the advanced search dialog; null while using the inline search.</summary>
+    private IReadOnlyList<SearchField>? _advancedFields;
+    private SearchFieldMode _advancedMode = SearchFieldMode.Any;
+
+    /// <summary>True while the advanced search dialog writes the keyword into <see cref="FilterText"/>.</summary>
+    private bool _applyingAdvancedSearch;
+
     public MainViewModel(AppHost host, IDialogService dialogs)
     {
         _host = host;
         _dialogs = dialogs;
         _dispatcher = Dispatcher.CurrentDispatcher;
         Settings = host.Settings.Current;
+        _playMode = Settings.PlaybackMode;
 
         Sources = [];
         _sourcesView = CollectionViewSource.GetDefaultView(Sources);
@@ -81,6 +94,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _settingsTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(800), DispatcherPriority.Background,
             OnSettingsTimerTick, _dispatcher);
         _settingsTimer.Stop();
+        // Typing must not re-run the whole filter for every keystroke on large libraries.
+        _filterTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(180), DispatcherPriority.Background,
+            OnFilterTimerTick, _dispatcher);
+        _filterTimer.Stop();
 
         _host.Player.StateChanged += OnPlayerStateChanged;
         _host.Player.PlaybackEnded += OnPlaybackEnded;
@@ -238,11 +255,37 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isMuted;
 
-    public string VolumeText => IsMuted ? "静音" : $"{Math.Round(Volume)}%";
-
-    public string MuteGlyph => IsMuted ? "🔇" : "🔊";
+    public string VolumeText => $"{Math.Round(Volume)}%";
 
     public string MuteToolTip => IsMuted ? "取消静音" : "静音";
+
+    /// <summary>Sequential or random playback; persisted in settings.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PlayModeLabel))]
+    [NotifyPropertyChangedFor(nameof(PlayModeToolTip))]
+    [NotifyPropertyChangedFor(nameof(IsShuffleEnabled))]
+    private PlaybackMode _playMode = PlaybackMode.Sequential;
+
+    public bool IsShuffleEnabled => PlayMode == PlaybackMode.Shuffle;
+
+    public string PlayModeLabel => IsShuffleEnabled ? "随机" : "顺序";
+
+    public string PlayModeToolTip => IsShuffleEnabled
+        ? "随机播放（点击切换为顺序播放）"
+        : "顺序播放（点击切换为随机播放）";
+
+    partial void OnPlayModeChanged(PlaybackMode value)
+    {
+        // A new mode means the previous shuffled round is meaningless. The next "next" rebuilds it.
+        _shuffleOrder = null;
+        Settings.PlaybackMode = value;
+        QueueSettingsSave();
+        SetStatus(value == PlaybackMode.Shuffle ? "已切换为随机播放" : "已切换为顺序播放");
+    }
+
+    [RelayCommand]
+    private void TogglePlayMode() =>
+        PlayMode = PlayMode == PlaybackMode.Shuffle ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
 
     [ObservableProperty]
     private bool _showAlbumPanel = true;
@@ -290,10 +333,168 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private string _outputDescription = "未初始化";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFilterActive))]
+    [NotifyPropertyChangedFor(nameof(EmptyListTitle))]
+    [NotifyPropertyChangedFor(nameof(EmptyListHint))]
     private string _filterText = string.Empty;
 
+    /// <summary>True when a search query is narrowing the current list.</summary>
+    public bool IsFilterActive => !string.IsNullOrWhiteSpace(FilterText);
+
+    public string EmptyListTitle => IsFilterActive ? "没有匹配的歌曲" : "这里还没有歌曲";
+
+    public string EmptyListHint => IsFilterActive
+        ? "换个关键词，或使用高级搜索；按 Esc 清空。"
+        : "把音频文件或文件夹拖到窗口，或使用“添加文件 / 添加媒体库文件夹”。";
+
+    /// <summary>
+    /// The current list has at least one visible row. Search filtering redefines this so the
+    /// empty-state overlay also appears when the query matches nothing.
+    /// </summary>
     [ObservableProperty]
     private bool _hasTracks;
+
+    partial void OnFilterTextChanged(string value)
+    {
+        if (_applyingAdvancedSearch)
+        {
+            // The advanced search dialog wrote the keyword; keep its field restrictions.
+            return;
+        }
+
+        // Typing in the inline search box always falls back to the default fields.
+        _advancedFields = null;
+        _advancedMode = SearchFieldMode.Any;
+
+        // Debounce: only the last keystroke within the interval triggers a refresh.
+        _filterTimer.Stop();
+        _filterTimer.Start();
+    }
+
+    [RelayCommand]
+    private void ClearFilter()
+    {
+        _advancedFields = null;
+        _advancedMode = SearchFieldMode.Any;
+
+        if (string.IsNullOrEmpty(FilterText))
+        {
+            _filterTimer.Stop();
+            ApplyFilter();
+            return;
+        }
+
+        FilterText = string.Empty;
+    }
+
+    /// <summary>
+    /// The advanced search currently narrowing the list, or null when the inline search box
+    /// is in charge. Used to pre-fill the dialog when it is opened again.
+    /// </summary>
+    public SearchQuery? CurrentAdvancedSearch => _advancedFields is null
+        ? null
+        : new SearchQuery(FilterText, _advancedFields, _advancedMode);
+
+    [RelayCommand]
+    private void OpenAdvancedSearch()
+    {
+        var result = _dialogs.ShowAdvancedSearch(CurrentAdvancedSearch);
+        if (result is not null)
+        {
+            ApplyAdvancedSearch(result);
+        }
+    }
+
+    /// <summary>Applies an advanced search; an empty query clears the filter.</summary>
+    public void ApplyAdvancedSearch(SearchQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (query.IsEmpty)
+        {
+            _advancedFields = null;
+            _advancedMode = SearchFieldMode.Any;
+            _applyingAdvancedSearch = true;
+            try
+            {
+                FilterText = string.Empty;
+            }
+            finally
+            {
+                _applyingAdvancedSearch = false;
+            }
+
+            _filterTimer.Stop();
+            ApplyFilter();
+            return;
+        }
+
+        _advancedFields = query.Fields.ToArray();
+        _advancedMode = query.Mode;
+        _applyingAdvancedSearch = true;
+        try
+        {
+            FilterText = query.Text.Trim();
+        }
+        finally
+        {
+            _applyingAdvancedSearch = false;
+        }
+
+        _filterTimer.Stop();
+        ApplyFilter();
+    }
+
+    private void OnFilterTimerTick(object? sender, EventArgs e)
+    {
+        _filterTimer.Stop();
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// Applies the current query to both list views as a view filter. The underlying
+    /// <see cref="Tracks"/> collection stays complete so row state (covers, selection,
+    /// playing indicator) survives search changes.
+    /// </summary>
+    private void ApplyFilter()
+    {
+        var query = FilterText;
+        var isActive = !string.IsNullOrWhiteSpace(query);
+        var fields = _advancedFields ?? SearchQuery.InlineFields;
+        var mode = _advancedMode;
+
+        Predicate<object>? predicate = isActive
+            ? item => item is TrackRowViewModel row && TrackSearch.Matches(row.Track, fields, mode, query)
+            : null;
+
+        _tracksView.Filter = predicate;
+        _groupedTracksView.Filter = predicate;
+
+        var visible = isActive
+            ? Tracks.Count(row => TrackSearch.Matches(row.Track, fields, mode, query))
+            : Tracks.Count;
+        _shuffleOrder = null;
+        HasTracks = visible > 0;
+        PlaylistSubtitle = BuildFilteredSubtitle(visible);
+    }
+
+    private string BuildFilteredSubtitle(int visible)
+    {
+        if (!IsFilterActive)
+        {
+            return _basePlaylistSubtitle;
+        }
+
+        var total = Tracks.Count;
+        if (visible == 0)
+        {
+            return $"没有匹配项 · 共 {total:N0} 首";
+        }
+
+        return _advancedFields is null
+            ? $"{visible:N0} / {total:N0} 首 · 搜索“{FilterText.Trim()}”"
+            : $"{visible:N0} / {total:N0} 首 · 高级搜索";
+    }
 
     public event EventHandler? LayoutChanged;
     public event EventHandler? SortChanged;
@@ -306,6 +507,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// before the new cells are rendered.
     /// </summary>
     public event EventHandler? GroupedColumnsRebuilt;
+
+    /// <summary>Raised after the user edited the hotkey table in the settings dialog.</summary>
+    public event EventHandler? HotkeysChanged;
+
+    /// <summary>Lets the settings dialog tell the window to re-register the hotkeys.</summary>
+    public void NotifyHotkeysChanged() => HotkeysChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
     /// Set by the main window so layout changes can capture the live DataGrid column
@@ -662,6 +869,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void ApplyTracks(IReadOnlyList<Track> tracks, SourceNodeViewModel source)
     {
         var playingPath = CurrentRow?.Track.Path;
+        _shuffleOrder = null;
         Tracks.Clear();
         for (var i = 0; i < tracks.Count; i++)
         {
@@ -685,9 +893,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             SourceKind.Folder => source.Folder?.DisplayName ?? source.Name,
             _ => source.Name
         };
-        PlaylistSubtitle = BuildSubtitle(source, tracks.Count);
-        HasTracks = Tracks.Count > 0;
+        _basePlaylistSubtitle = BuildSubtitle(source, tracks.Count);
         ApplySortAndGrouping();
+        ApplyFilter();
         LayoutChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1157,7 +1365,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var target = SelectedRow ?? Tracks.FirstOrDefault(r => r.IsPlayable);
+            var target = SelectedRow ?? GetPlaybackOrder().FirstOrDefault();
             if (target is not null)
             {
                 await PlayRowAsync(target);
@@ -1234,6 +1442,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task PlayNextAsync()
     {
+        if (PlayMode == PlaybackMode.Shuffle)
+        {
+            await PlayNextShuffleAsync();
+            return;
+        }
+
         var order = GetPlaybackOrder();
         if (order.Count == 0)
         {
@@ -1251,9 +1465,71 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await PlayRowAsync(order[index + 1]);
     }
 
+    /// <summary>
+    /// Random playback: walks one shuffled round of the current list. When the round ends a
+    /// fresh round is shuffled (the track that just finished is left out of the first slot so
+    /// it is not repeated immediately), so shuffle keeps playing until the user stops it.
+    /// </summary>
+    private async Task PlayNextShuffleAsync()
+    {
+        var playable = GetPlaybackOrder();
+        if (playable.Count == 0)
+        {
+            return;
+        }
+
+        if (_shuffleOrder is null || _shuffleOrder.Count != playable.Count)
+        {
+            _shuffleOrder = ShuffleOrder.BuildRound(playable, CurrentRow);
+        }
+
+        var index = CurrentRow is null ? -1 : _shuffleOrder.IndexOf(CurrentRow);
+        if (index < 0)
+        {
+            // The current track is not part of the round (playback was started elsewhere):
+            // rebuild the round around it and continue with the rest.
+            _shuffleOrder = ShuffleOrder.BuildRound(playable, CurrentRow);
+            index = CurrentRow is null ? -1 : _shuffleOrder.IndexOf(CurrentRow);
+        }
+
+        if (index + 1 < _shuffleOrder.Count)
+        {
+            await PlayRowAsync(_shuffleOrder[index + 1]);
+            return;
+        }
+
+        var nextRound = _shuffleOrder.Where(r => !ReferenceEquals(r, CurrentRow)).ToList();
+        if (nextRound.Count == 0)
+        {
+            _host.Player.Stop();
+            IsPlaying = false;
+            return;
+        }
+
+        _shuffleOrder = ShuffleOrder.BuildRound(nextRound, null);
+        await PlayRowAsync(_shuffleOrder[0]);
+    }
+
     [RelayCommand]
     private async Task PlayPreviousAsync()
     {
+        if (PlayMode == PlaybackMode.Shuffle && _shuffleOrder is { } shuffled && CurrentRow is { } current)
+        {
+            var shuffleIndex = shuffled.IndexOf(current);
+            if (shuffleIndex > 0)
+            {
+                await PlayRowAsync(shuffled[shuffleIndex - 1]);
+                return;
+            }
+
+            if (shuffleIndex == 0)
+            {
+                // First track of the round: restart it, like sequential mode at the list start.
+                await PlayRowAsync(current);
+                return;
+            }
+        }
+
         var order = GetPlaybackOrder();
         if (order.Count == 0)
         {
@@ -1557,7 +1833,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _host.Player.Volume = value ? 0 : Math.Clamp(Volume / 100.0, 0, 1);
         OnPropertyChanged(nameof(VolumeText));
-        OnPropertyChanged(nameof(MuteGlyph));
         OnPropertyChanged(nameof(MuteToolTip));
     }
 

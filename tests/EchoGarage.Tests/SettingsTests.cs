@@ -111,5 +111,28 @@ public sealed class SettingsTests : IDisposable
         Assert.False(paths.IsPortable);
     }
 
+    [Fact]
+    public async Task Save_NormalizesHotkeyBindings()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.Hotkeys =
+        [
+            new HotkeyBinding { Action = HotkeyAction.PlayPause, Gesture = "ctrl+space" },
+            new HotkeyBinding { Action = HotkeyAction.Next, Gesture = "Ctrl+Space" },
+            new HotkeyBinding { Action = HotkeyAction.PlayPause, Gesture = "Alt+F5", Global = true },
+            new HotkeyBinding { Action = HotkeyAction.Stop, Gesture = "NotAKey" },
+            new HotkeyBinding { Action = HotkeyAction.Mute, Gesture = "Ctrl+Alt" }
+        ];
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        var hotkey = Assert.Single(reloaded.Current.Hotkeys);
+        Assert.Equal(HotkeyAction.PlayPause, hotkey.Action);
+        Assert.Equal("Ctrl+Space", hotkey.Gesture);
+        Assert.False(hotkey.Global);
+    }
+
     public void Dispose() => _workspace.Dispose();
 }

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
@@ -9,8 +10,20 @@ namespace EchoGarage.App.Views;
 
 public partial class SettingsWindow : ThemedWindow
 {
+    private static readonly (HotkeyAction Action, string Label)[] HotkeyActions =
+    [
+        (HotkeyAction.PlayPause, "播放/暂停"),
+        (HotkeyAction.Previous, "上一首"),
+        (HotkeyAction.Next, "下一首"),
+        (HotkeyAction.Stop, "停止"),
+        (HotkeyAction.Mute, "静音切换"),
+        (HotkeyAction.OpenSearch, "打开高级搜索")
+    ];
+
     private readonly AppHost _host;
     private readonly MainViewModel _vm;
+    private readonly List<HotkeyEditRow> _hotkeyRows = [];
+    private bool _loadingHotkeys;
 
     public SettingsWindow(AppHost host, MainViewModel vm)
     {
@@ -37,6 +50,7 @@ public partial class SettingsWindow : ThemedWindow
                                 ? "（便携模式：数据保存在程序目录）"
                                 : "（自定义目录：ECHOGARAGE_DATA_DIR）");
         RefreshFolders();
+        PopulateHotkeys();
         UpdateAssociationStatus();
     }
 
@@ -47,6 +61,100 @@ public partial class SettingsWindow : ThemedWindow
         FolderList.ItemsSource = _vm.Sources
             .Where(s => s.Kind == SourceKind.Folder && s.Folder is not null)
             .ToList();
+    }
+
+    private void PopulateHotkeys()
+    {
+        _loadingHotkeys = true;
+        try
+        {
+            _hotkeyRows.Clear();
+            foreach (var (action, label) in HotkeyActions)
+            {
+                var binding = _host.Settings.Current.Hotkeys.FirstOrDefault(h => h.Action == action);
+                _hotkeyRows.Add(new HotkeyEditRow(action, label, binding?.Gesture ?? string.Empty, binding?.Global == true));
+            }
+
+            HotkeyList.ItemsSource = _hotkeyRows;
+            UpdateHotkeyStatus();
+        }
+        finally
+        {
+            _loadingHotkeys = false;
+        }
+    }
+
+    private void OnHotkeyGestureChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loadingHotkeys || sender is not TextBox { DataContext: HotkeyEditRow row } textBox)
+        {
+            return;
+        }
+
+        row.Gesture = textBox.Text;
+        SaveHotkeys();
+    }
+
+    private void OnHotkeyGlobalChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingHotkeys || sender is not CheckBox { DataContext: HotkeyEditRow row } checkBox)
+        {
+            return;
+        }
+
+        row.Global = checkBox.IsChecked == true;
+        SaveHotkeys();
+    }
+
+    private void SaveHotkeys()
+    {
+        var bindings = new List<HotkeyBinding>();
+        var gestures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in _hotkeyRows)
+        {
+            var text = row.Gesture.Trim();
+            if (text.Length == 0)
+            {
+                continue;
+            }
+
+            if (!HotkeyGesture.TryParse(text, out var gesture) || gesture is null)
+            {
+                HotkeyStatusText.Text = $"“{text}”不是有效的快捷键格式。示例：Ctrl+Alt+Space、MediaPlayPause。";
+                return;
+            }
+
+            var canonical = gesture.ToString();
+            if (!gestures.Add(canonical))
+            {
+                HotkeyStatusText.Text = $"快捷键“{canonical}”重复了。";
+                return;
+            }
+
+            bindings.Add(new HotkeyBinding { Action = row.Action, Gesture = canonical, Global = row.Global });
+        }
+
+        _host.Settings.Current.Hotkeys = bindings;
+        SaveSettings();
+        _vm.NotifyHotkeysChanged();
+        UpdateHotkeyStatus();
+    }
+
+    private void UpdateHotkeyStatus()
+    {
+        var configured = _hotkeyRows.Count(r => !string.IsNullOrWhiteSpace(r.Gesture));
+        var global = _hotkeyRows.Count(r => r.Global && !string.IsNullOrWhiteSpace(r.Gesture));
+        HotkeyStatusText.Text = configured == 0
+            ? "尚未设置快捷键。"
+            : $"已设置 {configured} 个快捷键，其中 {global} 个为全局快捷键。";
+    }
+
+    private sealed class HotkeyEditRow(HotkeyAction action, string actionLabel, string gesture, bool global)
+    {
+        public HotkeyAction Action { get; } = action;
+        public string ActionLabel { get; } = actionLabel;
+        public string Gesture { get; set; } = gesture;
+        public bool Global { get; set; } = global;
     }
 
     private void UpdateAssociationStatus()

@@ -132,6 +132,7 @@ public sealed class JsonSettingsService : ISettingsService
         settings.CacheDirectory = _paths.ResolveCacheDirectory(settings.CacheDirectory);
         settings.LibraryLayout = ViewLayoutFactory.Normalize(settings.LibraryLayout);
         settings.ColumnPresets ??= [];
+        settings.Hotkeys = NormalizeHotkeys(settings.Hotkeys);
 
         var builtIns = ViewLayoutFactory.CreateBuiltInPresets();
         foreach (var builtIn in builtIns)
@@ -166,6 +167,50 @@ public sealed class JsonSettingsService : ISettingsService
         }
 
         return settings;
+    }
+
+    /// <summary>
+    /// Drops malformed/duplicate hotkey entries, canonicalizes the gesture text and keeps at
+    /// most one binding per action so the UI and the global registrations stay unambiguous.
+    /// </summary>
+    private static List<HotkeyBinding> NormalizeHotkeys(List<HotkeyBinding>? bindings)
+    {
+        if (bindings is null || bindings.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<HotkeyBinding>();
+        var gestures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var actions = new HashSet<HotkeyAction>();
+
+        foreach (var binding in bindings)
+        {
+            if (binding is null || !Enum.IsDefined(binding.Action))
+            {
+                continue;
+            }
+
+            if (!HotkeyGesture.TryParse(binding.Gesture, out var gesture) || gesture is null)
+            {
+                continue;
+            }
+
+            var canonical = gesture.ToString();
+            if (!gestures.Add(canonical) || !actions.Add(binding.Action))
+            {
+                continue;
+            }
+
+            result.Add(new HotkeyBinding
+            {
+                Action = binding.Action,
+                Gesture = canonical,
+                Global = binding.Global
+            });
+        }
+
+        return result;
     }
 
     private void TryBackupCorruptSettings()

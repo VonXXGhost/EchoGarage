@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private readonly AppHost _host;
     private readonly MainViewModel _vm;
     private readonly DialogService _dialogs;
+    private readonly HotkeyService _hotkeys;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
     private bool _seekInteracting;
     private double _seekTargetSeconds;
@@ -27,6 +29,10 @@ public partial class MainWindow : Window
     private double _seekStartPosition;
     private bool _seekDragged;
     private long _lastSeekLogTimestamp;
+    private ContextMenu? _playModeMenu;
+
+    /// <summary>Last user-chosen album-panel width; the column itself collapses to 0 while the panel is hidden.</summary>
+    private double _albumPanelWidth = 320;
     private bool _closing;
     private DateTime _scrollBurstWindow = DateTime.MinValue;
     private int _scrollBurstEvents;
@@ -48,6 +54,8 @@ public partial class MainWindow : Window
 
         _dialogs = new DialogService(this);
         _vm = new MainViewModel(host, _dialogs);
+        _hotkeys = new HotkeyService(_vm, host.Logger);
+        _vm.HotkeysChanged += (_, _) => _hotkeys.Reload();
         _vm.LayoutProvider = CaptureLayoutFromGrid;
         _vm.CellTemplateProvider = key => TryFindResource("Cell." + ToPascalCase(key)) as DataTemplate;
         DataContext = _vm;
@@ -65,6 +73,11 @@ public partial class MainWindow : Window
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
         TrackGrid.AddHandler(ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
+        // DataGrid column resizing is handled by a Thumb inside DataGridColumnHeader; persist
+        // the layout as soon as the drag ends so a width change survives switching sources,
+        // crashes or an unexpected shutdown instead of waiting for the window to close.
+        TrackGrid.AddHandler(Thumb.DragCompletedEvent,
+            new DragCompletedEventHandler(OnTrackGridColumnDragCompleted), handledEventsToo: true);
         GroupedList.SizeChanged += (_, _) => UpdateGroupedHeaderInset();
         GroupedHeaderGrid.SizeChanged += (_, _) => UpdateGroupedHeaderFill();
         // Pin and layout changes replace the grouped header cells; re-stretch the left flow right
@@ -88,6 +101,7 @@ public partial class MainWindow : Window
     {
         ThemeManager.ThemeApplied -= OnThemeApplied;
         Closed -= OnClosed;
+        _hotkeys.Dispose();
         _vm.PropertyChanged -= OnViewModelPropertyChanged;
     }
 
@@ -99,6 +113,27 @@ public partial class MainWindow : Window
             // The cover gutter width feeds the width left for the pinned song columns.
             UpdateGroupedHeaderFill();
         }
+        else if (e.PropertyName is nameof(MainViewModel.ShowAlbumPanel))
+        {
+            if (!_vm.ShowAlbumPanel)
+            {
+                // Remember the width the user last dragged to before collapsing the column.
+                _albumPanelWidth = Math.Clamp(AlbumPanelColumn.ActualWidth, 240, 520);
+            }
+
+            ApplyAlbumPanelWidth(_vm.ShowAlbumPanel);
+        }
+    }
+
+    /// <summary>
+    /// Shows or collapses the album-panel column. Collapsing the whole column (not just the
+    /// panel border) keeps the track list full-width when the panel is hidden.
+    /// </summary>
+    private void ApplyAlbumPanelWidth(bool visible)
+    {
+        AlbumPanelColumn.MinWidth = visible ? 240 : 0;
+        AlbumPanelColumn.MaxWidth = visible ? 520 : 0;
+        AlbumPanelColumn.Width = new GridLength(visible ? Math.Clamp(_albumPanelWidth, 240, 520) : 0);
     }
 
     /// <summary>
@@ -184,7 +219,8 @@ public partial class MainWindow : Window
         Left = left;
         Top = top;
         SidebarColumn.Width = new GridLength(Math.Clamp(settings.SidebarWidth, 170, 420));
-        AlbumPanelColumn.Width = new GridLength(Math.Clamp(settings.AlbumPanelWidth, 240, 520));
+        _albumPanelWidth = Math.Clamp(settings.AlbumPanelWidth, 240, 520);
+        ApplyAlbumPanelWidth(_vm.ShowAlbumPanel);
 
         if (settings.WindowMaximized)
         {
@@ -293,6 +329,18 @@ public partial class MainWindow : Window
 
     private PlaylistViewLayout? CaptureLayoutFromGrid()
     {
+        var layout = _vm.CurrentLayout.Clone();
+
+        // While the grouped list is visible the flat DataGrid is hidden, but its columns keep
+        // the widths they had before the last grouped header drag. Capturing them here (for
+        // example on shutdown) silently reverted grouped resizes, which were persisted
+        // immediately by PersistGroupedColumnWidth. The in-memory layout already holds the
+        // authoritative widths in that state.
+        if (_vm.IsGroupedViewActive)
+        {
+            return layout;
+        }
+
         // Before the first layout pass the grid has no columns; capturing then would
         // mark every column as hidden and destroy the saved layout.
         if (TrackGrid.Columns.Count == 0)
@@ -300,7 +348,6 @@ public partial class MainWindow : Window
             return null;
         }
 
-        var layout = _vm.CurrentLayout.Clone();
         var ordered = new List<PlaylistColumn>();
         foreach (var gridColumn in TrackGrid.Columns)
         {
@@ -365,6 +412,25 @@ public partial class MainWindow : Window
         _vm.PersistCurrentLayout(CaptureLayoutFromGrid());
         _vm.SortBy(sortProperty);
         UpdateSortGlyphs();
+    }
+
+    private void OnTrackGridColumnDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (e.OriginalSource is not Thumb)
+        {
+            return;
+        }
+
+        // Persisting rebuilds the DataGrid columns, which must not happen from inside a drag
+        // event on one of those headers; let the current input event finish first.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var captured = CaptureLayoutFromGrid();
+            if (captured is not null)
+            {
+                _vm.PersistCurrentLayout(captured);
+            }
+        }), DispatcherPriority.Background);
     }
 
     // =====================================================================
@@ -874,6 +940,48 @@ public partial class MainWindow : Window
     // =====================================================================
     // Menus and context menu actions
     // =====================================================================
+    private void OnPlayModeButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (_playModeMenu is { IsOpen: true })
+        {
+            _playModeMenu.IsOpen = false;
+            return;
+        }
+
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        // PlacementTarget + Top：按钮在传输栏右端，菜单向上展开，避免贴到屏幕下缘。
+        var menu = new ContextMenu
+        {
+            PlacementTarget = button,
+            Placement = PlacementMode.Top,
+            DataContext = _vm
+        };
+
+        menu.Items.Add(CreatePlayModeMenuItem("顺序播放", PlaybackMode.Sequential, "PlayModeSequential"));
+        menu.Items.Add(CreatePlayModeMenuItem("随机播放", PlaybackMode.Shuffle, "PlayModeShuffle"));
+
+        _playModeMenu = menu;
+        menu.IsOpen = true;
+    }
+
+    private MenuItem CreatePlayModeMenuItem(string header, PlaybackMode mode, string automationId)
+    {
+        var item = new MenuItem
+        {
+            Header = header,
+            IsCheckable = true,
+            IsChecked = _vm.PlayMode == mode
+        };
+
+        AutomationProperties.SetAutomationId(item, automationId);
+        item.Click += (_, _) => _vm.PlayMode = mode;
+        return item;
+    }
+
     private void OnVolumeAreaMouseWheel(object sender, MouseWheelEventArgs e)
     {
         // Wheel over the volume controls steps by 5 %; the value snaps to whole steps so repeated
@@ -1104,6 +1212,13 @@ public partial class MainWindow : Window
     // =====================================================================
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // User-configured playback hotkeys win over the built-in shortcuts below.
+        if (_hotkeys.TryHandleLocal(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var focused = Keyboard.FocusedElement as DependencyObject;
         var isTextInput = focused is TextBox ||
                           (focused is FrameworkElement fe && fe.TemplatedParent is TextBox);
@@ -1140,8 +1255,39 @@ public partial class MainWindow : Window
                 _vm.ToggleMuteCommand.Execute(null);
                 break;
             case Key.F when Keyboard.Modifiers == ModifierKeys.Control:
+                // Ctrl+F opens the advanced search unless the user bound that action to a
+                // different key in the settings dialog (then TryHandleLocal above ran it).
+                if (!_vm.Settings.Hotkeys.Any(h =>
+                        h.Action == HotkeyAction.OpenSearch && !string.IsNullOrWhiteSpace(h.Gesture)))
+                {
+                    e.Handled = true;
+                    _vm.OpenAdvancedSearchCommand.Execute(null);
+                }
+
+                break;
+        }
+    }
+
+    private void OnSearchBoxKeyDown(object sender, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Escape:
                 e.Handled = true;
-                _vm.EditColumnsCommand.Execute(null);
+                _vm.ClearFilterCommand.Execute(null);
+                break;
+            case Key.Enter:
+                e.Handled = true;
+                // Leave the search box so Enter/Space act on the list selection again.
+                if (_vm.IsGroupedViewActive)
+                {
+                    GroupedList.Focus();
+                }
+                else
+                {
+                    TrackGrid.Focus();
+                }
+
                 break;
         }
     }
@@ -1238,7 +1384,12 @@ public partial class MainWindow : Window
             }
 
             settings.SidebarWidth = SidebarColumn.ActualWidth;
-            settings.AlbumPanelWidth = AlbumPanelColumn.ActualWidth;
+            if (_vm.ShowAlbumPanel && AlbumPanelColumn.ActualWidth > 0)
+            {
+                _albumPanelWidth = Math.Clamp(AlbumPanelColumn.ActualWidth, 240, 520);
+            }
+
+            settings.AlbumPanelWidth = _albumPanelWidth;
 
             await _vm.ShutdownAsync();
         }
@@ -1256,6 +1407,8 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         TryEnableDarkTitleBar();
+        // Global hotkeys need the window handle, which only exists from this point on.
+        _hotkeys.Initialize(this);
     }
 
     private void TryEnableDarkTitleBar()

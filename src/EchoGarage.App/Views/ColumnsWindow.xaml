@@ -12,7 +12,7 @@
                     FontSize="12"
                     ShowInTaskbar="False"
                     KeyDown="OnWindowKeyDown">
-    <Grid Margin="18">
+    <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -36,14 +36,14 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Margin="10,10,10,4">
+                <StackPanel Grid.Row="0" Margin="6,10,6,4">
                     <CheckBox x:Name="ShowSecondaryBox" Content="列表行显示次要信息"
                               ToolTip="勾选后，每个主列下方可再显示一行较小、较淡的次要信息。" />
                     <TextBlock Text="在下方各列输入次行格式（留空则不显示）。可用 {token} 组合，例如 {bitrate}/{sampleRate} → 402K/48K。"
                                Foreground="{DynamicResource TextMutedBrush}" FontSize="10.5" TextWrapping="Wrap"
                                Margin="0,5,0,0" />
                 </StackPanel>
-                <Grid Grid.Row="1" Margin="10,8">
+                <Grid Grid.Row="1" Margin="6,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="80" />
@@ -63,7 +63,7 @@
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
-                                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="10,3">
+                                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="6,3">
                                             <ContentPresenter />
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -91,7 +91,7 @@
                                     <CheckBox Grid.Column="0" Content="{Binding Header}" IsChecked="{Binding IsVisible, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
                                     <TextBox Grid.Column="1" Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                             Height="24" Margin="0,2,10,2" />
+                                             Height="24" Margin="0,2,10,2" Padding="4,0" />
                                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                                         <Button Content="↑" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="11"
                                                 Click="OnMoveUp" />
@@ -100,12 +100,12 @@
                                     </StackPanel>
                                 </Grid>
                                 <Grid Margin="0,2,0,0" Visibility="{Binding SecondaryRowVisibility}">
-                                    <TextBox Height="22" FontSize="11"
+                                    <TextBox Height="22" FontSize="11" Padding="4,0"
                                              Text="{Binding SecondaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                              ToolTip="{Binding FormatHint}" />
                                     <TextBlock IsHitTestVisible="False" Text="次行格式（可选，例如 {genre}）"
                                                Foreground="{DynamicResource TextMutedBrush}" FontSize="10.5"
-                                               VerticalAlignment="Center" Margin="9,0,0,0">
+                                               VerticalAlignment="Center" Margin="5,0,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Visibility" Value="Collapsed" />

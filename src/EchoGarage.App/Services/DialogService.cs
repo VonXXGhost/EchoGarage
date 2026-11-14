@@ -31,6 +31,12 @@ public sealed class DialogService : IDialogService
         return window.ShowDialog() == true ? window.Result : null;
     }
 
+    public SearchQuery? ShowAdvancedSearch(SearchQuery? current)
+    {
+        var window = new SearchWindow(current) { Owner = _owner };
+        return window.ShowDialog() == true ? window.Result : null;
+    }
+
     public string? AskText(string title, string prompt, string initialValue)
     {
         var window = new TextInputWindow(title, prompt, initialValue) { Owner = _owner };

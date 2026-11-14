@@ -9,6 +9,7 @@ public interface IDialogService
     ColumnsEditResult? EditColumns(PlaylistViewLayout layout, IReadOnlyList<ColumnPreset> presets);
     SmartPlaylistDefinition? EditSmartPlaylist(string playlistName, SmartPlaylistDefinition definition);
     TagEditModel? EditTags(Track track, AudioTagData currentTags);
+    SearchQuery? ShowAdvancedSearch(SearchQuery? current);
     string? AskText(string title, string prompt, string initialValue);
     long? PickPlaylist(IReadOnlyList<Playlist> candidates, string title);
     string? PickFolder(string title, string? initialDirectory = null);

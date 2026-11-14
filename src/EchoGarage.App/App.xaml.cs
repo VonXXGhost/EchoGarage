@@ -17,6 +17,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Timeline.Mark("process-start");
+        AppIdentity.Apply();
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
@@ -69,6 +70,13 @@ public partial class App : Application
             {
                 await Task.Delay(1200);
                 window.ViewModel.SeekForDiagnostics(seekSeconds);
+            }
+
+            var searchIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--search", StringComparison.OrdinalIgnoreCase));
+            if (searchIndex >= 0 && searchIndex + 1 < e.Args.Length)
+            {
+                // Diagnostic switch: verifies the list filter without injecting keyboard input.
+                window.ViewModel.FilterText = e.Args[searchIndex + 1];
             }
 
             var screenshotIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--screenshot", StringComparison.OrdinalIgnoreCase));

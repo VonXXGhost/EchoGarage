@@ -45,3 +45,4 @@ desktop.ini
 # local test data copies
 .testdata-*/
 
+AGENTS.local.md

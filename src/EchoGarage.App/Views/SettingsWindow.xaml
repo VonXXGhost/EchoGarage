@@ -77,6 +77,47 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Hotkeys -->
+                <TextBlock Text="快捷键" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="播放控制与搜索快捷键。勾选“全局”后，即使焦点在其他程序也会生效；留空表示不设置（“打开高级搜索”留空时默认 Ctrl+F）。格式示例：Ctrl+Alt+Space、MediaPlayPause、Alt+F5。"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                        <ListBox x:Name="HotkeyList" Margin="0,10,0,0" Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,2" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="190" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding ActionLabel}" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        <TextBox Grid.Column="1" Height="26" Margin="0,0,10,0"
+                                                 Text="{Binding Gesture, UpdateSourceTrigger=PropertyChanged}"
+                                                 TextChanged="OnHotkeyGestureChanged"
+                                                 ToolTip="例如 Ctrl+Alt+Space；留空表示不设置。" />
+                                        <CheckBox Grid.Column="2" Content="全局" IsChecked="{Binding Global}"
+                                                  Click="OnHotkeyGlobalChanged" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock x:Name="HotkeyStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                   Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Library -->
                 <TextBlock Text="媒体库" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
                 <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"

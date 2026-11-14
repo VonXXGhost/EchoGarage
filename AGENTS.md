@@ -113,4 +113,6 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 改动架构、数据模型、缓存策略、默认播放器注册方式时，必须同步准备 ADR 提案，等待 owner 批准。
 - **不要提交截图 / 录屏等二进制验证产物**：界面验证截图统一写到 `artifacts/` 或 `.scratch/` 等已被 `.gitignore` 忽略的目录；需要长期记录界面时用文字 / 控件描述，避免 git 历史体积膨胀。`docs/screenshots/` 中已有的截图属历史遗留，不再新增文件。
 
+## 其他
 
+如果`AGENTS.local.md`存在，请阅读它了解本地环境特有的一些说明。

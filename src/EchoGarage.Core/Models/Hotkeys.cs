@@ -1,0 +1,197 @@
+using System.Text;
+
+namespace EchoGarage.Core.Models;
+
+/// <summary>Playback actions that can be bound to a hotkey.</summary>
+public enum HotkeyAction
+{
+    PlayPause,
+    Next,
+    Previous,
+    Stop,
+    Mute,
+
+    /// <summary>Opens the advanced search dialog (defaults to Ctrl+F when not configured).</summary>
+    OpenSearch
+}
+
+[Flags]
+public enum HotkeyModifiers
+{
+    None = 0,
+    Control = 1,
+    Alt = 2,
+    Shift = 4,
+    Windows = 8
+}
+
+/// <summary>
+/// A parsed keyboard shortcut such as <c>Ctrl+Alt+Space</c>. The key name is stored in a
+/// canonical form (letters upper case, digits as-is, WPF key names such as <c>Space</c>,
+/// <c>MediaPlayPause</c> or <c>F5</c>) so the same value can be matched against WPF
+/// <c>Key</c> values and registered with Win32 <c>RegisterHotKey</c>.
+/// </summary>
+public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
+{
+    private static readonly Dictionary<string, string> KeyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["space"] = "Space",
+        ["enter"] = "Enter",
+        ["return"] = "Enter",
+        ["tab"] = "Tab",
+        ["esc"] = "Escape",
+        ["escape"] = "Escape",
+        ["backspace"] = "Backspace",
+        ["back"] = "Backspace",
+        ["delete"] = "Delete",
+        ["del"] = "Delete",
+        ["insert"] = "Insert",
+        ["ins"] = "Insert",
+        ["home"] = "Home",
+        ["end"] = "End",
+        ["pageup"] = "PageUp",
+        ["pgup"] = "PageUp",
+        ["pagedown"] = "PageDown",
+        ["pgdn"] = "PageDown",
+        ["left"] = "Left",
+        ["right"] = "Right",
+        ["up"] = "Up",
+        ["down"] = "Down",
+        ["mediaplaypause"] = "MediaPlayPause",
+        ["playpause"] = "MediaPlayPause",
+        ["medianexttrack"] = "MediaNextTrack",
+        ["nexttrack"] = "MediaNextTrack",
+        ["mediaprevioustrack"] = "MediaPreviousTrack",
+        ["prevtrack"] = "MediaPreviousTrack",
+        ["mediastop"] = "MediaStop",
+        ["volumeup"] = "VolumeUp",
+        ["volup"] = "VolumeUp",
+        ["volumedown"] = "VolumeDown",
+        ["voldown"] = "VolumeDown",
+        ["volumemute"] = "VolumeMute",
+        ["mute"] = "VolumeMute"
+    };
+
+    /// <summary>
+    /// Parses text like <c>Ctrl+Shift+Right</c> or <c>Alt+F5</c>. The last part is the key;
+    /// all preceding parts are modifiers (Ctrl/Control, Alt, Shift, Win/Windows).
+    /// </summary>
+    public static bool TryParse(string? text, out HotkeyGesture? gesture)
+    {
+        gesture = null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var parts = text.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length is 0 or > 5)
+        {
+            return false;
+        }
+
+        var modifiers = HotkeyModifiers.None;
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            switch (parts[i].ToLowerInvariant())
+            {
+                case "ctrl":
+                case "control":
+                    modifiers |= HotkeyModifiers.Control;
+                    break;
+                case "alt":
+                    modifiers |= HotkeyModifiers.Alt;
+                    break;
+                case "shift":
+                    modifiers |= HotkeyModifiers.Shift;
+                    break;
+                case "win":
+                case "windows":
+                case "meta":
+                    modifiers |= HotkeyModifiers.Windows;
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        var key = NormalizeKey(parts[^1]);
+        if (key is null)
+        {
+            return false;
+        }
+
+        gesture = new HotkeyGesture(modifiers, key);
+        return true;
+    }
+
+    /// <summary>Canonicalizes a single key name; returns null when it is not supported.</summary>
+    public static string? NormalizeKey(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var trimmed = raw.Trim();
+        if (trimmed.Length == 1)
+        {
+            var ch = char.ToUpperInvariant(trimmed[0]);
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
+            {
+                return ch.ToString();
+            }
+        }
+
+        if (trimmed.Length is >= 2 and <= 3 &&
+            (trimmed[0] is 'f' or 'F') &&
+            int.TryParse(trimmed[1..], out var function) &&
+            function is >= 1 and <= 24)
+        {
+            return "F" + function;
+        }
+
+        return KeyNames.TryGetValue(trimmed, out var name) ? name : null;
+    }
+
+    public override string ToString()
+    {
+        var builder = new StringBuilder();
+        if (Modifiers.HasFlag(HotkeyModifiers.Control))
+        {
+            builder.Append("Ctrl+");
+        }
+
+        if (Modifiers.HasFlag(HotkeyModifiers.Alt))
+        {
+            builder.Append("Alt+");
+        }
+
+        if (Modifiers.HasFlag(HotkeyModifiers.Shift))
+        {
+            builder.Append("Shift+");
+        }
+
+        if (Modifiers.HasFlag(HotkeyModifiers.Windows))
+        {
+            builder.Append("Win+");
+        }
+
+        builder.Append(Key);
+        return builder.ToString();
+    }
+}
+
+/// <summary>One user-configured playback hotkey, persisted in <c>settings.json</c>.</summary>
+public sealed class HotkeyBinding
+{
+    public HotkeyAction Action { get; set; }
+
+    /// <summary>Gesture text, canonicalized by <see cref="HotkeyGesture"/> (e.g. <c>Ctrl+Alt+Space</c>).</summary>
+    public string Gesture { get; set; } = string.Empty;
+
+    /// <summary>When true the shortcut is registered system-wide (Win32 RegisterHotKey).</summary>
+    public bool Global { get; set; }
+
+    public HotkeyBinding Clone() => (HotkeyBinding)MemberwiseClone();
+}

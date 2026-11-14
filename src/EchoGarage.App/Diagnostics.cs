@@ -51,6 +51,11 @@ internal static class Diagnostics
         }), directory, "dialog-smart.png", main);
 
         await CaptureWindowAsync(new ColumnsWindow(vm.CurrentLayout, vm.Presets.ToList()), directory, "dialog-columns.png", main);
+        await CaptureWindowAsync(
+            new SearchWindow(new SearchQuery("kizuna", [SearchField.Composer, SearchField.Artist])),
+            directory,
+            "dialog-search.png",
+            main);
         await CaptureWindowAsync(new FieldGuideWindow(), directory, "dialog-field-guide.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
         await CaptureWindowAsync(new FileAssociationWindow(host), directory, "dialog-associations.png", main);

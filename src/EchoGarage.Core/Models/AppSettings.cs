@@ -8,6 +8,13 @@ public enum ThemeKind
     Light
 }
 
+/// <summary>How the transport picks the next track.</summary>
+public enum PlaybackMode
+{
+    Sequential,
+    Shuffle
+}
+
 public sealed class AppSettings
 {
     public int SchemaVersion { get; set; } = 1;
@@ -15,6 +22,7 @@ public sealed class AppSettings
     public string? OutputDeviceId { get; set; }
     public OutputMode OutputMode { get; set; } = OutputMode.Shared;
     public double Volume { get; set; } = 0.75;
+    public PlaybackMode PlaybackMode { get; set; } = PlaybackMode.Sequential;
     public bool ShowAlbumPanel { get; set; } = true;
     public bool RestoreLastPlaylist { get; set; } = true;
     public long? LastPlaylistId { get; set; }
@@ -22,6 +30,9 @@ public sealed class AppSettings
     public PlaylistViewLayout LibraryLayout { get; set; } = ViewLayoutFactory.CreateDefault();
     public List<ColumnPreset> ColumnPresets { get; set; } = ViewLayoutFactory.CreateBuiltInPresets();
     public bool AutoScanOnStartup { get; set; } = true;
+
+    /// <summary>User-configured playback hotkeys (local and optional system-wide).</summary>
+    public List<HotkeyBinding> Hotkeys { get; set; } = [];
 
     /// <summary>Extensions the user last chose in the file-association dialog (never auto-registered).</summary>
     public List<string> AssociationExtensions { get; set; } = [];
