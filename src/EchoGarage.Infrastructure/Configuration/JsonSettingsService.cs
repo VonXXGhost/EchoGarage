@@ -132,6 +132,7 @@ public sealed class JsonSettingsService : ISettingsService
         settings.CacheDirectory = _paths.ResolveCacheDirectory(settings.CacheDirectory);
         settings.LibraryLayout = ViewLayoutFactory.Normalize(settings.LibraryLayout);
         settings.ColumnPresets ??= [];
+        settings.FileDestinations = FileDestinations.Normalize(settings.FileDestinations);
         settings.Hotkeys = NormalizeHotkeys(settings.Hotkeys);
         settings.ConversionPresets = ConversionPresetFactory.NormalizeAll(settings.ConversionPresets, settings.Hotkeys, _logger);
         settings.Encoders = ConversionPresetFactory.NormalizeEncoders(settings.Encoders);

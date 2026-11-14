@@ -209,9 +209,38 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             "UPDATE tracks SET IsMissing = 1 WHERE Path IN @paths;", new { paths });
     }
 
-    public async Task MarkTracksMissingUnderFolderAsync(string folderPath, CancellationToken cancellationToken = default)
+    public async Task UpdateTrackPathAsync(string oldPath, string newPath, long? folderId,
+        CancellationToken cancellationToken = default)
     {
-        var prefix = PathUtil.EscapeLike(NormalizeDirectory(folderPath) + "\\%");
+        var oldNormalized = PathUtil.Normalize(oldPath);
+        var newNormalized = PathUtil.Normalize(newPath);
+        if (string.Equals(oldNormalized, newNormalized, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // 新路径可能已经有旧的缓存行（例如移动前恰好被扫描过），先删除以免撞上 Path 唯一约束。
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM tracks WHERE Path = @newNormalized AND Path <> @oldNormalized;",
+            new { newNormalized, oldNormalized }, transaction, cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition("""
+            UPDATE tracks
+            SET Path = @newNormalized, FolderId = @folderId, IsInLibrary = @isInLibrary, IsMissing = 0
+            WHERE Path = @oldNormalized;
+            """,
+            new { newNormalized, oldNormalized, folderId, isInLibrary = folderId.HasValue ? 1 : 0 },
+            transaction, cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE playlist_items SET TrackPath = @newNormalized WHERE TrackPath = @oldNormalized;",
+            new { newNormalized, oldNormalized }, transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        _logger.Debug($"Track path updated {oldNormalized} -> {newNormalized} (folderId={(folderId?.ToString() ?? "null")})");
+    }
+
+    public async Task MarkTracksMissingUnderFolderAsync(string folderPath, CancellationToken cancellationToken = default)
+    {        var prefix = PathUtil.EscapeLike(NormalizeDirectory(folderPath) + "\\%");
         await using var connection = await _database.OpenConnectionAsync(cancellationToken);
         await connection.ExecuteAsync(
             "UPDATE tracks SET IsMissing = 1 WHERE IsInLibrary = 1 AND Path LIKE @prefix ESCAPE '\\';",

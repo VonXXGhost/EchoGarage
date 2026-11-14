@@ -7,6 +7,7 @@ using EchoGarage.Infrastructure.Caching;
 using EchoGarage.Infrastructure.Configuration;
 using EchoGarage.Infrastructure.Conversion;
 using EchoGarage.Infrastructure.Data;
+using EchoGarage.Infrastructure.Files;
 using EchoGarage.Infrastructure.Library;
 using EchoGarage.Infrastructure.Logging;
 using EchoGarage.Infrastructure.Tagging;
@@ -41,6 +42,7 @@ public sealed class AppHost : IAsyncDisposable
         Scanner = new LibraryScanner(LibraryRepository, TagService, Logger);
         Watcher = new LibraryFileWatcher(Logger);
         Player = new WasapiAudioPlayer(Logger);
+        Files = new FileOperationService(Logger);
     }
 
     public AppPaths Paths { get; }
@@ -54,6 +56,8 @@ public sealed class AppHost : IAsyncDisposable
     public ILibraryScanner Scanner { get; }
     public IFileWatcherService Watcher { get; }
     public IAudioPlayer Player { get; }
+    /// <summary>复制 / 移动 / 删除到回收站（ADR-021）。</summary>
+    public IFileOperationService Files { get; }
     public ICoverCache? Covers { get; private set; }
     public CoverImageService CoverImages { get; private set; } = null!;
     public IWaveformService Waveforms { get; private set; } = null!;

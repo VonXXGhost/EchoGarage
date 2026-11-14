@@ -12,6 +12,30 @@
                     FontSize="12"
                     ShowInTaskbar="False"
                     KeyDown="OnWindowKeyDown">
+    <views:ThemedWindow.Resources>
+        <Style x:Key="DestinationListItem" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </views:ThemedWindow.Resources>
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -242,6 +266,38 @@
                         </StackPanel>
                         <TextBlock x:Name="DataDirText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                    Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- File operation destinations (ADR-021) -->
+                <TextBlock Text="文件操作目标文件夹" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="右键菜单「文件操作 → 复制 到 / 移动 到」会按此顺序列出这些文件夹。"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                        <Border Background="{DynamicResource PanelAltBackgroundBrush}" CornerRadius="4" Margin="0,8,0,0"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="4">
+                            <ListBox x:Name="FileDestinationList" Height="112" Background="Transparent"
+                                     BorderThickness="0" ItemContainerStyle="{StaticResource DestinationListItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding}" />
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="添加文件夹…" Style="{StaticResource FlatButton}" Click="OnAddFileDestination" />
+                            <Button Content="移除" Style="{StaticResource FlatButton}" Click="OnRemoveFileDestination" />
+                            <Button Content="上移" Style="{StaticResource FlatButton}" Click="OnMoveFileDestinationUp" />
+                            <Button Content="下移" Style="{StaticResource FlatButton}" Click="OnMoveFileDestinationDown" />
+                        </StackPanel>
+                        <TextBlock x:Name="FileDestinationStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Text="最多记住 20 个文件夹；右键菜单里的「选择文件夹…」也会自动记住新目录。" />
                     </StackPanel>
                 </Border>
 

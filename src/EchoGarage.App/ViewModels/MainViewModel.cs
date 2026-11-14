@@ -2817,6 +2817,223 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    // =====================================================================
+    // 文件操作（ADR-021）：复制到 / 移动到 / 删除到回收站
+    // =====================================================================
+
+    /// <summary>「文件操作」菜单作用到的行：优先多选，否则回退到当前行。</summary>
+    public IReadOnlyList<TrackRowViewModel> GetFileOperationTargets()
+    {
+        var rows = Tracks.Where(IsRowSelected).ToList();
+        if (rows.Count == 0 && SelectedRow is not null)
+        {
+            rows.Add(SelectedRow);
+        }
+
+        return rows;
+    }
+
+    /// <summary>记住「复制到 / 移动到」的目标文件夹（去重、限量，见 <see cref="FileDestinations"/>）。</summary>
+    public void RememberFileDestination(string directory)
+    {
+        if (!FileDestinations.Add(Settings.FileDestinations, directory))
+        {
+            return;
+        }
+
+        QueueSettingsSave();
+        SetStatus($"已记住目标文件夹：{directory}");
+    }
+
+    public Task CopySelectedFilesAsync(string? destinationDirectory = null) =>
+        TransferSelectedFilesAsync(move: false, destinationDirectory);
+
+    public Task MoveSelectedFilesAsync(string? destinationDirectory = null) =>
+        TransferSelectedFilesAsync(move: true, destinationDirectory);
+
+    /// <summary>把选中的文件移到回收站（可还原），并同步媒体库/播放列表状态。</summary>
+    public async Task DeleteSelectedFilesAsync()
+    {
+        var rows = GetFileOperationTargets();
+        if (rows.Count == 0)
+        {
+            SetStatus("请先在列表中选择歌曲");
+            return;
+        }
+
+        var paths = rows
+            .Select(r => r.Track.Path)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        var message = paths.Count == 1
+            ? $"将文件“{System.IO.Path.GetFileName(paths[0])}”移到回收站？\n\n可以随时从回收站还原。"
+            : $"将 {paths.Count} 个文件移到回收站？\n\n可以随时从回收站还原。";
+        if (!_dialogs.Confirm(message, "删除文件"))
+        {
+            return;
+        }
+
+        SetStatus($"正在把 {paths.Count} 个文件移到回收站…");
+        try
+        {
+            var result = await _host.Files.DeleteToRecycleBinAsync(paths);
+            var deleted = result.Items.Where(i => i.Succeeded).Select(i => i.SourcePath).ToList();
+            if (deleted.Count > 0)
+            {
+                await _host.LibraryRepository.MarkTracksMissingAsync(deleted);
+                foreach (var path in deleted)
+                {
+                    _host.Waveforms.Invalidate(path);
+                }
+
+                StopPlaybackIfAffected(deleted);
+                await ReloadSourcesAsync();
+                await RefreshCurrentSourceAsync(preserveSelection: true);
+            }
+
+            if (result.Failed == 0)
+            {
+                _host.Logger.Info($"Files moved to recycle bin: {deleted.Count} file(s)");
+                SetStatus($"已把 {deleted.Count} 个文件移到回收站");
+            }
+            else
+            {
+                var details = string.Join("\n", result.Items.Where(i => !i.Succeeded)
+                    .Take(5)
+                    .Select(i => $"{System.IO.Path.GetFileName(i.SourcePath)}：{i.Error}"));
+                _host.Logger.Warn($"Recycle bin delete failed: {result.Failed} of {paths.Count} file(s)");
+                _dialogs.Error($"删除完成：成功 {deleted.Count} 个，失败 {result.Failed} 个。\n{details}");
+                SetStatus($"删除到回收站：成功 {deleted.Count} 个，失败 {result.Failed} 个");
+            }
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error("Delete to recycle bin failed", ex);
+            _dialogs.Error($"删除文件失败：{ex.Message}");
+            SetStatus("删除文件失败");
+        }
+    }
+
+    private async Task TransferSelectedFilesAsync(bool move, string? destinationDirectory)
+    {
+        var rows = GetFileOperationTargets();
+        if (rows.Count == 0)
+        {
+            SetStatus("请先在列表中选择歌曲");
+            return;
+        }
+
+        var paths = rows
+            .Select(r => r.Track.Path)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        var destination = destinationDirectory;
+        if (string.IsNullOrWhiteSpace(destination))
+        {
+            destination = _dialogs.PickFolder(move ? "选择移动到的文件夹" : "选择复制到的文件夹");
+            if (string.IsNullOrWhiteSpace(destination))
+            {
+                return;
+            }
+
+            RememberFileDestination(destination);
+        }
+
+        var verb = move ? "移动" : "复制";
+        SetStatus($"正在{verb} {paths.Count} 个文件…");
+        try
+        {
+            var result = move
+                ? await _host.Files.MoveAsync(paths, destination)
+                : await _host.Files.CopyAsync(paths, destination);
+            await ApplyFileTransferResultAsync(move, result);
+
+            if (result.Failed == 0)
+            {
+                SetStatus($"已{verb} {result.Succeeded} 个文件到 {destination}");
+            }
+            else
+            {
+                var details = string.Join("\n", result.Items.Where(i => !i.Succeeded)
+                    .Take(5)
+                    .Select(i => $"{System.IO.Path.GetFileName(i.SourcePath)}：{i.Error}"));
+                _host.Logger.Warn($"File transfer failed: {result.Failed} of {paths.Count} file(s)");
+                _dialogs.Error($"{verb}完成：成功 {result.Succeeded} 个，失败 {result.Failed} 个。\n{details}");
+                SetStatus($"{verb}：成功 {result.Succeeded} 个，失败 {result.Failed} 个");
+            }
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error($"File transfer failed (move={move})", ex);
+            _dialogs.Error($"{verb}文件失败：{ex.Message}");
+            SetStatus($"{verb}文件失败");
+        }
+    }
+
+    /// <summary>文件已成功复制/移动后，同步数据库与当前列表（复制入库、移动改路径）。</summary>
+    private async Task ApplyFileTransferResultAsync(bool move, FileOperationResult result)
+    {
+        var succeeded = result.Items
+            .Where(i => i.Succeeded && !string.IsNullOrWhiteSpace(i.TargetPath))
+            .ToList();
+        if (succeeded.Count == 0)
+        {
+            return;
+        }
+
+        var folders = await _host.LibraryRepository.GetFoldersAsync();
+        var changedPaths = new List<string>(succeeded.Count);
+        foreach (var item in succeeded)
+        {
+            var target = item.TargetPath!;
+            changedPaths.Add(item.SourcePath);
+            var folder = folders.FirstOrDefault(f => PathUtil.IsUnderFolder(target, f.Path));
+            if (move)
+            {
+                await _host.LibraryRepository.UpdateTrackPathAsync(item.SourcePath, target, folder?.Id);
+                _host.Waveforms.Invalidate(item.SourcePath);
+            }
+            else if (folder is not null)
+            {
+                // 复制到媒体库文件夹内的文件应当立即被索引；复制到库外则只留文件。
+                await _host.Scanner.IndexFileAsync(target, inLibrary: true, folder.Id);
+            }
+        }
+
+        if (move)
+        {
+            StopPlaybackIfAffected(changedPaths);
+        }
+
+        await ReloadSourcesAsync();
+        await RefreshCurrentSourceAsync(preserveSelection: true);
+    }
+
+    /// <summary>正在播放的文件被移动/删除后停止播放（否则当前行与磁盘上的文件会对不上）。</summary>
+    private void StopPlaybackIfAffected(IReadOnlyCollection<string> affectedPaths)
+    {
+        var playing = _host.Player.CurrentTrackPath;
+        if (playing is null || !affectedPaths.Contains(playing, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Stop();
+        SetStatus("正在播放的文件已被移动或删除，播放已停止");
+    }
+
     [RelayCommand]
     private void RevealInExplorer(TrackRowViewModel? row)
     {

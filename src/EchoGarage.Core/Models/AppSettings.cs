@@ -53,6 +53,9 @@ public sealed class AppSettings
 
     /// <summary>Extensions the user last chose in the file-association dialog (never auto-registered).</summary>
     public List<string> AssociationExtensions { get; set; } = [];
+
+    /// <summary>「复制到 / 移动到」记住的目标文件夹（绝对路径，顺序即菜单顺序；ADR-021）。</summary>
+    public List<string> FileDestinations { get; set; } = [];
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 880;
     public double? WindowLeft { get; set; }

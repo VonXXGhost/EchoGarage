@@ -21,6 +21,12 @@ public interface ILibraryRepository
     Task UpsertTracksAsync(IReadOnlyList<Track> tracks, CancellationToken cancellationToken = default);
     Task MarkTrackMissingAsync(string path, CancellationToken cancellationToken = default);
     Task MarkTracksMissingAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 文件被移动后同步数据库路径（同时更新 playlist_items.TrackPath）。<paramref name="folderId"/> 为
+    /// null 表示新路径不在任何媒体库文件夹下（IsInLibrary = 0）。ADR-021。
+    /// </summary>
+    Task UpdateTrackPathAsync(string oldPath, string newPath, long? folderId,
+        CancellationToken cancellationToken = default);
     Task MarkTracksMissingUnderFolderAsync(string folderPath, CancellationToken cancellationToken = default);
     Task UpdateFolderScanTimeAsync(long folderId, DateTime scannedAtUtc, CancellationToken cancellationToken = default);
     Task RecordPlaybackAsync(string path, CancellationToken cancellationToken = default);

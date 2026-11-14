@@ -349,6 +349,52 @@ public sealed class RepositoryTests : IDisposable
         Assert.NotNull(stored.LastPlayedAtUtc);
     }
 
+    [Fact]
+    public async Task UpdateTrackPath_MovesTrackRowAndPlaylistItems()
+    {
+        var sourceFolder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var targetFolder = await _library.AddFolderAsync(_workspace.Combine("dest"));
+        var track = MakeTrack("moved.wav", folderId: sourceFolder.Id);
+        await _library.UpsertTrackAsync(track);
+
+        var playlist = await _playlists.CreatePlaylistAsync("Moves", PlaylistKind.Normal, null);
+        await _playlists.AddPlaylistItemsAsync(playlist.Id, [track]);
+
+        var newPath = _workspace.Combine("dest", "moved.wav");
+        await _library.UpdateTrackPathAsync(track.Path, newPath, targetFolder.Id);
+
+        Assert.Null(await _library.GetTrackByPathAsync(track.Path));
+        var moved = await _library.GetTrackByPathAsync(newPath);
+        Assert.NotNull(moved);
+        Assert.Equal(targetFolder.Id, moved!.FolderId);
+        Assert.True(moved.IsInLibrary);
+        Assert.False(moved.IsMissing);
+
+        var playlistTracks = await _playlists.GetPlaylistTracksAsync(playlist);
+        Assert.Equal(newPath, Assert.Single(playlistTracks).Path);
+    }
+
+    [Fact]
+    public async Task UpdateTrackPath_DeletesStaleRowAtNewPath()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var track = MakeTrack("dup.wav", folderId: folder.Id);
+        await _library.UpsertTrackAsync(track);
+
+        // 目标路径恰好已有一行缓存（移动前被扫描过），更新时应删除它而不是撞唯一约束。
+        var stale = MakeTrack("dup.wav", folderId: folder.Id);
+        stale.Path = _workspace.Combine("dest", "dup.wav");
+        stale.Title = "stale";
+        await _library.UpsertTrackAsync(stale);
+
+        await _library.UpdateTrackPathAsync(track.Path, stale.Path, null);
+
+        var moved = await _library.GetTrackByPathAsync(stale.Path);
+        Assert.NotNull(moved);
+        Assert.False(moved!.IsInLibrary);
+        Assert.Equal("dup", moved.Title);
+    }
+
     public void Dispose()
     {
         _workspace.Dispose();

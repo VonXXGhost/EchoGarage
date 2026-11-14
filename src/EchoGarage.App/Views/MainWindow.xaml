@@ -423,6 +423,7 @@
             <MenuItem Header="播放" Click="OnPlaySelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
             <MenuItem Header="转换" SubmenuOpened="OnConversionMenuOpened" />
+            <MenuItem Header="文件操作" SubmenuOpened="OnFileOperationMenuOpened" />
             <Separator />
             <MenuItem Header="添加到播放列表…" Click="OnAddToPlaylistClick" />
             <MenuItem Header="从当前播放列表移除" Click="OnRemoveSelectedClick" />

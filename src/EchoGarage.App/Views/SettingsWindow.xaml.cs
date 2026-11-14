@@ -4,6 +4,7 @@ using System.Windows.Input;
 using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
 using EchoGarage.Core.Models;
+using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Conversion;
 using EchoGarage.Infrastructure.Windows;
 
@@ -45,6 +46,7 @@ public partial class SettingsWindow : ThemedWindow
         _loadingCache = true;
         WaveformLimitBox.SelectedIndex = CacheLimitToIndex(settings.WaveformCacheLimitMb);
         _loadingCache = false;
+        RefreshFileDestinationList();
         LibrarySummaryText.Text = vm_LibrarySummary();
         StartupText.Text = $"启动耗时：{App.Timeline.ElapsedAt("window-shown").TotalMilliseconds:F0} ms（窗口显示） · " +
                            $"日志：{_host.Paths.LogsDirectory}";
@@ -222,6 +224,85 @@ public partial class SettingsWindow : ThemedWindow
     }
 
     private void OnRefreshDevices(object sender, RoutedEventArgs e) => _vm.RefreshDevices();
+
+    // =====================================================================
+    // File operation destinations (ADR-021)
+    // =====================================================================
+
+    private void RefreshFileDestinationList()
+    {
+        FileDestinationList.ItemsSource = _host.Settings.Current.FileDestinations.ToList();
+    }
+
+    private void ApplyFileDestinations(IEnumerable<string> values, string status)
+    {
+        var normalized = FileDestinations.Normalize(values);
+        _host.Settings.Current.FileDestinations = normalized;
+        SaveSettings();
+        RefreshFileDestinationList();
+        FileDestinationStatusText.Text = status;
+    }
+
+    private void OnAddFileDestination(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择目标文件夹",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var values = _host.Settings.Current.FileDestinations.ToList();
+        if (!FileDestinations.Add(values, dialog.FolderName))
+        {
+            FileDestinationStatusText.Text = values.Count >= FileDestinations.MaxCount
+                ? $"最多只能记住 {FileDestinations.MaxCount} 个文件夹，请先移除不再需要的目录。"
+                : "该文件夹已经在列表中。";
+            return;
+        }
+
+        ApplyFileDestinations(values, $"已添加：{dialog.FolderName}");
+    }
+
+    private void OnRemoveFileDestination(object sender, RoutedEventArgs e)
+    {
+        if (FileDestinationList.SelectedItem is not string directory)
+        {
+            FileDestinationStatusText.Text = "请先在列表中选择要移除的文件夹。";
+            return;
+        }
+
+        var values = _host.Settings.Current.FileDestinations.ToList();
+        FileDestinations.Remove(values, directory);
+        ApplyFileDestinations(values, $"已移除：{directory}");
+    }
+
+    private void OnMoveFileDestinationUp(object sender, RoutedEventArgs e) => MoveFileDestination(-1);
+
+    private void OnMoveFileDestinationDown(object sender, RoutedEventArgs e) => MoveFileDestination(1);
+
+    private void MoveFileDestination(int offset)
+    {
+        if (FileDestinationList.SelectedItem is not string directory)
+        {
+            return;
+        }
+
+        var values = _host.Settings.Current.FileDestinations.ToList();
+        var index = values.FindIndex(item => string.Equals(item, directory, StringComparison.OrdinalIgnoreCase));
+        var target = index + offset;
+        if (index < 0 || target < 0 || target >= values.Count)
+        {
+            return;
+        }
+
+        (values[index], values[target]) = (values[target], values[index]);
+        ApplyFileDestinations(values, "顺序已更新，右键菜单会按新顺序显示。");
+        FileDestinationList.SelectedItem = directory;
+    }
 
     private void OnBrowseCache(object sender, RoutedEventArgs e)
     {

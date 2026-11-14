@@ -45,5 +45,8 @@
 - 2026-11-14：`ADR-020-playing-file-write-lock.md`（播放中文件被播放器句柄占用导致标签写入失败：
   播放器改用共享读取句柄（`SharedAudioFileReader`），写标签时检测占用、临时副本 + `File.Replace` 原子替换，
   播放不中断且位置连续）**已获 owner 批准并归档到 `docs/adr/`**。
-- 当前状态：无待批准提案。
+- 2026-11-14：新增提案 `ADR-021-file-operations.md`（歌曲右键菜单「文件操作」：复制 到 / 移动 到
+  的级联目标目录（设置页可配置并记忆）、删除文件走回收站、忽略「重命名 到…」；
+  移动 / 删除后同步 `tracks` 与 `playlist_items.TrackPath`）——**待 owner 批准**。
+- 当前状态：待批准提案 1 个（`ADR-021-file-operations.md`）。
 

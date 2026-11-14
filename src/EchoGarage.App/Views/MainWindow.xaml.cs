@@ -534,13 +534,94 @@ public partial class MainWindow : Window
     {
         if (sender is ContextMenu menu)
         {
-            var conversion = menu.Items.OfType<MenuItem>()
-                .FirstOrDefault(item => item.Header as string == "转换");
+            var items = menu.Items.OfType<MenuItem>().ToList();
+            var conversion = items.FirstOrDefault(item => item.Header as string == "转换");
             if (conversion is not null)
             {
                 RebuildConversionMenu(conversion);
             }
+
+            var fileOperations = items.FirstOrDefault(item => item.Header as string == "文件操作");
+            if (fileOperations is not null)
+            {
+                fileOperations.IsEnabled = _vm.GetFileOperationTargets().Count > 0;
+                RebuildFileOperationMenu(fileOperations);
+            }
         }
+    }
+
+    // =====================================================================
+    // File operations (ADR-021)
+    // =====================================================================
+
+    private void OnFileOperationMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menu)
+        {
+            RebuildFileOperationMenu(menu);
+        }
+    }
+
+    /// <summary>
+    /// 「文件操作」二级菜单：复制到 / 移动到（各自三级菜单列出记住的目标文件夹）+ 删除文件。
+    /// 和「转换」一样在菜单打开时重建，因为 MenuItem 没有子项时不会弹出子菜单。
+    /// </summary>
+    private void RebuildFileOperationMenu(MenuItem menu)
+    {
+        var hasTargets = _vm.GetFileOperationTargets().Count > 0;
+        menu.Items.Clear();
+
+        var copyTo = new MenuItem { Header = "复制 到", IsEnabled = hasTargets };
+        RebuildDestinationMenu(copyTo, move: false);
+        menu.Items.Add(copyTo);
+
+        var moveTo = new MenuItem { Header = "移动 到", IsEnabled = hasTargets };
+        RebuildDestinationMenu(moveTo, move: true);
+        menu.Items.Add(moveTo);
+
+        menu.Items.Add(new MenuItem { Header = "重命名 到…", IsEnabled = false });
+        menu.Items.Add(new Separator());
+
+        var delete = new MenuItem { Header = "删除文件", IsEnabled = hasTargets };
+        delete.Click += (_, _) => _ = _vm.DeleteSelectedFilesAsync();
+        menu.Items.Add(delete);
+    }
+
+    private void RebuildDestinationMenu(MenuItem parent, bool move)
+    {
+        parent.Items.Clear();
+        var destinations = _vm.Settings.FileDestinations;
+        foreach (var directory in destinations)
+        {
+            var name = System.IO.Path.GetFileName(directory.TrimEnd(System.IO.Path.DirectorySeparatorChar));
+            var item = new MenuItem
+            {
+                Header = string.IsNullOrWhiteSpace(name) ? directory : name,
+                ToolTip = directory,
+                Tag = directory,
+            };
+            item.Click += (_, _) =>
+            {
+                if (item.Tag is string destination)
+                {
+                    _ = move ? _vm.MoveSelectedFilesAsync(destination) : _vm.CopySelectedFilesAsync(destination);
+                }
+            };
+            parent.Items.Add(item);
+        }
+
+        if (destinations.Count > 0)
+        {
+            parent.Items.Add(new Separator());
+        }
+
+        var choose = new MenuItem { Header = "选择文件夹…" };
+        choose.Click += (_, _) => _ = move ? _vm.MoveSelectedFilesAsync() : _vm.CopySelectedFilesAsync();
+        parent.Items.Add(choose);
+
+        var manage = new MenuItem { Header = "管理目标文件夹…" };
+        manage.Click += (_, _) => OpenSettings();
+        parent.Items.Add(manage);
     }
 
     private void OnConversionMenuOpened(object sender, RoutedEventArgs e)
