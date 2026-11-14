@@ -3,33 +3,35 @@
 | 项目 | 内容 |
 | --- | --- |
 | 状态 | **Accepted（2026-11-14）** |
+| 实现 | **P0 + P1 已实现（2026-11-14）**，提交 `af9ddf2` / `51107d6` / `d187305`；P2 / P3 未做 |
 | 日期 | 2026-11-14 |
 | 关联 | ADR-002（分层）、ADR-003（文件是真相）、ADR-006（配置与库分离）、ADR-010（缓存失效）、KB-001（解码）、KB-007（Seek 输入） |
 | 影响面 | 新增 Core 抽象 / 新增磁盘缓存格式 / 新增 App 控件 / 主题令牌 / AppSettings 字段 |
 | 不改动 | SQLite schema、`IAudioPlayer`、扫描器、现有 `SeekSlider` 的行为 |
 
-> 本文是已批准的方案（owner 于 2026-11-14 批准），按 §13 分阶段实施；批准时仓库中尚未包含实现代码。
+> 本文是已批准的方案（owner 于 2026-11-14 批准），按 §13 分阶段实施。P0 + P1 已实现并合入。
+> 实施过程中 owner 又确认了三处调整（切换按钮形态、波形高度、归一化策略），本文已同步为**实际实现**的规格；修订点见 §17 修订记录。
 
 ---
 
 ## 0. 决策摘要
 
-1. 进度条支持在**滑块**与**整曲波形**两种形态间切换；切换按钮放在进度区左端（24 px 图标）。
-2. 波形是**整曲缩略**，不是 DJ 软件的滚动波形：平底、自下而上 **低频 / 中频 / 高频** 三层**不透明堆叠**，总高度表示整体能量。
+1. 进度条支持在**滑块**与**整曲波形**两种形态间切换；切换按钮放在进度区左端（30 px 见方、仅图标），观感与右侧顺序/随机按钮一致——只靠图标区分形态，不画“已启用”底色。
+2. 波形是**整曲缩略**，不是 DJ 软件的滚动波形：平底、自下而上 **低频 / 中频 / 高频** 三层**不透明堆叠**，总高度表示整体能量；波形高度**填满传输条可用高度**（约 63 px，最小 28 px），不是固定 28 px。
 3. 高度用**逐曲分位数拉伸的 RMS 包络**（p5–p99.5，最小 8 dB），颜色用**频段份额的幂次加权**（p = 0.8 / 1.1 / 1.4），落盘量化到 0–255。
 4. 分析在**后台线程分段**完成（每段约 5 s 音频），已分析部分**按时间顺序即时绘制**；完整结果写入**逐曲二进制缓存**（50 列/秒，约 40 KB/首），缓存带 **LRU 上限（可配置，默认 256 MB）**；失败只记日志，界面回退为轨道底。
 5. 渲染用自定义 `FrameworkElement` + **按尺寸缓存、按段追加的三层几何**；播放位置变化只重绘遮罩与播放头。
 6. **不引入新 NuGet 依赖**：解码复用 NAudio 的 `AudioFileReader`，FFT 用 NAudio 2.2.1 自带的 `NAudio.Dsp.FastFourierTransform`。
 7. 模式是**全局记忆**：首次默认滑块，用户切到波形后一直保持；持久化到 `AppSettings.SeekBarMode`。
 8. 配色全部走**主题令牌**（深/浅两套），控件内不硬编码颜色。
-9. 渐进渲染的归一化窗口最多切换两次（固定窗 → 前缀分位 → 全曲分位，带 3 dB / 1.5 dB 死区），完成时允许一次整体重排。
+9. 渐进渲染期间归一化窗口**锁死**在 −48…0 dB（上限固定为 0 dBFS = 电平最大值），已画出的列在生成过程中不重排；分析完成时才用全曲 p5 / p99.5 重算一次最终快照（owner 2026-11-14 决定，以“生成过程零跳动”优先）。
 10. 缓存清理改为**菜单**（可分别清封面/波形/全部）；新增 `--waveform <file> <png>` 无 UI 诊断开关。
 
 ---
 
 ## 1. 背景与问题
 
-当前传输条只有一条 4 px 高的进度滑块（`MainWindow.xaml:878-894`）。它能回答“播到哪了”，但不能回答“这一段是什么状态”：
+当前传输条只有一条 4 px 高的进度滑块（`MainWindow.xaml` 的进度区）。它能回答“播到哪了”，但不能回答“这一段是什么状态”：
 
 - 前奏、主歌、副歌、间奏、尾奏在进度条上完全同质，用户想跳到“最炸的那段”只能盲拖；
 - 无法判断某一段是低频主导（鼓/贝斯）还是高频主导（镲/空气感）；
@@ -45,7 +47,7 @@
 | --- | --- | --- |
 | G1 | 一键在滑块/波形间切换，状态持久化 | 重启应用后仍是上次选择 |
 | G2 | 波形可点击/拖动跳转，与滑块行为一致 | 点击处播放头与时间文本一致；拖动只提交一次 Seek |
-| G3 | 28 px 高度内可读：轮廓有层次、三色分明 | 深/浅主题 + 100%/150% DPI 目测 |
+| G3 | 传输条可用高度（约 63 px）内可读：轮廓有层次、三色分明 | 深/浅主题 + 100%/150% DPI 目测 |
 | G4 | 快速判断能量：段落起伏可见，瞬态不糊 | 用 EDM/流行/摇滚三首对照 |
 | G5 | 不阻塞 UI、不影响启动与切歌 | 分析在后台；播放开始 < 1 s 不退化 |
 
@@ -59,27 +61,28 @@
 
 ## 3. 现状（代码事实）
 
-> 下列行号是 2026-11-14 11:00 的快照；owner 正在并发改动 `MainWindow.xaml`、`MainWindow.xaml.cs`、`MainViewModel.cs`，行号会漂移。实施时以 `x:Name`（`SeekSlider`）和成员名（`HookSeekSlider`、`CommitSeek`）为锚点重新定位。
+> 下列行号是 2026-11-14 实施完成后的快照；行号仍会随改动漂移，检索时以 `x:Name`（`SeekSlider`、`WaveformView`、`WaveformModeToggle`）和成员名（`HookSeekSlider`、`HookWaveformSeek`、`CommitSeek`）为锚点。
 
 ### 3.1 传输条布局
 
-`src/EchoGarage.App/Views/MainWindow.xaml:844-919`：
+`src/EchoGarage.App/Views/MainWindow.xaml:877-973`：
 
 - `Border Grid.Row=3 Height=72`，内部 `Grid Margin="16,0"`，三列 `Auto / * / Auto`；
-- 列 0：上一首/播放/停止/下一首/播放模式；
-- 列 1：`Grid Margin="20,0"`，三列 `46 / * / 46` —— 左 `PositionText`、中 `SeekSlider`、右 `DurationText`；
-- `SeekSlider`（`:886-890`）：`Minimum=0`、`Maximum={Binding SeekMaximum}`、`Value={Binding PositionSeconds, Mode=OneWay}`、`IsEnabled={Binding HasCurrentTrack}`、`IsMoveToPointEnabled=False`；
+- 列 0：上一首/播放/停止/下一首；
+- 列 1：`Grid Margin="20,0"`，四列 `30 / 46 / * / 46` —— 左端形态切换按钮、`PositionText`、波形或滑块、`DurationText`；
+- `SeekSlider`（`:953-958`）：`Minimum=0`、`Maximum={Binding SeekMaximum}`、`Value={Binding PositionSeconds, Mode=OneWay}`、`IsEnabled={Binding HasCurrentTrack}`、`IsMoveToPointEnabled=False`；
+- `WaveformSeekBar`（`:959-968`，`x:Name="WaveformView"`）：`Margin="0,4"`，`Peaks / Position / Duration` 绑定，`IsEnabled={Binding HasCurrentTrack}`，`Visibility` 与滑块互斥；
 - 列 2：音量标签 + 120 px 滑块 + 百分比 + 静音按钮。
 
-滑块模板（`Resources/Controls.xaml:337-359`）：高 18 px、轨道 4 px、Thumb 11 px。也就是说进度区当前只占 18 px，垂直方向还有余量放 26–28 px 的波形。
+滑块模板（`Resources/Controls.xaml`）：高 18 px、轨道 4 px、Thumb 11 px；波形形态下这 18 px 让位给填满高度的波形控件（§5.5）。
 
 ### 3.2 进度与 Seek 数据流
 
-- `MainViewModel` 用 200 ms 的 `DispatcherTimer`（`MainViewModel.cs:80-81`）轮询 `Player.Position/Duration` 更新 `PositionSeconds`、`PositionText`（`:1664-1685`）；
-- `SeekMaximum => DurationSeconds > 0 ? DurationSeconds : 1`（`:240`）；
-- 手势由 `MainWindow.xaml.cs:1004-1138` 手工实现：`AddHandler(..., handledEventsToo: true)` + `CaptureMouse`，按 `x / ActualWidth` 计算目标，`BeginSeek()` 冻结 tick，松开时 `CommitSeek(target)`；
-- 提交有 0.75 s 与 2 px 的防误触门限（`:1124-1132`），因为滑块有可抓的 Thumb；
-- `CommitSeek` 内部 `Player.Seek` 后直接写 `PositionSeconds/PositionText`（`:1704-1720`），Seek 本身是 `Pause → reader.CurrentTime → Play`（KB-007，实测 2–9 ms）。
+- `MainViewModel` 用 200 ms 的 `DispatcherTimer` 轮询 `Player.Position/Duration` 更新 `PositionSeconds`、`PositionText`（`MainViewModel.OnPositionTick`）；
+- `SeekMaximum => DurationSeconds > 0 ? DurationSeconds : 1`（`MainViewModel.SeekMaximum`）；
+- 滑块手势由 `MainWindow.xaml.cs` 的 `HookSeekSlider` / `OnSeekMouseDown` / `OnSeekMouseMove` / `OnSeekMouseUp` / `OnSeekLostCapture` 手工实现：`AddHandler(..., handledEventsToo: true)` + `CaptureMouse`，按 `x / ActualWidth` 计算目标，`BeginSeek()` 冻结 tick，松开时 `CommitSeek(target)`；
+- 提交有 0.75 s 与 2 px 的防误触门限（`CommitSeekInteraction`），因为滑块有可抓的 Thumb；波形没有实体，不走这个门限（§10.2）；
+- `CommitSeek` 内部 `Player.Seek` 后直接写 `PositionSeconds/PositionText`（`MainViewModel.CommitSeek`），Seek 本身是 `Pause → reader.CurrentTime → Play`（KB-007，实测 2–9 ms）。
 
 ### 3.3 缓存与主题基础设施
 
@@ -135,7 +138,7 @@ CDJ-3000 / XDJ-RX3 的经销商资料把 3Band 配色写作 **Blue=LOW / Orange=
 
 ### 4.4 Traktor
 
-Traktor Pro 2 提供 4 种 Color Mode（Ultraviolet / Infrared / X-Ray / Spectrum），彩色波形用于区分低频与高频内容，用户可切换。它的“全彩”模式在 28 px 高度下会退化成噪点，不适合我们。
+Traktor Pro 2 提供 4 种 Color Mode（Ultraviolet / Infrared / X-Ray / Spectrum），彩色波形用于区分低频与高频内容，用户可切换。它的“全彩”模式在矮高度下会退化成噪点，不适合我们。
 
 ### 4.5 Mixxx
 
@@ -150,16 +153,16 @@ Traktor Pro 2 提供 4 种 Color Mode（Ultraviolet / Infrared / X-Ray / Spectru
 | 借鉴 | 理由 |
 | --- | --- |
 | 三频段 + 固定颜色语义 | 用户一眼认频段；比“按频率连续渐变”稳定 |
-| 平底、不镜像 | 28 px 高度下把全部像素用于能量，而不是对称的上下两半 |
+| 平底、不镜像 | 把全部像素用于能量，而不是对称的上下两半 |
 | 逐曲归一 | 响度战争下固定 dB 窗口必然显平（实测 p50 与 p95 只差 3.1 dB） |
 | 缓存 + 版本号失效 | 分析一次约 1 s，必须落盘；分析器升级要能自动重算 |
 
 | 不借鉴 | 理由 |
 | --- | --- |
 | 逐频段自动增益到固定 target | 会把安静段落也“拉满”，破坏段落对比；我们用份额幂次达到类似目的但保留相对关系 |
-| 峰值平方映射 | 在 28 px 下会把弱段压成 0，且对瞬态过度敏感 |
+| 峰值平方映射 | 矮高度下会把弱段压成 0，且对瞬态过度敏感 |
 | 滚动/缩放 | 进度条必须显示整曲，缩放是另一种交互 |
-| 全彩频谱 | 26–28 px 高度不可读 |
+| 全彩频谱 | 矮高度下不可读 |
 
 ## 5. 视觉设计
 
@@ -214,7 +217,7 @@ y = H   └───────────────────────
 
 | 状态 | 画法 |
 | --- | --- |
-| 无歌曲 | 只画 28 px 轨道底（30% 不透明度），无文字 |
+| 无歌曲 | 只画整条轨道底（30% 不透明度），无文字 |
 | 分析中 | 已分析段正常绘制；未分析段轨道底 + 2 px 基线，前缘 1 px 竖线；不转圈、不闪烁（避免干扰播放） |
 | 就绪 | 三层波形 + 已播放遮罩 + 播放头 |
 | 悬停 | 鼠标处 1 px 竖线（`TextSecondary`，50%）+ 可选时间气泡（P2） |
@@ -223,15 +226,16 @@ y = H   └───────────────────────
 
 ### 5.5 尺寸与布局
 
-- 波形高 **28 px**，垂直居中；传输条 72 px，上下各余 22 px，不挤压时间文本；
-- 进度区列定义从 `46 / * / 46` 改为 `24 / 46 / * / 46`：24 px 给切换按钮，波形宽度只减少 24 px；
-- 切换按钮 24×24，图标为三根高低不同的竖条（低频宽、高频窄），`ToggleButton`，`ToolTip="波形进度条"`；
+- 波形高度**填满传输条可用高度**：控件 `VerticalAlignment=Stretch`、`MinHeight=28`、`Margin="0,4"`，在 72 px 传输条里实测约 63 px（owner 2026-11-14 反馈：尽量填满上下空间）；
+- 进度区列定义从 `46 / * / 46` 改为 `30 / 46 / * / 46`：30 px 给切换按钮，波形宽度只减少 30 px；
+- 切换按钮 30×30、仅图标：波形形态=三根高低不同的竖条，滑杆形态=横线+圆点；与右侧顺序/随机按钮同一观感（灰阶、悬停 `RowHoverBrush`、无选中底色、无焦点框）；
+- `ToolTip` 随形态在「切换为波形进度条 / 切换为滑杆进度条」之间切换；
 - 典型窗口（1280 宽、侧栏 236、专辑面板 320）下波形宽约 600–700 px；无专辑面板时约 900 px。
 
 ```
 ┌ 传输条 72 px ──────────────────────────────────────────────────────────────┐
-│ [⏮] [▶] [⏹] [⏭] [顺序]   [▂▄▆] 0:42  ▐███▓▓▓▒▒░░░░░░░░░▌  3:33   音量 ─●─ 75% │
-│                          切换   └──── 波形 28 px ────┘                        │
+│ [⏮] [▶] [⏹] [⏭] [▂▄▆] 0:42  ▐███▓▓▓▒▒░░░░░░░░░▌  3:33   音量 ─●─ 75%      │
+│                 形态切换   └─── 波形（填满高度，约 63 px）───┘              │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -316,7 +320,7 @@ share_j = q_j / (q_low + q_mid + q_high)
 - 指数 > 1 压掉常态能量、保留瞬态；低频指数 < 1 保证基底始终存在；
 - 用**幅度**（RMS）而不是功率做幂次，指数才落在 0.8–1.4 这个可调区间；
 - 份额落盘时量化：`low = round(255·share_low)`、`mid = round(255·share_mid)`、`high = 255 - low - mid`（保证三者严格相加为 255，渲染时不会出现 1 px 缝隙）；
-- 静音列份额写 `(1,1,1)`，反正高度为 0 不绘制。
+- 静音列份额写 `(85,85,85)`：高度为 0 不绘制，但 `low+mid+high == 255` 的校验对所有列恒成立（原方案的 `(1,1,1)` 会破坏该校验）。
 
 ### 6.8 参数与实测
 
@@ -370,17 +374,16 @@ rekordbox 的 `gain = clamp(TARGET/max, FLOOR, CAP)` 是**逐频段把最强处�
 
 **调度**：分析在 `LoadAsync` 完成、开始播放后 **300–500 ms** 才启动，避免与首帧解码抢 IO；线程 `BelowNormal`；每段结束 `await Task.Yield()` 让出，播放解码优先。切歌/停止时取消 CTS，已算部分丢弃（不写半截缓存）。
 
-**归一化窗口的三段切换**（渐进渲染唯一的视觉代价）：
+**渐进渲染的归一化窗口**（owner 2026-11-14 决定）：
 
 | 时机 | 窗口 | 规则 |
 | --- | --- | --- |
-| 第一段 | 固定 −48…0 dB | 先让用户看到形状 |
-| 前缀 ≥ 25% | 前缀的 p5 / p99.5 | 与固定窗差 ≥ 3 dB 才切换（死区） |
-| 完成 | 全曲 p5 / p99.5 | 与上次差 ≥ 1.5 dB 才切换 |
+| 分析中（每次快照） | 固定 −48…0 dB，上限固定为 **0 dBFS**（电平最大值） | 全程不变：已画出的列高度不再变化，波形只向右延伸 |
+| 完成 | 全曲 p5 / p99.5（最小 8 dB，§6.5） | 发布最终快照，控件整体重建一次 |
 
-最坏情况整体重排两次，典型一次；本地曲目 1 s 内完成，基本看不到。不做逐段增益，理由同 §6.9。
+生成过程中的视觉代价：未完成时上限锁在 0 dBFS，而整曲峰值通常低于它，所以部分波形会显得比最终结果略“矮”，完成瞬间统一拉伸到 p5–p99.5。这是“生成过程零跳动、只收尾归一化”的取舍（owner 反馈：波形不能在渲染过程中变形）。不做逐段增益，理由同 §6.9。
 
-**为什么不做两遍扫描**：预扫描估分位要把文件再读一遍（网络盘代价翻倍），收益只是省掉一次 ≤2 dB 的重排，不划算。若 owner 要求“零跳动”，P2 可改为前缀窗口直接锁死，代价是极静/极响段层次变差。
+**为什么不做两遍扫描**：预扫描估分位要把文件再读一遍（网络盘代价翻倍），而锁定窗口后过程中本来就零跳动，预扫描没有收益。
 
 ## 7. 缓存设计
 
@@ -515,7 +518,8 @@ public interface IWaveformService
 }
 ```
 
-- `IWaveformService` 是 App 唯一依赖的接口；`GetAsync` 内部完成“查缓存 → 分析 → 写缓存”，缓存命中时 `progress` 不触发、一次返回完整快照；
+- `IWaveformCache` 另有 `Task<int> TrimAsync(CancellationToken cancellationToken = default)`（实现补充）：供 `AppHost` 预热与设置页调整上限后立即按 LRU 裁剪，返回删除的文件数；
+- `IWaveformService` 是 App 唯一依赖的接口；`GetAsync` 内部完成“查缓存 → 分析 → 写缓存”，缓存命中时 `progress` 不触发、一次返回完整快照；共享的进行中分析被前一个调用方取消时，后续调用方会重试（最多 3 次、间隔 20 ms），不会拿到已取消的任务；
 - 渐进快照是**独立不可变对象**（数组按 `ValidCount` 截断，只追加），完成快照 `IsComplete == true` 且数组为全长；**只有完成快照写缓存**；
 - `AnalyzeAsync` 必须在后台线程执行；`WaveformAnalyzer` 自己不 `Task.Run`，由 `WaveformService` 用 `Task.Run` 包住，便于测试直接同步调用；`progress` 回调在分析线程上触发，VM 负责 `Dispatcher` 切回 UI；
 - 所有日志走 `IAppLogger`，分析耗时用 `[DEBUG] Waveform analyzed path=... columns=... ms=...`。
@@ -576,9 +580,10 @@ PlayRowAsync → CurrentRow 更新
 Peaks (WaveformPeaks?)
 Position (double, seconds)
 Duration (double, seconds)
-LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrush
+LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrush / HoverBrush / FocusBrush
 ```
 
+- 交互事件：`SeekStarted`、`SeekPreview`、`SeekCommitted`、`SeekCancelled`（均带 `WaveformSeekEventArgs(double Seconds)`）；
 - 默认样式在 `Controls.xaml`，画刷全部 `DynamicResource`；
 - `OnRender` 顺序：轨道底 → 三层波形 → 已播放遮罩 → 播放头 → 悬停线 → 焦点框；
 - `Clip` 到 2 px 圆角矩形，避免首尾像素越界；
@@ -586,10 +591,10 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 ### 9.2 几何缓存
 
-- 缓存的键：`(Peaks 引用, 设备像素宽, 设备像素高, dpiScale, 三个画刷)`；
-- 每个频段构建一个 `StreamGeometry`（冻结），内部是逐列的矩形 figure；
-- 位置每 200 ms 变化时**不重建几何**，只 `InvalidateVisual()` 重画遮罩与播放头（3 次 `DrawGeometry` + 2 次 `DrawRectangle`）；
-- 主题切换 / 尺寸变化 / Peaks 变化时置空缓存并重建。
+- 缓存的键：设备像素宽高、`dpiScale`、`Peaks.ColumnCount`、`Peaks.FloorDb/CeilingDb`（容差 0.01 dB）与已取用的 `ValidCount`；
+- 每个频段一个 `GeometryGroup`，内部按设备像素列存放**冻结的 `RectangleGeometry`**；颜色由画刷在 `OnRender` 时给出，**画刷/主题变化不需要重建几何**；
+- 位置每 200 ms 变化时**不重建几何**，只 `InvalidateVisual()` 重画遮罩、播放头与悬停线；
+- 尺寸 / DPI / 列数 / 归一化窗口变化 → 清空重建（完成时窗口切换会触发一次，见 §9.7）。
 
 ### 9.3 像素对齐
 
@@ -621,9 +626,9 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 ### 9.7 渐进渲染
 
-- 控件比较新旧 `Peaks`：`ValidCount` 增大且窗口未变 → 只对 `[oldValid, newValid)` 建几何并 `Children.Add`；`ValidCount` 变小、窗口变化或列率变化 → 整体重建；
-- 未分析区域画轨道底 + 2 px 基线，前缘 1 px 竖线（`TextMuted` 40%），不用转圈/闪烁；
-- 分析完成时若窗口变了，重建一次（≤5 ms），播放头按时间比例定位，不受列数影响；
+- 控件比较新旧 `Peaks`：`ValidCount` 增大且归一化窗口未变 → 只对新增的尾部设备像素列建几何并 `Children.Add`（从上一段末列 -1 开始重叠；重叠处是同色不透明矩形，视觉无差别）；`ValidCount` 变小、窗口变化、尺寸 / DPI / 列数变化 → 整体重建；
+- 未分析区域画轨道底 + 2 px 基线，前缘 1 px 竖线（`TextMuted` 45%），不用转圈/闪烁；
+- 渐进快照的归一化窗口恒定（§6.10），因此分析过程**只追加、零重排**；唯一的整体重建发生在完成时（窗口切到全曲 p5 / p99.5），≤5 ms；
 - 追加的几何 `Freeze()`；P1 直接在 UI 线程追加（250 列 <1 ms），P2 若单段变大再考虑后台构建。
 
 ## 10. 交互设计
@@ -631,8 +636,8 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 ### 10.1 模式切换
 
 - `ToggleButton` 绑定 `IsWaveformMode`（TwoWay）；切换时写 `Settings.SeekBarMode` 并 `QueueSettingsSave()`；形态是**全局记忆**，下次启动沿用上次选择（首次默认滑块）；
-- 切到波形且当前有歌 → 触发加载；切回滑块不取消分析（结果会缓存）；
-- 滑块与波形放在同一个 Grid 单元格，用 `Visibility` 互斥（`BoolToVisibility` / `InverseBooleanToVisibilityConverter`，后者需在 `MainWindow.Resources` 注册）；
+- 切到波形且当前有歌 → 触发加载；切回滑块 → **取消进行中的分析并清空波形快照**（已完整落盘的缓存仍可被下次命中）；
+- 滑块与波形放在同一个 Grid 单元格，用 `Visibility` 互斥（`BoolToVisibility` 在 `MainWindow.Resources` 注册；`InverseBooleanToVisibilityConverter` 以 key `InverseBoolToVisibility` 在 `App.xaml` 注册）；
 - 波形模式下 `SeekSlider` 折叠，但**保留在可视树里**（`Collapsed` 不影响绑定），切回时位置仍然正确。
 
 ### 10.2 点击与拖动
@@ -662,7 +667,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 全部走 `CommitSeek`（立即生效），并 `e.Handled = true`。空格仍由窗口的全局处理器负责播放/暂停，控件不拦截。
 
-窗口的键盘处理挂在 `PreviewKeyDown`（隧道，先于控件）：先跑用户热键 `_hotkeys.TryHandleLocal`，再处理内置快捷键（`MainWindow.xaml.cs:1144-1194`）。因此若用户把 `←/→` 绑成热键，会在波形控件收到之前被消费。P1 在窗口处理器里加一个例外：焦点在 `WaveformSeekBar` 且按键属于 `{←,→,PageUp,PageDown,Home,End}` 时，跳过热键与内置分支，交给控件处理；其余按键保持现状。
+窗口的键盘处理挂在 `PreviewKeyDown`（隧道，先于控件）：先跑用户热键 `_hotkeys.TryHandleLocal`，再处理内置快捷键（`MainWindow.OnPreviewKeyDown`）。因此若用户把 `←/→` 绑成热键，会在波形控件收到之前被消费。实现里在窗口处理器最前面加了例外：焦点在 `WaveformSeekBar` 且按键属于 `{←,→,PageUp,PageDown,Home,End}` 时，跳过热键与内置分支，交给控件处理；其余按键保持现状。
 
 ### 10.4 无障碍
 
@@ -708,12 +713,12 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 | 目标 | 用例 |
 | --- | --- |
 | `WaveformMath` | dB 分位拉伸：最小 8 dB 生效；常数信号不除零；静音列高度 0 |
-| 份额 | `low+mid+high == 255` 恒成立；三频段相等时份额接近 1/3；单频段为 0 时不出现负值 |
+| 份额 | `low+mid+high == 255` 恒成立；三频段 RMS 相等时按幂次得约 103/84/68（低频更宽，不是 1/3）；单频段为 0 时不出现负值；静音列为 85/85/85 |
 | 包络 | attack 上升快于 release 下降；阶跃输入的稳态误差 < 1% |
 | 聚合 | p80 正确；单列段；空段取最近列；加权份额归一化 |
 | 缓存 | 往返一致；截断文件 → null；magic 错误 → null；版本不符 → null；stamp 不符 → null；写入后无 `.tmp` 残留 |
 | 分析器 | 生成 100 Hz / 1 kHz / 8 kHz 正弦 WAV，对应频段份额 > 0.9；幅度加倍 → 高度单调增；静音 → 全 0 |
-| 分块一致性 | 同一文件分块分析与整曲分析，归一化后逐字节相同；窗口切换次数 ≤ 2 |
+| 分块一致性 | 同一文件分块分析与整曲分析，归一化后逐字节相同；渐进快照的窗口恒为 −48…0 dB 且已发布列高度逐列不变（`Analyze_ProgressSnapshots_KeepFixedWindowUntilComplete`）；完成时只做一次整曲归一化 |
 | 进度 | `ValidCount` 单调不减且 ≤ `ColumnCount`；最终 `IsComplete`；取消后不再回调 |
 | LRU | 超限删到 90%；读取刷新时间戳；跳过当前曲目；空目录/并发写不抛 |
 | 清理 | 封面 / 波形 / 全部三个入口的字节统计与删除范围正确 |
@@ -740,12 +745,14 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 | 阶段 | 内容 | 交付 |
 | --- | --- | --- |
-| P0 | Core DTO/接口、分段分析器、缓存、LRU、单元测试 | `dotnet build` + 测试全绿 |
-| P1 | 控件 + 渐进渲染 + 主题令牌 + VM + 切换按钮 + 手势 + 诊断开关 | 功能可用，默认滑块、记忆上次形态 |
-| P2 | 悬停时间气泡、播放头平滑、清理菜单的占用统计、无障碍 RangeValue、seek 优先分析/续算 | 打磨 |
-| P3 | （可选）列表行迷你波形、按需预分析下一首 | 视反馈 |
+| P0 | Core DTO/接口、分段分析器、缓存、LRU、单元测试 | 已完成（`dotnet build` + 测试全绿） |
+| P1 | 控件 + 渐进渲染 + 主题令牌 + VM + 切换按钮 + 手势 + 诊断开关 | 已完成（默认滑块、记忆上次形态） |
+| P2 | 悬停时间气泡、播放头平滑、清理菜单的占用统计、无障碍 RangeValue、seek 优先分析/续算 | 未做 |
+| P3 | （可选）列表行迷你波形、按需预分析下一首 | 未做（视反馈） |
 
 粗略工作量：P0 ≈ 1.5 天，P1 ≈ 2 天，P2 ≈ 1 天（不含评审与截图验收）。
+
+**交付状态（2026-11-14）**：P0、P1 已完成（构建 0 警告 0 错误；测试 311 项全绿，其中 ADR-015 相关新增 92 项）；P2 / P3 未做。
 
 ## 14. 风险与备选
 
@@ -753,10 +760,10 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 | --- | --- | --- |
 | Media Foundation 在后台线程初始化 | flac/m4a 分析失败 | 复用播放器的 `Warmup()`；失败时 `Warn` 并回退；必要时在专用线程显式 `MediaFoundationApi.Startup()` |
 | 网络盘/慢盘解码 | 分析 > 3 s | 单飞 + 取消；不阻塞播放；日志告警 |
-| 逐段份额调参主观 | 某类曲风蓝色过厚/过薄 | 常量集中在一个 `WaveformWeights` 类；用三首基准曲目回归 |
-| 28 px 下浅色主题对比不足 | 可读性差 | 浅色专用沙色/琥珀色 + 轨道底色；截图对比后再定稿 |
-| 缓存增长 | 占磁盘 | 40 KB/曲；P2 加 LRU 上限；设置页可清空 |
-| 切换按钮挤压波形 | 窄窗口下波形变短 | 24 px 图标；窄窗口可只显示图标（已经是） |
+| 逐段份额调参主观 | 某类曲风蓝色过厚/过薄 | 常量集中在 `WaveformMath`；用三首基准曲目回归 |
+| 浅色主题下波形与轨道对比不足 | 可读性差 | 浅色专用沙色/琥珀色/蓝 + 轨道底色；已完成深浅主题截图对比 |
+| 缓存增长 | 占磁盘 | 40 KB/曲；LRU 上限可配置（默认 256 MB）；设置页可清空 |
+| 切换按钮挤压波形 | 窄窗口下波形变短 | 30 px 仅图标按钮，无文字；窄窗口下可接受 |
 | 200 ms 播放头跳动 | 短曲目明显 | P2 降定时器到 100 ms 或插值 |
 | 分析器版本升级 | 旧缓存全废 | 版本号在头部；升级时自然重算，不需要迁移脚本 |
 | 用户热键占用 ←/→ | 波形控件收不到导航键 | 窗口 `PreviewKeyDown` 对波形焦点做按键白名单例外（§10.3） |
@@ -769,8 +776,8 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 | 存进 SQLite | 需要 schema 迁移，与 ADR-014 的修复迁移冲突；缓存应可整目录删除 |
 | 复用 rekordbox 的 ANLZ | 只有 rekordbox 分析过的曲目才有；格式专利/兼容风险 |
 | 透明叠加三色 | 颜色浑浊，参考图是实色堆叠 |
-| 镜像波形 | 28 px 高度下浪费一半垂直分辨率，且与“能量高度”目标不符 |
-| 全彩频谱/瀑布 | 26–28 px 不可读，且计算量更大 |
+| 镜像波形 | 高度有限时浪费一半垂直分辨率，且与“能量高度”目标不符 |
+| 全彩频谱/瀑布 | 矮高度下不可读，且计算量更大 |
 | 用 `MediaElement`/`SoundPlayer` 取样本 | 无法拿到 PCM，不能做频段分析 |
 
 ## 15. 决策与遗留问题
@@ -782,14 +789,17 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 3. **清理入口**：`清空缓存 ▾` 弹菜单，分封面 / 波形 / 全部三项，二次确认。
 4. **诊断开关**：加 `--waveform <file> <png>`，与 `--screenshot` 同一风格。
 5. **渲染方式**：按时间顺序分段渲染（§6.10），已分析部分即时可见。
+6. **切换按钮形态**（实施中追加）：进度区左端 30 px、仅图标，观感与顺序/随机按钮一致；只靠图标区分形态，不做“已启用”底色（§5.5）。
+7. **波形高度**（实施中追加）：填满传输条可用高度（约 63 px，最小 28 px），不固定 28 px（§5.5）。
+8. **归一化策略**（实施中追加）：渐进期间锁死 −48…0 dB（上限 0 dBFS），完成时做一次整曲 p5 / p99.5 归一化；替代原“最多两次窗口切换”方案（§6.10）。
 
-### 15.2 仍需确认（不阻塞 P0/P1）
+### 15.2 遗留问题（不阻塞验收）
 
-1. **切换按钮位置**：进度区左端 24 px 图标（推荐）／时间文本右侧／右键菜单？
-2. **配色**：深色用参考图的奶油/棕/蓝、浅色用压深的沙/琥珀/蓝（推荐）；还是跟随主题强调色的单色系？
-3. **默认分段长度**：5 s 音频（推荐，250 列）还是 10 s（首帧更慢、重排更少）？
-4. **列表行迷你波形**：是否要（P3，默认不做）？
-5. **归一化策略**：接受“最多两次窗口切换”（推荐）；还是锁死前缀窗口换零跳动？
+1. **列表行迷你波形**：仍不做（原 P3；缓存格式已可复用）。
+2. **P2 打磨项**：悬停时间气泡、播放头平滑（200 ms → 100 ms 或线性插值）、清理菜单的占用统计、无障碍 `IRangeValueProvider`、seek 优先分析/续算。
+3. **分段长度**：已按推荐值实现为 5 s 音频（250 列），调整只需改 `WaveformMath.PublishColumns`。
+
+（原 §15.2 的“切换按钮位置 / 配色 / 归一化策略”已随实现确定，见 §15.1 第 6–8 条与 §5.5。）
 
 ## 16. 参考资料
 
@@ -804,3 +814,11 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 - Mixxx bug 1268299（高频段被不成比例放大）：<https://bugs.launchpad.net/mixxx/+bug/1268299>
 - BBC audiowaveform issue #210（扫频实测 rekordbox 分频）：<https://github.com/bbc/audiowaveform/issues/210>
 - 仓库内相关文档：`docs/kb/KB-001-naudio-decode-matrix.md`、`docs/kb/KB-007-scan-read-style-and-seek-input.md`、`docs/adr/ADR-010-metadata-cache-invalidation.md`
+
+## 17. 修订记录
+
+| 日期 | 变更 | 触发 |
+| --- | --- | --- |
+| 2026-11-14 | 批准并实施 P0 / P1（`af9ddf2`） | owner 批准 |
+| 2026-11-14 | 切换按钮改为 30 px 仅图标、与顺序/随机按钮同一观感；波形高度改为填满传输条（§0、§5.5） | owner UI 反馈（`51107d6`） |
+| 2026-11-14 | 渐进归一化窗口锁死 −48…0 dB（上限 0 dBFS），完成时一次整曲归一化；删除前缀窗口切换（§0.9、§6.10、§9.7、§12.1） | owner 反馈“生成过程中波形会变形”（`d187305`） |

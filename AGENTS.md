@@ -63,6 +63,8 @@ dotnet run --project src/EchoGarage.App
 dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 ```
 
+任务交付时，总是编译发布版本提供给用户验收，若用户无明确指定要打包为压缩包，则只需要编译出相关文件即可、不打包。
+
 ## 4. 编码约定
 
 - 目标框架：`net10.0`（Core）/ `net10.0-windows`（Infrastructure、App、Tests）。启用 nullable 与隐式 using。
