@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
+using EchoGarage.App.Views.Controls;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
 
@@ -48,13 +49,13 @@ public partial class MainWindow : Window
     /// <summary>Song-column width that must stay visible next to a pinned header block (DIPs).</summary>
     private const double MinGroupedContentWidth = 160;
 
-    public MainWindow(AppHost host)
+    public MainWindow(AppHost host, bool waveformModeDiagnostics = false)
     {
         _host = host;
         InitializeComponent();
 
         _dialogs = new DialogService(this);
-        _vm = new MainViewModel(host, _dialogs);
+        _vm = new MainViewModel(host, _dialogs, waveformModeDiagnostics);
         _hotkeys = new HotkeyService(_vm, host.Logger);
         _conversion = new ConversionCoordinator(host, _vm, _dialogs, this);
         _vm.HotkeysChanged += (_, _) => _hotkeys.Reload();
@@ -89,6 +90,7 @@ public partial class MainWindow : Window
 
         ApplyWindowPlacement();
         HookSeekSlider();
+        HookWaveformSeek();
         Loaded += OnLoaded;
         // Tags of files outside the library folders are never picked up by the scanner or the
         // watcher, so refresh the visible rows whenever the window is activated again.
@@ -1604,11 +1606,68 @@ public partial class MainWindow : Window
         }
     }
 
+    // ADR-015: the waveform control raises the gesture in three phases; this adapter keeps the
+    // view model unchanged (same BeginSeek / CommitSeek / CancelSeek contract as the slider).
+    private void HookWaveformSeek()
+    {
+        WaveformView.SeekStarted += OnWaveformSeekStarted;
+        WaveformView.SeekPreview += OnWaveformSeekPreview;
+        WaveformView.SeekCommitted += OnWaveformSeekCommitted;
+        WaveformView.SeekCancelled += OnWaveformSeekCancelled;
+    }
+
+    private void OnWaveformSeekStarted(object? sender, EventArgs e)
+    {
+        _host.Logger.Debug(
+            $"Waveform seek start: position={_vm.PositionSeconds:F2}s duration={_vm.DurationSeconds:F2}s " +
+            $"width={WaveformView.ActualWidth:F1} peaks={WaveformView.Peaks?.ColumnCount ?? 0}");
+        if (_vm.DurationSeconds <= 0)
+        {
+            return;
+        }
+
+        _vm.BeginSeek();
+    }
+
+    private void OnWaveformSeekPreview(object? sender, WaveformSeekEventArgs e) => _vm.PreviewSeek(e.Seconds);
+
+    private void OnWaveformSeekCommitted(object? sender, WaveformSeekEventArgs e)
+    {
+        _host.Logger.Debug($"Waveform seek commit: target={e.Seconds:F2}s");
+        if (_vm.DurationSeconds <= 0)
+        {
+            _vm.CancelSeek();
+            return;
+        }
+
+        // Mouse-up always commits (ADR-015): unlike the slider there is no click-dead-zone,
+        // because clicking a waveform column is an explicit "go there" on a 2-4 s scale.
+        _vm.CommitSeek(e.Seconds);
+    }
+
+    private void OnWaveformSeekCancelled(object? sender, EventArgs e)
+    {
+        _host.Logger.Debug("Waveform seek cancelled (Escape).");
+        _vm.CancelSeek();
+    }
+
+    private static bool IsWaveformNavigationKey(Key key) =>
+        key is Key.Left or Key.Right or Key.PageUp or Key.PageDown or Key.Home or Key.End;
+
     // =====================================================================
     // Keyboard and drag & drop
     // =====================================================================
+
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // ADR-015: 波形进度条有键盘焦点时，跳转键（←/→/PageUp/PageDown/Home/End）必须留给控件，
+        // 不能被全局播放快捷键或窗口内置动作吃掉。
+        if (Keyboard.FocusedElement is WaveformSeekBar && IsWaveformNavigationKey(e.Key))
+        {
+            _host.Logger.Debug($"Waveform navigation key left to control: {e.Key} modifiers={Keyboard.Modifiers}");
+            return;
+        }
+
         // User-configured playback hotkeys win over the built-in shortcuts below.
         if (_hotkeys.TryHandleLocal(e))
         {

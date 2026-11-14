@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using EchoGarage.App.Services;
 using EchoGarage.App.Views;
+using EchoGarage.Core.Models;
 
 namespace EchoGarage.App;
 
@@ -39,7 +40,10 @@ public partial class App : Application
             Host.Logger.Info($"Theme applied: {Host.Settings.Current.Theme}");
             Timeline.Mark("host-ready");
 
-            var window = new MainWindow(Host);
+            // ADR-015 诊断开关只影响本次进程，因此通过构造函数下发，不改写 Settings.SeekBarMode。
+            var waveformDiagnostics = Array.Exists(e.Args,
+                a => string.Equals(a, "--waveform", StringComparison.OrdinalIgnoreCase));
+            var window = new MainWindow(Host, waveformDiagnostics);
             MainWindow = window;
             window.Show();
             Timeline.Mark("window-shown");
@@ -92,6 +96,35 @@ public partial class App : Application
             {
                 await Task.Delay(3200);
                 await Diagnostics.CaptureAllAsync(Host, window, e.Args[allIndex + 1]);
+            }
+
+            var waveformIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--waveform", StringComparison.OrdinalIgnoreCase));
+            if (waveformIndex >= 0 && waveformIndex + 2 < e.Args.Length)
+            {
+                // ADR-015 诊断开关：--waveform <音频文件> <png>
+                // 播放文件 → 等波形分析完成 → 跳到 40% 截图；无需注入鼠标键盘。
+                var waveformFile = e.Args[waveformIndex + 1];
+                var waveformScreenshot = e.Args[waveformIndex + 2];
+                await window.ViewModel.PlayPathForDiagnosticsAsync(waveformFile);
+
+                var deadline = DateTime.UtcNow.AddSeconds(20);
+                while (DateTime.UtcNow < deadline && window.ViewModel.CurrentWaveform is not { IsComplete: true })
+                {
+                    await Task.Delay(150);
+                }
+
+                var peaks = window.ViewModel.CurrentWaveform;
+                Host.Logger.Info(
+                    $"Waveform diagnostic: file={waveformFile} columns={peaks?.ColumnCount ?? 0} " +
+                    $"valid={peaks?.ValidCount ?? 0} complete={peaks?.IsComplete == true} " +
+                    $"duration={window.ViewModel.DurationSeconds:F1}s");
+                if (window.ViewModel.DurationSeconds > 0)
+                {
+                    window.ViewModel.SeekForDiagnostics(window.ViewModel.DurationSeconds * 0.4);
+                }
+
+                await Task.Delay(700);
+                window.SaveScreenshot(waveformScreenshot);
             }
 
             Host.Logger.Info($"Startup complete in {Timeline.ElapsedSinceStart.TotalMilliseconds:F0} ms " +

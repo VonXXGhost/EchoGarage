@@ -5,6 +5,7 @@
         xmlns:core="clr-namespace:EchoGarage.Core.Models;assembly=EchoGarage.Core"
         xmlns:svc="clr-namespace:EchoGarage.App.Services"
         xmlns:views="clr-namespace:EchoGarage.App.Views"
+        xmlns:controls="clr-namespace:EchoGarage.App.Views.Controls"
         Title="EchoGarage"
         Icon="/EchoGarage;component/Resources/echogarage.ico"
         Height="880" Width="1440" MinHeight="600" MinWidth="980"
@@ -895,18 +896,36 @@
 
                 <Grid Grid.Column="1" Margin="20,0" VerticalAlignment="Center">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="24" />
                         <ColumnDefinition Width="46" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="46" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="{Binding PositionText}" Foreground="{DynamicResource TextSecondaryBrush}"
+                    <ToggleButton Grid.Column="0" Style="{StaticResource WaveformModeToggle}"
+                                  VerticalAlignment="Center"
+                                  IsChecked="{Binding IsWaveformMode, Mode=TwoWay}"
+                                  AutomationProperties.AutomationId="WaveformModeToggle"
+                                  AutomationProperties.Name="波形进度条" />
+                    <TextBlock Grid.Column="1" Text="{Binding PositionText}" Foreground="{DynamicResource TextSecondaryBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
-                    <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0" Maximum="{Binding SeekMaximum}"
-                            AutomationProperties.AutomationId="SeekSlider"
-                            Value="{Binding PositionSeconds, Mode=OneWay}"
-                            IsEnabled="{Binding HasCurrentTrack}"
-                            IsMoveToPointEnabled="False" />
-                    <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="{DynamicResource TextMutedBrush}"
+                    <Grid Grid.Column="2">
+                        <Slider x:Name="SeekSlider" Minimum="0" Maximum="{Binding SeekMaximum}"
+                                AutomationProperties.AutomationId="SeekSlider"
+                                Value="{Binding PositionSeconds, Mode=OneWay}"
+                                IsEnabled="{Binding HasCurrentTrack}"
+                                IsMoveToPointEnabled="False"
+                                Visibility="{Binding IsWaveformMode, Converter={StaticResource InverseBoolToVisibility}}" />
+                        <controls:WaveformSeekBar x:Name="WaveformView"
+                                  AutomationProperties.AutomationId="WaveformSeekBar"
+                                  AutomationProperties.Name="播放进度"
+                                  AutomationProperties.HelpText="左右方向键跳转 5 秒，Shift 加方向键跳转 1 秒"
+                                  Peaks="{Binding CurrentWaveform}"
+                                  Position="{Binding PositionSeconds}"
+                                  Duration="{Binding DurationSeconds}"
+                                  IsEnabled="{Binding HasCurrentTrack}"
+                                  Visibility="{Binding IsWaveformMode, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+                    <TextBlock Grid.Column="3" Text="{Binding DurationText}" Foreground="{DynamicResource TextMutedBrush}"
                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
                                HorizontalAlignment="Right" />
                 </Grid>

@@ -200,10 +200,40 @@
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <Button Content="应用目录" Style="{StaticResource FlatButton}" Click="OnApplyCache" />
                             <Button Content="打开目录" Style="{StaticResource FlatButton}" Click="OnOpenCache" />
-                            <Button Content="清空封面缓存" Style="{StaticResource FlatButton}" Click="OnClearCache" />
+                            <Button x:Name="ClearCacheButton" Content="清空缓存 ▾" Style="{StaticResource FlatButton}"
+                                    Click="OnClearCacheMenuClick">
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="ClearCacheMenu" Opened="OnClearCacheMenuOpened">
+                                        <MenuItem x:Name="ClearCoverCacheItem" Header="清空封面缓存" Click="OnClearCoverCache" />
+                                        <MenuItem x:Name="ClearWaveformCacheItem" Header="清空波形缓存" Click="OnClearWaveformCache" />
+                                        <Separator />
+                                        <MenuItem x:Name="ClearAllCachesItem" Header="清空全部缓存" Click="OnClearAllCaches" />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
                         </StackPanel>
                         <TextBlock x:Name="CacheStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                    Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="波形缓存上限" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <ComboBox x:Name="WaveformLimitBox" Grid.Column="1" Width="130"
+                                      SelectionChanged="OnWaveformLimitChanged">
+                                <ComboBoxItem Content="128 MB" Tag="128" />
+                                <ComboBoxItem Content="256 MB（默认）" Tag="256" />
+                                <ComboBoxItem Content="512 MB" Tag="512" />
+                                <ComboBoxItem Content="1024 MB" Tag="1024" />
+                                <ComboBoxItem Content="不限制" Tag="0" />
+                            </ComboBox>
+                        </Grid>
+                        <TextBlock Text="超过上限时删除最久未使用的波形；不限制会让 Waveforms 目录随听歌量增长。"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
+                                   TextWrapping="Wrap" />
                         <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
                         <StackPanel Orientation="Horizontal">
                             <Button Content="打开配置目录" Style="{StaticResource FlatButton}" Click="OnOpenConfig" />

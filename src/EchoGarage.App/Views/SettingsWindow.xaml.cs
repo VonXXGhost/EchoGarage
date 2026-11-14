@@ -25,6 +25,7 @@ public partial class SettingsWindow : ThemedWindow
     private readonly MainViewModel _vm;
     private readonly List<HotkeyEditRow> _hotkeyRows = [];
     private bool _loadingHotkeys;
+    private bool _loadingCache;
 
     public SettingsWindow(AppHost host, MainViewModel vm)
     {
@@ -41,6 +42,9 @@ public partial class SettingsWindow : ThemedWindow
         AutoScanCheck.IsChecked = settings.AutoScanOnStartup;
         RestoreLastCheck.IsChecked = settings.RestoreLastPlaylist;
         CacheDirBox.Text = settings.CacheDirectory;
+        _loadingCache = true;
+        WaveformLimitBox.SelectedIndex = CacheLimitToIndex(settings.WaveformCacheLimitMb);
+        _loadingCache = false;
         LibrarySummaryText.Text = vm_LibrarySummary();
         StartupText.Text = $"启动耗时：{App.Timeline.ElapsedAt("window-shown").TotalMilliseconds:F0} ms（窗口显示） · " +
                            $"日志：{_host.Paths.LogsDirectory}";
@@ -253,28 +257,159 @@ public partial class SettingsWindow : ThemedWindow
         }
     }
 
-    private async void OnClearCache(object sender, RoutedEventArgs e)
+    private async void OnClearCoverCache(object sender, RoutedEventArgs e)
     {
-        if (!_vm.Settings.CacheDirectory.Equals(CacheDirBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+        await ClearCacheAsync(
+            cover: true,
+            waveform: false,
+            prompt: "清空封面缓存",
+            detail: "删除后滚动列表时会重新解码并写入新的封面缓存。",
+            done: "封面缓存已清空，滚动列表时会重新生成。");
+    }
+
+    private async void OnClearWaveformCache(object sender, RoutedEventArgs e)
+    {
+        await ClearCacheAsync(
+            cover: false,
+            waveform: true,
+            prompt: "清空波形缓存",
+            detail: "删除后再次播放歌曲时会重新分析波形（每首约 0.3–1 秒后台任务）。",
+            done: "波形缓存已清空，重新播放时会重新分析。");
+    }
+
+    private async void OnClearAllCaches(object sender, RoutedEventArgs e)
+    {
+        await ClearCacheAsync(
+            cover: true,
+            waveform: true,
+            prompt: "清空全部缓存",
+            detail: "封面与波形缓存都会被删除，随后按需重新生成。媒体库与设置不受影响。",
+            done: "封面与波形缓存已清空。");
+    }
+
+    private async Task ClearCacheAsync(bool cover, bool waveform, string prompt, string detail, string done)
+    {
+        if (!EnsureCacheDirectoryApplied())
         {
-            CacheStatusText.Text = "请先点击“应用目录”再清理。";
+            return;
+        }
+
+        var (coverFiles, waveformFiles) = CountCacheFiles();
+        var count = (cover ? coverFiles : 0) + (waveform ? waveformFiles : 0);
+        if (MessageBox.Show(this, $"{prompt}（{count} 个文件）？\n\n{detail}", "EchoGarage",
+                MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
             return;
         }
 
         try
         {
-            await _host.Covers!.ClearAsync();
-            _host.CoverImages.ClearMemoryCache();
-            CacheStatusText.Text = "封面缓存已清空，滚动列表时会重新生成。";
-            _vm.SetStatus("封面缓存已清空");
+            if (cover)
+            {
+                await _host.Covers!.ClearAsync();
+                _host.CoverImages.ClearMemoryCache();
+            }
+
+            if (waveform)
+            {
+                await _host.WaveformCache.ClearAsync();
+                // 正在播放的曲目立即重算，避免进度区空白到下次切歌。
+                _vm.StartWaveformLoad(_vm.CurrentRow?.Track.Path);
+            }
+
+            CacheStatusText.Text = done;
+            _vm.SetStatus(done);
         }
         catch (Exception ex)
         {
             CacheStatusText.Text = $"清理失败：{ex.Message}";
+            _host.Logger.Error($"Clear cache ({prompt}) failed", ex);
         }
     }
 
+    private bool EnsureCacheDirectoryApplied()
+    {
+        if (_vm.Settings.CacheDirectory.Equals(CacheDirBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        CacheStatusText.Text = "请先点击“应用目录”再清理。";
+        return false;
+    }
+
+    private void OnClearCacheMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (ClearCacheButton.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = ClearCacheButton;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+
+    private void OnClearCacheMenuOpened(object sender, RoutedEventArgs e)
+    {
+        // 只在菜单真正打开时枚举目录，设置页打开本身不做任何磁盘 IO。
+        var (coverFiles, waveformFiles) = CountCacheFiles();
+        ClearCoverCacheItem.Header = $"清空封面缓存（{coverFiles} 个文件）";
+        ClearWaveformCacheItem.Header = $"清空波形缓存（{waveformFiles} 个文件）";
+        ClearAllCachesItem.Header = $"清空全部缓存（{coverFiles + waveformFiles} 个文件）";
+    }
+
+    private (int Covers, int Waveforms) CountCacheFiles()
+    {
+        var directory = _vm.Settings.CacheDirectory;
+        var covers = 0;
+        var waveforms = 0;
+        try
+        {
+            if (Directory.Exists(directory))
+            {
+                covers = Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly).Count();
+            }
+
+            var waveformDirectory = Path.Combine(directory, "Waveforms");
+            if (Directory.Exists(waveformDirectory))
+            {
+                waveforms = Directory.EnumerateFiles(waveformDirectory, "*.wfm", SearchOption.TopDirectoryOnly).Count();
+            }
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"Cache file count failed: {ex.Message}");
+        }
+
+        return (covers, waveforms);
+    }
+
     private void OnOpenCache(object sender, RoutedEventArgs e) => OpenFolder(CacheDirBox.Text);
+
+    private void OnWaveformLimitChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingCache || WaveformLimitBox.SelectedItem is not ComboBoxItem { Tag: string tag } ||
+            !int.TryParse(tag, out var megabytes))
+        {
+            return;
+        }
+
+        _host.Settings.Current.WaveformCacheLimitMb = megabytes;
+        SaveSettings();
+        // 立刻按新上限收缩一次，用户不用等下次保存波形才发现磁盘没变小。
+        _host.TrimWaveformCache();
+        CacheStatusText.Text = megabytes <= 0
+            ? "波形缓存上限：不限制。"
+            : $"波形缓存上限：{megabytes} MB，超出后自动删除最久未使用的波形。";
+    }
+
+    private static int CacheLimitToIndex(int megabytes) => megabytes switch
+    {
+        <= 0 => 4,
+        <= 128 => 0,
+        <= 256 => 1,
+        <= 512 => 2,
+        _ => 3
+    };
 
     private void OnOpenLogs(object sender, RoutedEventArgs e) => OpenFolder(_host.Paths.LogsDirectory);
 

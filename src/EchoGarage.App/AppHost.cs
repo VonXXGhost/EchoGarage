@@ -20,8 +20,12 @@ namespace EchoGarage.App;
 /// </summary>
 public sealed class AppHost : IAsyncDisposable
 {
+    /// <summary>波形缓存目录名（相对 CacheDirectory，ADR-015 §7.1）。</summary>
+    public const string WaveformCacheFolderName = "Waveforms";
+
     private readonly Stopwatch _lifetime = Stopwatch.StartNew();
     private bool _shutdown;
+    private FileWaveformCache? _waveformCacheImpl;
 
     public AppHost(AppPaths? paths = null)
     {
@@ -52,6 +56,8 @@ public sealed class AppHost : IAsyncDisposable
     public IAudioPlayer Player { get; }
     public ICoverCache? Covers { get; private set; }
     public CoverImageService CoverImages { get; private set; } = null!;
+    public IWaveformService Waveforms { get; private set; } = null!;
+    public IWaveformCache WaveformCache { get; private set; } = null!;
     public FileAssociationService Associations { get; } = new();
 
     public AppSettings SettingsSnapshot => Settings.Current;
@@ -69,6 +75,21 @@ public sealed class AppHost : IAsyncDisposable
 
         Covers = new FileCoverCache(Settings.Current.CacheDirectory, Logger);
         CoverImages = new CoverImageService(Covers, Logger);
+
+        var waveformCache = new FileWaveformCache(
+            Path.Combine(Settings.Current.CacheDirectory, WaveformCacheFolderName),
+            Logger)
+        {
+            LimitMb = Math.Max(0, Settings.Current.WaveformCacheLimitMb),
+        };
+        _waveformCacheImpl = waveformCache;
+        WaveformCache = waveformCache;
+        // 350 ms 启动延迟（ADR-015 §6.10 建议 300–500 ms）：切歌瞬间播放器正在解码 / 建缓冲。
+        Waveforms = new WaveformService(
+            new WaveformAnalyzer(),
+            waveformCache,
+            Logger,
+            analysisStartDelay: TimeSpan.FromMilliseconds(350));
 
         Player.ConfigureOutput(Settings.Current.OutputDeviceId, Settings.Current.OutputMode);
         Player.Volume = Settings.Current.Volume;
@@ -107,13 +128,45 @@ public sealed class AppHost : IAsyncDisposable
                 Logger.Warn($"Database warmup failed: {ex.Message}");
             }
 
+            TrimWaveformCache();
+
             Logger.Info($"Warmup finished in {stopwatch.ElapsedMilliseconds} ms.");
+        });
+    }
+
+    /// <summary>
+    /// Applies the configured waveform cache limit and trims the directory in the
+    /// background. Called at startup and whenever the limit changes in settings.
+    /// </summary>
+    public void TrimWaveformCache()
+    {
+        if (_waveformCacheImpl is not { } cache)
+        {
+            return;
+        }
+
+        cache.LimitMb = Math.Max(0, Settings.Current.WaveformCacheLimitMb);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var removed = await cache.TrimAsync();
+                if (removed > 0)
+                {
+                    Logger.Info($"Waveform cache trimmed: removed {removed} file(s), limit {cache.LimitMb} MB.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Waveform cache trim failed: {ex.Message}");
+            }
         });
     }
 
     public async Task ApplyCacheDirectoryAsync(string newDirectory, CancellationToken cancellationToken = default)
     {
         var oldDirectory = Covers?.CoversDirectory;
+        var oldWaveformDirectory = WaveformCache?.Directory;
         Settings.Current.CacheDirectory = newDirectory;
         await Settings.SaveAsync(cancellationToken);
         if (Covers is not null)
@@ -124,7 +177,15 @@ public sealed class AppHost : IAsyncDisposable
             await Settings.SaveAsync(cancellationToken);
         }
 
-        Logger.Info($"Cover cache moved from {oldDirectory} to {newDirectory}");
+        if (WaveformCache is not null)
+        {
+            await WaveformCache.RelocateAsync(
+                Path.Combine(newDirectory, WaveformCacheFolderName),
+                cancellationToken);
+        }
+
+        Logger.Info($"Cover cache moved from {oldDirectory} to {newDirectory}; " +
+                    $"waveform cache moved from {oldWaveformDirectory} to {WaveformCache?.Directory}");
     }
 
     public async ValueTask DisposeAsync()

@@ -63,13 +63,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>True while the advanced search dialog writes the keyword into <see cref="FilterText"/>.</summary>
     private bool _applyingAdvancedSearch;
 
-    public MainViewModel(AppHost host, IDialogService dialogs)
+    public MainViewModel(AppHost host, IDialogService dialogs, bool waveformModeDiagnostics = false)
     {
         _host = host;
         _dialogs = dialogs;
         _dispatcher = Dispatcher.CurrentDispatcher;
         Settings = host.Settings.Current;
         _playMode = Settings.PlaybackMode;
+        // 直接赋字段：初始化时不应触发切换回调（否则会写设置并尝试加载空路径）。
+        // 诊断开关（--waveform）只覆盖本次进程，因此不改写 Settings.SeekBarMode。
+        _isWaveformMode = waveformModeDiagnostics || Settings.SeekBarMode == SeekBarMode.Waveform;
 
         Sources = [];
         _sourcesView = CollectionViewSource.GetDefaultView(Sources);
@@ -250,6 +253,32 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnDurationSecondsChanged(double value) =>
         OnPropertyChanged(nameof(SeekMaximum));
+
+    /// <summary>ADR-015：进度条形态（滑块 / 整曲波形），全局记忆，切换后立即写设置。</summary>
+    [ObservableProperty]
+    private bool _isWaveformMode;
+
+    /// <summary>当前曲目的波形快照；渐进分析时会被新的前缀快照整体替换。</summary>
+    [ObservableProperty]
+    private WaveformPeaks? _currentWaveform;
+
+    private CancellationTokenSource? _waveformCts;
+    private int _waveformVersion;
+
+    partial void OnIsWaveformModeChanged(bool value)
+    {
+        Settings.SeekBarMode = value ? SeekBarMode.Waveform : SeekBarMode.Slider;
+        QueueSettingsSave();
+        if (value)
+        {
+            StartWaveformLoad(CurrentRow?.Track.Path);
+        }
+        else
+        {
+            // 切回滑块后不再分析：释放后台线程与解码器，也把波形快照丢掉。
+            CancelWaveformLoad();
+        }
+    }
 
     [ObservableProperty]
     private double _volume = 75;
@@ -1433,6 +1462,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         DurationSeconds = row.Track.DurationMs / 1000.0;
         DurationText = DisplayFormatter.Duration(row.Track.DurationMs);
         PositionSeconds = 0;
+        // 切歌立刻丢弃上一首的波形；新曲目的分析在解码成功后再开始，避免和加载抢 IO。
+        CancelWaveformLoad();
 
         try
         {
@@ -1453,6 +1484,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 }
             });
             _ = LoadRowCoverAsync(row);
+            // ADR-015：播放真正开始后才让分析器排队；服务在解码前还会等约 350 ms 给播放让路。
+            StartWaveformLoad(row.Track.Path);
         }
         catch (Exception ex)
         {
@@ -1592,6 +1625,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         CurrentRow = null;
         CurrentRowChanged?.Invoke(this, EventArgs.Empty);
+        CancelWaveformLoad();
         CurrentTitle = "未在播放";
         CurrentSubtitle = string.Empty;
         CurrentInfo = string.Empty;
@@ -1806,6 +1840,92 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             PositionSeconds = Math.Clamp(position, 0, Math.Max(duration, 0.1));
             PositionText = DisplayFormatter.Duration(_host.Player.Position);
         }
+    }
+
+    /// <summary>
+    /// ADR-015：取消并（在波形形态下）重新开始当前曲目的波形加载；切歌 / 停止 / 切回滑块都会调用。
+    /// </summary>
+    public void StartWaveformLoad(string? path)
+    {
+        CancelWaveformLoad();
+        if (!IsWaveformMode || string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _waveformCts = cts;
+        _ = LoadWaveformAsync(path, _waveformVersion, cts);
+    }
+
+    public void CancelWaveformLoad()
+    {
+        _waveformVersion++;
+        _waveformCts?.Cancel();
+        _waveformCts?.Dispose();
+        _waveformCts = null;
+        CurrentWaveform = null;
+    }
+
+    private async Task LoadWaveformAsync(string path, int version, CancellationTokenSource cts)
+    {
+        // Progress<T> 在 UI 线程构造，回调会自动回到 UI 线程；渐进快照只替换属性，
+        // 控件自己负责追加几何。
+        var progress = new Progress<WaveformPeaks>(peaks =>
+        {
+            if (version != _waveformVersion || cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!string.Equals(CurrentRow?.Track.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            CurrentWaveform = peaks;
+        });
+
+        try
+        {
+            var watch = Stopwatch.StartNew();
+            var peaks = await _host.Waveforms.GetAsync(path, progress, cts.Token);
+            watch.Stop();
+            if (peaks is null || version != _waveformVersion || cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!string.Equals(CurrentRow?.Track.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            CurrentWaveform = peaks;
+            _host.Logger.Debug(
+                $"Waveform ready: columns={peaks.ColumnCount} valid={peaks.ValidCount} elapsed={watch.ElapsedMilliseconds}ms");
+        }
+        catch (OperationCanceledException)
+        {
+            // 切歌 / 停止是预期路径，不记日志。
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Warn($"Waveform load failed for {path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>ADR-015 波形拖动中的预览：只移动时间文本，不真正 Seek。</summary>
+    public void PreviewSeek(double seconds)
+    {
+        if (!_isSeeking)
+        {
+            return;
+        }
+
+        var target = Math.Clamp(seconds, 0, Math.Max(DurationSeconds, 0));
+        PositionSeconds = target;
+        PositionText = DisplayFormatter.Duration(TimeSpan.FromSeconds(target));
     }
 
     public void BeginSeek()
@@ -2894,6 +3014,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _settingsTimer.Stop();
         _scanCts?.Cancel();
         _scanCts?.Dispose();
+        _waveformCts?.Cancel();
+        _waveformCts?.Dispose();
+        _waveformCts = null;
         _selectionGate.Dispose();
     }
 }

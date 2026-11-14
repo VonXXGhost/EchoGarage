@@ -15,6 +15,13 @@ public enum PlaybackMode
     Shuffle
 }
 
+/// <summary>进度条形态：滑块（默认，兼容旧配置）或波形（ADR-015）。</summary>
+public enum SeekBarMode
+{
+    Slider,
+    Waveform
+}
+
 public sealed class AppSettings
 {
     public int SchemaVersion { get; set; } = 1;
@@ -23,6 +30,10 @@ public sealed class AppSettings
     public OutputMode OutputMode { get; set; } = OutputMode.Shared;
     public double Volume { get; set; } = 0.75;
     public PlaybackMode PlaybackMode { get; set; } = PlaybackMode.Sequential;
+    public SeekBarMode SeekBarMode { get; set; } = SeekBarMode.Slider;
+
+    /// <summary>波形缓存上限（MB）；0 表示不限。ADR-015 §7.5。</summary>
+    public int WaveformCacheLimitMb { get; set; } = 256;
     public bool ShowAlbumPanel { get; set; } = true;
     public bool RestoreLastPlaylist { get; set; } = true;
     public long? LastPlaylistId { get; set; }

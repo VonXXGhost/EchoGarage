@@ -52,6 +52,14 @@
     <SolidColorBrush x:Key="EmptyGlyphBrush" Color="#2A323D" />
     <SolidColorBrush x:Key="CoverNoteBrush" Color="#2E3742" />
 
+    <!-- ADR-015 波形进度条：低频在底、中频居中、高频（蓝）只在尖峰出现；已播放区用面板色半透明压暗。 -->
+    <SolidColorBrush x:Key="WaveformLowBrush" Color="#F3E6D0" />
+    <SolidColorBrush x:Key="WaveformMidBrush" Color="#C98335" />
+    <SolidColorBrush x:Key="WaveformHighBrush" Color="#1E43C8" />
+    <SolidColorBrush x:Key="WaveformTrackBackgroundBrush" Color="#1A1F27" />
+    <SolidColorBrush x:Key="WaveformPlayedOverlayBrush" Color="#4D0E1014" />
+    <SolidColorBrush x:Key="WaveformPlayheadBrush" Color="#E7EAEF" />
+
     <FontFamily x:Key="UiFont">Microsoft YaHei UI, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas, Cascadia Mono, Microsoft YaHei UI</FontFamily>
 
