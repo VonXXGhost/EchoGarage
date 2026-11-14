@@ -2952,6 +2952,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         var verb = move ? "移动" : "复制";
+        if (move)
+        {
+            var message = paths.Count == 1
+                ? $"将文件“{System.IO.Path.GetFileName(paths[0])}”移动到：\n{destination}\n\n原位置的文件会被移除。"
+                : $"将 {paths.Count} 个文件移动到：\n{destination}\n\n原位置的文件会被移除。";
+            if (!_dialogs.Confirm(message, "移动文件"))
+            {
+                return;
+            }
+        }
+
         SetStatus($"正在{verb} {paths.Count} 个文件…");
         try
         {
