@@ -34,6 +34,12 @@ public sealed class AppSettings
     /// <summary>User-configured playback hotkeys (local and optional system-wide).</summary>
     public List<HotkeyBinding> Hotkeys { get; set; } = [];
 
+    /// <summary>Saved conversion rules (shown in the track context menu and converter settings).</summary>
+    public List<ConversionPreset> ConversionPresets { get; set; } = ConversionPresetFactory.CreateBuiltInPresets();
+
+    /// <summary>Explicit encoder/tool paths; empty means auto-detect from tools\ or PATH.</summary>
+    public ConversionEncoderPaths Encoders { get; set; } = new();
+
     /// <summary>Extensions the user last chose in the file-association dialog (never auto-registered).</summary>
     public List<string> AssociationExtensions { get; set; } = [];
     public double WindowWidth { get; set; } = 1440;

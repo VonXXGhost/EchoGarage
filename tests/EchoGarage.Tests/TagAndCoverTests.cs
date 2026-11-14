@@ -267,5 +267,31 @@ public sealed class TagAndCoverTests : IDisposable
         Assert.StartsWith(_workspace.Combine("cache-b"), cache.CoversDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void BatchEdit_WritesOnlyModifiedFieldsAndKeepsPerFileValues()
+    {
+        var first = TestAudio.CreateWav(_workspace.Combine("media", "batch-a.wav"));
+        var second = TestAudio.CreateWav(_workspace.Combine("media", "batch-b.wav"));
+        _tags.Write(first, new TagEditModel { Title = "A 标题", Artist = "艺术家 A", Album = "专辑 A" });
+        _tags.Write(second, new TagEditModel { Title = "B 标题", Artist = "艺术家 B", Album = "专辑 B" });
+
+        var edit = new TagBatchEdit();
+        edit.Fields[TagFieldKeys.Album] = "统一专辑";
+        edit.Fields[TagFieldKeys.Comment] = "批量备注";
+        _tags.Write(first, TagBatchEditor.CreateEdit(_tags.Read(first), edit));
+        _tags.Write(second, TagBatchEditor.CreateEdit(_tags.Read(second), edit));
+
+        var readFirst = _tags.Read(first);
+        var readSecond = _tags.Read(second);
+        Assert.Equal("统一专辑", readFirst.Album);
+        Assert.Equal("统一专辑", readSecond.Album);
+        Assert.Equal("批量备注", readFirst.Comment);
+        Assert.Equal("批量备注", readSecond.Comment);
+        Assert.Equal("A 标题", readFirst.Title);
+        Assert.Equal("B 标题", readSecond.Title);
+        Assert.Equal("艺术家 A", readFirst.Artist);
+        Assert.Equal("艺术家 B", readSecond.Artist);
+    }
+
     public void Dispose() => _workspace.Dispose();
 }

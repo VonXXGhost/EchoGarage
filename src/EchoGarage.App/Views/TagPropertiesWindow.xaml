@@ -3,8 +3,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:views="clr-namespace:EchoGarage.App.Views"
                     Title="属性"
-                    Width="760" Height="560"
-                    MinWidth="680" MinHeight="500"
+                    Width="940" Height="640"
+                    MinWidth="860" MinHeight="560"
                     WindowStartupLocation="CenterOwner"
                     Background="{DynamicResource WindowBackgroundBrush}"
                     Foreground="{DynamicResource TextPrimaryBrush}"
@@ -12,6 +12,31 @@
                     FontSize="12"
                     ShowInTaskbar="False"
                     KeyDown="OnWindowKeyDown">
+    <views:ThemedWindow.Resources>
+        <Style x:Key="ValuePickerButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </views:ThemedWindow.Resources>
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -19,15 +44,18 @@
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="300" />
         </Grid.ColumnDefinitions>
 
-        <ScrollViewer Grid.Row="0" Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,16,0">
+        <ScrollViewer Grid.Row="0" Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,18,0">
             <StackPanel>
+                <TextBlock x:Name="SelectionHint" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                           TextWrapping="Wrap" Margin="0,0,0,10" Visibility="Collapsed" />
                 <TextBlock Text="标签信息" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-                <Grid>
+                <Grid x:Name="FieldsGrid">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="18" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
@@ -36,57 +64,32 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="标题" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="TitleBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="艺术家" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="ArtistBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="专辑" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="AlbumBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="专辑艺术家" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="AlbumArtistBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="作曲家" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="ComposerBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="流派" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <TextBox x:Name="GenreBox" Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Height="28" />
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="年份 / 音轨" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" />
-                    <Grid Grid.Row="6" Grid.Column="1" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="90" />
-                            <ColumnDefinition Width="16" />
-                            <ColumnDefinition Width="90" />
-                            <ColumnDefinition Width="16" />
-                            <ColumnDefinition Width="90" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="YearBox" Grid.Column="0" Height="28" ToolTip="年份" />
-                        <TextBox x:Name="TrackBox" Grid.Column="2" Height="28" ToolTip="音轨号" />
-                        <TextBox x:Name="DiscBox" Grid.Column="4" Height="28" ToolTip="碟号" />
-                    </Grid>
-                    <TextBlock Grid.Row="7" Grid.Column="0" Text="备注" VerticalAlignment="Top" Margin="0,6,0,0"
-                               Foreground="{DynamicResource TextSecondaryBrush}" />
-                    <TextBox x:Name="CommentBox" Grid.Row="7" Grid.Column="1" Height="70" AcceptsReturn="True"
-                             TextWrapping="Wrap" VerticalContentAlignment="Top" />
                 </Grid>
 
-                <TextBlock Text="文件信息" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <TextBlock x:Name="FilePathText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
-                           FontSize="11" />
-                <TextBlock x:Name="FileInfoText" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
-                           FontSize="11" />
-                <TextBlock x:Name="ModifiedText" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
-                           FontSize="11" />
+                <TextBlock x:Name="ExtraTagsHeader" Text="其他标签" Style="{StaticResource SectionLabel}"
+                           Margin="0,18,0,8" />
+                <Border x:Name="ExtraTagsPanel" Background="{DynamicResource PanelBackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6"
+                        Padding="12,10">
+                    <ItemsControl x:Name="ExtraTagsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Value}"
+                                               Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+
                 <TextBlock Text="标签会直接写入音频文件本身（MP3/FLAC/M4A/WAV 各自的标准格式），不会存到播放器数据库。"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                            Margin="0,12,0,0" />
@@ -103,19 +106,45 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Grid>
             </Border>
-            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock x:Name="CoverInfoText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                       Margin="0,8,0,0" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <Button Content="选择图片…" Style="{StaticResource FlatButton}" Click="OnPickCover" />
+                <Button Content="快速匹配专辑封面" Style="{StaticResource FlatButton}" Click="OnQuickMatchCover"
+                        ToolTip="在歌曲所在目录查找图片：只有一个图片时直接使用，多个时优先 cover / folder 命名" />
                 <Button x:Name="RemoveCoverButton" Content="移除封面" Style="{StaticResource FlatButton}"
                         Click="OnRemoveCover" />
             </StackPanel>
-            <TextBlock Text="建议使用正方形的 JPG/PNG 图片。" Foreground="{DynamicResource TextMutedBrush}"
-                       FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+            <TextBlock Text="封面转换" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+            <CheckBox x:Name="ConvertCoverCheck" Content="保存时转换为 JPG" IsChecked="True"
+                      Checked="OnConvertCoverChanged" Unchecked="OnConvertCoverChanged" />
+            <Grid x:Name="CoverConversionOptions" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="质量 (1–100)" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,10,8" />
+                <TextBox x:Name="CoverQualityBox" Grid.Row="0" Grid.Column="1" Height="26" Text="90"
+                         Margin="0,0,0,8" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="最大边长 (px)" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,10,0" />
+                <TextBox x:Name="CoverMaxEdgeBox" Grid.Row="1" Grid.Column="1" Height="26" Text="1000" />
+            </Grid>
+            <TextBlock Text="只缩小、不放大；已是 JPG 且原图小于目标边长时跳过；无需缩放时仅当转换后体积更小才采用。最大边长 0 表示不限制。"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
         </StackPanel>
 
         <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right"
                     Margin="0,16,0,0">
             <Button Content="取消" Style="{StaticResource FlatButton}" Click="OnCancel" IsCancel="True" Margin="0,0,8,0" />
-            <Button Content="保存到文件" Style="{StaticResource AccentButton}" Click="OnOk" IsDefault="True" />
+            <Button x:Name="SaveButton" Content="保存到文件" Style="{StaticResource AccentButton}" Click="OnOk" IsDefault="True" />
         </StackPanel>
     </Grid>
 </views:ThemedWindow>

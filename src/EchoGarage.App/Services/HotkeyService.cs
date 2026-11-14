@@ -71,14 +71,30 @@ public sealed class HotkeyService : IDisposable
                 continue;
             }
 
-            if (binding.Global)
+            AddBinding(binding, gesture);
+        }
+
+        // Conversion presets carry their own shortcut instead of using the playback hotkey table.
+        foreach (var preset in _vm.Settings.ConversionPresets)
+        {
+            if (string.IsNullOrWhiteSpace(preset.Hotkey))
             {
-                _global.Add(new GlobalBinding(binding, gesture, _nextGlobalId++));
+                continue;
             }
-            else
+
+            if (!HotkeyGesture.TryParse(preset.Hotkey, out var gesture) || gesture is null)
             {
-                _local.Add(new LocalBinding(binding, gesture));
+                _logger.Warn($"Conversion hotkey skipped (invalid gesture): {preset.Hotkey}");
+                continue;
             }
+
+            AddBinding(new HotkeyBinding
+            {
+                Action = HotkeyAction.ConvertPreset,
+                Gesture = gesture.ToString(),
+                Global = preset.HotkeyGlobal,
+                PresetId = preset.Id
+            }, gesture);
         }
 
         if (_global.Count == 0)
@@ -154,11 +170,23 @@ public sealed class HotkeyService : IDisposable
                 continue;
             }
 
-            Execute(entry.Binding.Action);
+            Execute(entry.Binding);
             return true;
         }
 
         return false;
+    }
+
+    private void AddBinding(HotkeyBinding binding, HotkeyGesture gesture)
+    {
+        if (binding.Global)
+        {
+            _global.Add(new GlobalBinding(binding, gesture, _nextGlobalId++));
+        }
+        else
+        {
+            _local.Add(new LocalBinding(binding, gesture));
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -176,7 +204,7 @@ public sealed class HotkeyService : IDisposable
                 continue;
             }
 
-            Execute(entry.Binding.Action);
+            Execute(entry.Binding);
             handled = true;
             break;
         }
@@ -184,9 +212,9 @@ public sealed class HotkeyService : IDisposable
         return IntPtr.Zero;
     }
 
-    private void Execute(HotkeyAction action)
+    private void Execute(HotkeyBinding binding)
     {
-        switch (action)
+        switch (binding.Action)
         {
             case HotkeyAction.PlayPause:
                 Await(_vm.PlayPauseCommand.ExecuteAsync(null));
@@ -205,6 +233,9 @@ public sealed class HotkeyService : IDisposable
                 break;
             case HotkeyAction.OpenSearch:
                 _vm.OpenAdvancedSearchCommand.Execute(null);
+                break;
+            case HotkeyAction.ConvertPreset:
+                _vm.RequestConversionPreset(binding.PresetId);
                 break;
         }
     }

@@ -4,6 +4,7 @@ using System.Windows.Input;
 using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
 using EchoGarage.Core.Models;
+using EchoGarage.Infrastructure.Conversion;
 using EchoGarage.Infrastructure.Windows;
 
 namespace EchoGarage.App.Views;
@@ -51,6 +52,7 @@ public partial class SettingsWindow : ThemedWindow
                                 : "（自定义目录：ECHOGARAGE_DATA_DIR）");
         RefreshFolders();
         PopulateHotkeys();
+        PopulateEncoders();
         UpdateAssociationStatus();
     }
 
@@ -162,6 +164,57 @@ public partial class SettingsWindow : ThemedWindow
         AssociationStatusText.Text = _host.Associations.IsRegistered()
             ? "已注册为音频文件的候选打开方式（可在上方按钮中调整格式或取消注册）。"
             : "尚未注册。注册是可选手动操作，启动时不会自动注册。";
+    }
+
+    private void PopulateEncoders()
+    {
+        NeroAacPathBox.Text = _host.Settings.Current.Encoders.NeroAacPath;
+        UpdateEncoderStatus();
+    }
+
+    private void UpdateEncoderStatus()
+    {
+        var locator = new EncoderLocator(AppContext.BaseDirectory);
+        var flac = locator.Locate(ConversionTool.Flac, null);
+        var lame = locator.Locate(ConversionTool.Lame, null);
+        var ssrc = locator.Locate(ConversionTool.Ssrc, null);
+        static string State(string? path) => path is null ? "未找到" : "已就绪";
+        EncoderStatusText.Text = $"内置编码器状态：FLAC {State(flac)} · LAME {State(lame)} · SSRC {State(ssrc)}。";
+    }
+
+    private void OnBrowseNeroAac(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择 neroAacEnc.exe",
+            Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+            CheckFileExists = true
+        };
+        var current = NeroAacPathBox.Text.Trim();
+        if (File.Exists(current))
+        {
+            dialog.FileName = current;
+        }
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            NeroAacPathBox.Text = dialog.FileName;
+            SaveNeroAacPath();
+        }
+    }
+
+    private void OnNeroAacPathLostFocus(object sender, RoutedEventArgs e) => SaveNeroAacPath();
+
+    private void SaveNeroAacPath()
+    {
+        var path = NeroAacPathBox.Text.Trim();
+        if (string.Equals(_host.Settings.Current.Encoders.NeroAacPath, path, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _host.Settings.Current.Encoders.NeroAacPath = path;
+        SaveSettings();
     }
 
     private void OnRefreshDevices(object sender, RoutedEventArgs e) => _vm.RefreshDevices();

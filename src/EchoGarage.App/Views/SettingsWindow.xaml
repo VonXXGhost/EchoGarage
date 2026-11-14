@@ -20,6 +20,35 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <!-- General -->
+                <TextBlock Text="通用设置" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="内置编码器：FLAC、LAME、SSRC 随软件附带，无需配置路径。"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="EncoderStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Nero AAC" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <TextBox Grid.Column="1" x:Name="NeroAacPathBox" Height="28" Margin="0,0,10,0"
+                                     LostFocus="OnNeroAacPathLostFocus"
+                                     ToolTip="neroAacEnc.exe 的完整路径" />
+                            <Button Grid.Column="2" Content="浏览…" Style="{StaticResource FlatButton}"
+                                    Click="OnBrowseNeroAac" />
+                        </Grid>
+                        <TextBlock Text="转换 AAC 需要 Nero AAC 编码器。其许可不允许随软件分发，请自行下载 neroAacEnc.exe 并在此指定路径。"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Margin="90,8,0,0" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Appearance -->
                 <TextBlock Text="界面" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
                 <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"

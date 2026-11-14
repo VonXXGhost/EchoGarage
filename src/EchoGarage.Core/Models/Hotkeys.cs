@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace EchoGarage.Core.Models;
 
@@ -12,7 +13,10 @@ public enum HotkeyAction
     Mute,
 
     /// <summary>Opens the advanced search dialog (defaults to Ctrl+F when not configured).</summary>
-    OpenSearch
+    OpenSearch,
+
+    /// <summary>Starts the audio converter with one of the configured conversion presets.</summary>
+    ConvertPreset
 }
 
 [Flags]
@@ -192,6 +196,14 @@ public sealed class HotkeyBinding
 
     /// <summary>When true the shortcut is registered system-wide (Win32 RegisterHotKey).</summary>
     public bool Global { get; set; }
+
+    /// <summary>
+    /// Conversion preset id for <see cref="HotkeyAction.ConvertPreset"/>. Conversion preset
+    /// shortcuts are stored on the preset itself, so this is only filled in by the hotkey
+    /// service and is never serialized.
+    /// </summary>
+    [JsonIgnore]
+    public string? PresetId { get; set; }
 
     public HotkeyBinding Clone() => (HotkeyBinding)MemberwiseClone();
 }

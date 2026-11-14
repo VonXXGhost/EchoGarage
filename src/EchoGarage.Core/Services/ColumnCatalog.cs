@@ -36,7 +36,8 @@ public static class ColumnCatalog
         new("status", "状态", 46, 42, ColumnKind.Status, false),
         // index is not sortable by clicking the header, but "default order" sorting (RowNumber)
         // can still be saved from the columns dialog, so it carries a sort property.
-        new("index", "#", 40, 30, ColumnKind.Index, false, PlaylistSortPolicy.DefaultOrder),
+        // 碟片号.音轨号（如 1.01）比原来的纯音轨号更长，给默认/最小宽度留出空间。
+        new("index", "#", 56, 50, ColumnKind.Index, false, PlaylistSortPolicy.DefaultOrder),
         new("title", "标题", 260, 120, ColumnKind.Text, SortProperty: "Title"),
         new("artist", "艺术家", 160, 90, ColumnKind.Text, SortProperty: "Artist"),
         new("album", "专辑", 170, 90, ColumnKind.Text, SortProperty: PlaylistSortPolicy.Album),

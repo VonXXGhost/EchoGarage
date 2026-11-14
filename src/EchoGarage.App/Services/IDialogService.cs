@@ -4,11 +4,23 @@ namespace EchoGarage.App.Services;
 
 public sealed record ColumnsEditResult(PlaylistViewLayout Layout, IReadOnlyList<ColumnPreset> Presets);
 
+public sealed record ConversionSettingsResult(IReadOnlyList<ConversionPreset> Presets);
+
+/// <summary>Batch-level answer for "target file already exists" conflicts.</summary>
+public enum ConversionConflictChoice
+{
+    OverwriteAll,
+    SkipConflicts,
+    RenameAll,
+    Cancel
+}
+
 public interface IDialogService
 {
     ColumnsEditResult? EditColumns(PlaylistViewLayout layout, IReadOnlyList<ColumnPreset> presets);
+    ConversionSettingsResult? EditConversionSettings(IReadOnlyList<ConversionPreset> presets);
     SmartPlaylistDefinition? EditSmartPlaylist(string playlistName, SmartPlaylistDefinition definition);
-    TagEditModel? EditTags(Track track, AudioTagData currentTags);
+    TagBatchEdit? EditTags(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> currentTags);
     SearchQuery? ShowAdvancedSearch(SearchQuery? current);
     string? AskText(string title, string prompt, string initialValue);
     long? PickPlaylist(IReadOnlyList<Playlist> candidates, string title);
@@ -21,4 +33,5 @@ public interface IDialogService
     bool Confirm(string message, string title = "确认");
     void Info(string message, string title = "提示");
     void Error(string message, string title = "错误");
+    ConversionConflictChoice ShowConversionConflict(int conflictCount);
 }

@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly MainViewModel _vm;
     private readonly DialogService _dialogs;
     private readonly HotkeyService _hotkeys;
+    private readonly ConversionCoordinator _conversion;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
     private bool _seekInteracting;
     private double _seekTargetSeconds;
@@ -55,7 +56,9 @@ public partial class MainWindow : Window
         _dialogs = new DialogService(this);
         _vm = new MainViewModel(host, _dialogs);
         _hotkeys = new HotkeyService(_vm, host.Logger);
+        _conversion = new ConversionCoordinator(host, _vm, _dialogs, this);
         _vm.HotkeysChanged += (_, _) => _hotkeys.Reload();
+        _vm.ConversionPresetRequested += (_, presetId) => _ = _conversion.ConvertWithPresetAsync(presetId);
         _vm.LayoutProvider = CaptureLayoutFromGrid;
         _vm.CellTemplateProvider = key => TryFindResource("Cell." + ToPascalCase(key)) as DataTemplate;
         DataContext = _vm;
@@ -87,6 +90,9 @@ public partial class MainWindow : Window
         ApplyWindowPlacement();
         HookSeekSlider();
         Loaded += OnLoaded;
+        // Tags of files outside the library folders are never picked up by the scanner or the
+        // watcher, so refresh the visible rows whenever the window is activated again.
+        Activated += (_, _) => _ = _vm.RefreshStaleTracksAsync();
         Closing += OnClosing;
         Closed += OnClosed;
         PreviewKeyDown += OnPreviewKeyDown;
@@ -511,6 +517,397 @@ public partial class MainWindow : Window
         if (GroupedList.SelectedItem is TrackRowViewModel row)
         {
             _ = _vm.PlayRowCommand.ExecuteAsync(row);
+        }
+    }
+
+    // =====================================================================
+    // Conversion
+    // =====================================================================
+    /// <summary>
+    /// The context menu is shared and the conversion submenu is populated from the current presets.
+    /// Populate it as soon as the menu opens: a MenuItem without children never opens its submenu,
+    /// so waiting for SubmenuOpened alone would make "转换" look unresponsive.
+    /// </summary>
+    private void OnTrackMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu menu)
+        {
+            var conversion = menu.Items.OfType<MenuItem>()
+                .FirstOrDefault(item => item.Header as string == "转换");
+            if (conversion is not null)
+            {
+                RebuildConversionMenu(conversion);
+            }
+        }
+    }
+
+    private void OnConversionMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menu)
+        {
+            RebuildConversionMenu(menu);
+        }
+    }
+
+    private void RebuildConversionMenu(MenuItem menu)
+    {
+        menu.Items.Clear();
+        foreach (var preset in _vm.Settings.ConversionPresets)
+        {
+            var item = new MenuItem { Header = preset.Name, Tag = preset.Id };
+            item.Click += (_, _) => _ = _conversion.ConvertWithPresetAsync((string)item.Tag);
+            menu.Items.Add(item);
+        }
+
+        if (menu.Items.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "没有可用的转换预设", IsEnabled = false });
+        }
+
+        menu.Items.Add(new Separator());
+        var settings = new MenuItem { Header = "转换器设置…" };
+        settings.Click += (_, _) => _ = _conversion.OpenSettingsAsync();
+        menu.Items.Add(settings);
+    }
+
+    private void OnConversionSettingsClick(object sender, RoutedEventArgs e) => _ = _conversion.OpenSettingsAsync();
+
+    /// <summary>
+    /// Right-clicking a row that is not part of the current selection selects that row first, so
+    /// context-menu commands (convert, remove, tags) act on what the user actually clicked.
+    /// </summary>
+    private void OnTrackGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+        if (row?.Item is not TrackRowViewModel model || TrackGrid.SelectedItems.Contains(model))
+        {
+            return;
+        }
+
+        TrackGrid.SelectedItems.Clear();
+        TrackGrid.SelectedItem = model;
+    }
+
+    private void OnGroupedListPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var item = FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject);
+        if (item?.DataContext is not TrackRowViewModel model || GroupedList.SelectedItems.Contains(model))
+        {
+            return;
+        }
+
+        GroupedList.SelectedItems.Clear();
+        GroupedList.SelectedItem = model;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
+    {
+        while (source is not null)
+        {
+            if (source is T match)
+            {
+                return match;
+            }
+
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return null;
+    }
+
+    // =====================================================================
+    // Rubber-band (marquee) selection
+    // =====================================================================
+
+    private const double MarqueeThreshold = 4;
+
+    private bool _marqueeActive;
+    private bool _marqueeAdditive;
+    private bool _marqueeMoved;
+    private Point _marqueeStart;
+    private DataGrid? _marqueeGrid;
+    private ListView? _marqueeList;
+    private ScrollViewer? _marqueeScroll;
+    private readonly HashSet<object> _marqueeBaseItems = [];
+
+    private void OnTrackGridMarqueeStart(object sender, MouseButtonEventArgs e) => StartMarquee(TrackGrid, e);
+
+    private void OnGroupedListMarqueeStart(object sender, MouseButtonEventArgs e) => StartMarquee(GroupedList, e);
+
+    private void OnTrackGridMarqueeMove(object sender, MouseEventArgs e) => ContinueMarquee(e);
+
+    private void OnGroupedListMarqueeMove(object sender, MouseEventArgs e) => ContinueMarquee(e);
+
+    private void OnTrackGridMarqueeEnd(object sender, MouseButtonEventArgs e) => EndMarquee(e);
+
+    private void OnGroupedListMarqueeEnd(object sender, MouseButtonEventArgs e) => EndMarquee(e);
+
+    private void StartMarquee(FrameworkElement host, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || _marqueeActive)
+        {
+            return;
+        }
+
+        // Only start on empty list space: rows/items keep their normal click, drag and
+        // header-resize behaviour.
+        var source = e.OriginalSource as DependencyObject;
+        if (FindAncestor<DataGridRow>(source) is not null ||
+            FindAncestor<ListViewItem>(source) is not null ||
+            FindAncestor<DataGridColumnHeader>(source) is not null ||
+            FindAncestor<ScrollBar>(source) is not null ||
+            FindAncestor<TextBox>(source) is not null)
+        {
+            return;
+        }
+
+        _marqueeActive = true;
+        _marqueeMoved = false;
+        _marqueeAdditive = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        _marqueeStart = e.GetPosition(MarqueeLayer);
+        _marqueeGrid = host as DataGrid;
+        _marqueeList = host as ListView;
+        _marqueeScroll = FindDescendant<ScrollViewer>(host);
+
+        _marqueeBaseItems.Clear();
+        if (_marqueeGrid is not null)
+        {
+            foreach (var item in _marqueeGrid.SelectedItems)
+            {
+                _marqueeBaseItems.Add(item);
+            }
+
+            if (!_marqueeAdditive)
+            {
+                _marqueeGrid.SelectedItems.Clear();
+            }
+        }
+        else if (_marqueeList is not null)
+        {
+            foreach (var item in _marqueeList.SelectedItems)
+            {
+                _marqueeBaseItems.Add(item);
+            }
+
+            if (!_marqueeAdditive)
+            {
+                _marqueeList.SelectedItems.Clear();
+            }
+        }
+
+        MarqueeLayer.Visibility = Visibility.Visible;
+        MarqueeBorder.Visibility = Visibility.Collapsed;
+        host.CaptureMouse();
+    }
+
+    private void ContinueMarquee(MouseEventArgs e)
+    {
+        if (!_marqueeActive)
+        {
+            return;
+        }
+
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            CancelMarquee();
+            return;
+        }
+
+        var rect = new Rect(_marqueeStart, e.GetPosition(MarqueeLayer));
+        if (!_marqueeMoved && rect.Width < MarqueeThreshold && rect.Height < MarqueeThreshold)
+        {
+            return;
+        }
+
+        _marqueeMoved = true;
+        Canvas.SetLeft(MarqueeBorder, rect.X);
+        Canvas.SetTop(MarqueeBorder, rect.Y);
+        MarqueeBorder.Width = rect.Width;
+        MarqueeBorder.Height = rect.Height;
+        MarqueeBorder.Visibility = Visibility.Visible;
+
+        UpdateMarqueeSelection(rect);
+        AutoScrollMarquee();
+        e.Handled = true;
+    }
+
+    private void EndMarquee(MouseButtonEventArgs e)
+    {
+        if (!_marqueeActive)
+        {
+            return;
+        }
+
+        var host = (IInputElement?)_marqueeGrid ?? _marqueeList;
+        _marqueeActive = false;
+        _marqueeGrid = null;
+        _marqueeList = null;
+        _marqueeScroll = null;
+        _marqueeBaseItems.Clear();
+        MarqueeLayer.Visibility = Visibility.Collapsed;
+        MarqueeBorder.Visibility = Visibility.Collapsed;
+
+        try
+        {
+            host?.ReleaseMouseCapture();
+        }
+        catch
+        {
+            // Ignore capture errors while finishing.
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnMarqueeLostCapture(object sender, MouseEventArgs e)
+    {
+        if (_marqueeActive)
+        {
+            CancelMarquee();
+        }
+    }
+
+    private void CancelMarquee()
+    {
+        _marqueeActive = false;
+        _marqueeGrid = null;
+        _marqueeList = null;
+        _marqueeScroll = null;
+        _marqueeBaseItems.Clear();
+        MarqueeLayer.Visibility = Visibility.Collapsed;
+        MarqueeBorder.Visibility = Visibility.Collapsed;
+    }
+
+    private void UpdateMarqueeSelection(Rect rect)
+    {
+        if (_marqueeGrid is not null)
+        {
+            var desired = new HashSet<object>();
+            for (var i = 0; i < _marqueeGrid.Items.Count; i++)
+            {
+                if (_marqueeGrid.ItemContainerGenerator.ContainerFromIndex(i) is DataGridRow row &&
+                    row.IsVisible &&
+                    Intersects(row, rect))
+                {
+                    desired.Add(row.Item);
+                }
+            }
+
+            foreach (var item in _marqueeGrid.SelectedItems.Cast<object>().ToList())
+            {
+                if (!desired.Contains(item) && !(_marqueeAdditive && _marqueeBaseItems.Contains(item)))
+                {
+                    _marqueeGrid.SelectedItems.Remove(item);
+                }
+            }
+
+            foreach (var item in desired)
+            {
+                if (!_marqueeGrid.SelectedItems.Contains(item))
+                {
+                    _marqueeGrid.SelectedItems.Add(item);
+                }
+            }
+
+            return;
+        }
+
+        if (_marqueeList is null)
+        {
+            return;
+        }
+
+        foreach (var item in EnumerateDescendants<ListViewItem>(_marqueeList))
+        {
+            if (!item.IsVisible)
+            {
+                continue;
+            }
+
+            var shouldSelect = Intersects(item, rect) ||
+                               (_marqueeAdditive && _marqueeBaseItems.Contains(item.DataContext));
+            if (item.IsSelected != shouldSelect)
+            {
+                item.IsSelected = shouldSelect;
+            }
+        }
+    }
+
+    private bool Intersects(FrameworkElement element, Rect rect)
+    {
+        try
+        {
+            var origin = element.TranslatePoint(new Point(0, 0), MarqueeLayer);
+            return rect.IntersectsWith(new Rect(origin, element.RenderSize));
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void AutoScrollMarquee()
+    {
+        if (_marqueeScroll is null)
+        {
+            return;
+        }
+
+        try
+        {
+            const double edge = 28;
+            var point = Mouse.GetPosition(_marqueeScroll);
+            if (point.Y < edge)
+            {
+                _marqueeScroll.LineUp();
+            }
+            else if (point.Y > _marqueeScroll.ViewportHeight - edge)
+            {
+                _marqueeScroll.LineDown();
+            }
+        }
+        catch
+        {
+            // Ignore scrolling errors during drag.
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var nested = FindDescendant<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<T> EnumerateDescendants<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var nested in EnumerateDescendants<T>(child))
+            {
+                yield return nested;
+            }
         }
     }
 

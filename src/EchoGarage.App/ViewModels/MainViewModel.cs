@@ -35,6 +35,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _suppressThemeApply;
     private bool _isSeeking;
     private bool _isDisposed;
+    private bool _refreshingTracks;
+    private DateTime _lastTrackRefreshUtc = DateTime.MinValue;
     private int _consecutiveFailures;
     private List<TrackRowViewModel>? _shuffleOrder;
 
@@ -514,6 +516,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Lets the settings dialog tell the window to re-register the hotkeys.</summary>
     public void NotifyHotkeysChanged() => HotkeysChanged?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>Raised when a conversion preset shortcut should start the converter.</summary>
+    public event EventHandler<string>? ConversionPresetRequested;
+
+    /// <summary>Called by the hotkey service when a conversion preset shortcut is pressed.</summary>
+    public void RequestConversionPreset(string? presetId)
+    {
+        if (!string.IsNullOrWhiteSpace(presetId))
+        {
+            ConversionPresetRequested?.Invoke(this, presetId);
+        }
+    }
+
+    /// <summary>
+    /// Persists presets edited in the converter settings dialog, then lets the hotkey service
+    /// pick up the new shortcuts. Encoder paths are edited in the general settings page and are
+    /// deliberately left untouched here so saving presets cannot overwrite them.
+    /// </summary>
+    public void ApplyConversionSettings(IReadOnlyList<ConversionPreset> presets)
+    {
+        Settings.ConversionPresets = ConversionPresetFactory.NormalizeAll(presets, Settings.Hotkeys, _host.Logger);
+        QueueSettingsSave();
+        NotifyHotkeysChanged();
+        SetStatus("转换器设置已保存。");
+    }
+
     /// <summary>
     /// Set by the main window so layout changes can capture the live DataGrid column
     /// widths/order even when the switch is initiated from the view model.
@@ -842,6 +869,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             QueueSettingsSave();
+            _ = RefreshStaleTracksAsync(force: true);
         }
         catch (Exception ex)
         {
@@ -2159,6 +2187,88 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Re-indexes visible rows whose cached metadata no longer matches the file on disk.
+    /// Files outside every library folder (for example files added directly to a playlist) are
+    /// never visited by the library scanner or the file watcher, so their tags would otherwise
+    /// stay stale forever. Runs in the background and is throttled because it is also triggered
+    /// when the window is activated.
+    /// </summary>
+    public async Task RefreshStaleTracksAsync(bool force = false)
+    {
+        if (_refreshingTracks || _isDisposed || Tracks.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (!force && now - _lastTrackRefreshUtc < TimeSpan.FromSeconds(2))
+        {
+            return;
+        }
+
+        _refreshingTracks = true;
+        _lastTrackRefreshUtc = now;
+        try
+        {
+            var source = SelectedSource;
+            var rows = Tracks.ToList();
+            // FileInfo lookups and tag reads must not block the UI thread for large playlists.
+            var changed = await Task.Run(async () =>
+            {
+                var count = 0;
+                foreach (var row in rows)
+                {
+                    var track = row.Track;
+                    FileInfo info;
+                    try
+                    {
+                        info = new FileInfo(track.Path);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (!info.Exists || !TrackRefresh.NeedsRefresh(track, info.Length, info.LastWriteTimeUtc))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        await _host.Scanner.IndexFileAsync(track.Path, track.IsInLibrary, track.FolderId);
+                        count++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _host.Logger.Warn($"Refreshing track metadata failed: {track.Path} ({ex.Message})");
+                    }
+                }
+
+                return count;
+            });
+
+            if (changed > 0 && IsSameSource(source, SelectedSource))
+            {
+                await RefreshCurrentSourceAsync(preserveSelection: true);
+                _host.Logger.Info($"Refreshed metadata for {changed} track(s) from disk.");
+                SetStatus($"已刷新 {changed} 个文件的标签信息");
+            }
+        }
+        finally
+        {
+            _refreshingTracks = false;
+        }
+    }
+
+    private static bool IsSameSource(SourceNodeViewModel? left, SourceNodeViewModel? right)
+        => left is not null
+           && right is not null
+           && left.Kind == right.Kind
+           && left.Playlist?.Id == right.Playlist?.Id
+           && left.Folder?.Id == right.Folder?.Id;
+
     private bool IsRowSelected(TrackRowViewModel row) => SelectedRows.Contains(row);
 
     public HashSet<TrackRowViewModel> SelectedRows { get; } = [];
@@ -2511,46 +2621,78 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task EditTagsAsync(TrackRowViewModel? row)
     {
-        row ??= SelectedRow;
-        if (row is null)
+        var rows = Tracks.Where(IsRowSelected).ToList();
+        if (rows.Count <= 1)
+        {
+            row ??= SelectedRow;
+            rows = row is null ? [] : [row];
+        }
+
+        if (rows.Count == 0)
         {
             return;
         }
 
+        var tracks = rows.Select(r => r.Track).ToList();
         try
         {
-            var data = await Task.Run(() => _host.TagService.Read(row.Track.Path));
-            var edited = _dialogs.EditTags(row.Track, data);
-            if (edited is null)
+            var tags = await Task.Run(() => tracks.Select(track => _host.TagService.Read(track.Path)).ToList());
+            var edit = _dialogs.EditTags(tracks, tags);
+            if (edit is null)
             {
                 return;
             }
 
-            var oldCover = row.Track.CoverKey;
-            await Task.Run(() => _host.TagService.Write(row.Track.Path, edited));
-            var updated = await _host.Scanner.IndexFileAsync(row.Track.Path, row.Track.IsInLibrary, row.Track.FolderId);
-            if (updated is not null)
-            {
-                row.UpdateTrack(updated);
-                _host.Covers?.Invalidate(oldCover);
-                _host.Covers?.Invalidate(updated.CoverKey);
-                _host.CoverImages.Invalidate(oldCover);
-                _host.CoverImages.Invalidate(updated.CoverKey);
-                await LoadRowCoverAsync(row, force: true);
-                if (ReferenceEquals(CurrentRow, row))
+            var saved = 0;
+            var failures = new List<string>();
+            for (var i = 0; i < rows.Count; i++)
                 {
-                    UpdateNowPlayingMetadata(row);
-                    BeginNowPlayingCoverLoad(updated);
+                    var target = rows[i];
+                    try
+                    {
+                        var model = TagBatchEditor.CreateEdit(tags[i], edit);
+                        var oldCover = target.Track.CoverKey;
+                        await Task.Run(() => _host.TagService.Write(target.Track.Path, model));
+                        var updated = await _host.Scanner.IndexFileAsync(target.Track.Path, target.Track.IsInLibrary, target.Track.FolderId);
+                        if (updated is not null)
+                        {
+                            target.UpdateTrack(updated);
+                            _host.Covers?.Invalidate(oldCover);
+                            _host.Covers?.Invalidate(updated.CoverKey);
+                            _host.CoverImages.Invalidate(oldCover);
+                            _host.CoverImages.Invalidate(updated.CoverKey);
+                            await LoadRowCoverAsync(target, force: true);
+                            if (ReferenceEquals(CurrentRow, target))
+                            {
+                                UpdateNowPlayingMetadata(target);
+                                BeginNowPlayingCoverLoad(updated);
+                            }
+                        }
+
+                        saved++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _host.Logger.Error($"Tag edit failed for {target.Track.Path}", ex);
+                        failures.Add($"{System.IO.Path.GetFileName(target.Track.Path)}：{ex.Message}");
+                    }
                 }
-            }
 
             await ReloadSourcesAsync();
-            _host.Logger.Info($"Tags saved: {row.Track.Path}");
-            SetStatus("标签已保存");
+            if (failures.Count > 0)
+            {
+                _dialogs.Error($"标签保存完成：成功 {saved} 个，失败 {failures.Count} 个。\n" + string.Join("\n", failures.Take(5)));
+                SetStatus($"标签保存：成功 {saved} 个，失败 {failures.Count} 个");
+            }
+            else
+            {
+                _host.Logger.Info($"Tags saved: {saved} file(s)");
+                SetStatus(saved > 1 ? $"已保存 {saved} 个文件的标签" : "标签已保存");
+            }
         }
         catch (Exception ex)
         {
-            _host.Logger.Error($"Tag edit failed for {row.Track.Path}", ex);
+            _host.Logger.Error("Tag edit failed", ex);
             _dialogs.Error($"保存标签失败：{ex.Message}");
         }
     }

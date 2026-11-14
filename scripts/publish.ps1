@@ -37,4 +37,13 @@ if ($SelfContained) {
 dotnet @arguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+# 附带外部转换工具（flac / lame / ssrc 及许可文件）
+$toolsSource = Join-Path $root 'tools'
+if (Test-Path $toolsSource) {
+  $toolsTarget = Join-Path $outputPath 'tools'
+  if (Test-Path $toolsTarget) { Remove-Item -Recurse -Force $toolsTarget }
+  Copy-Item -Recurse -Force $toolsSource $toolsTarget
+  Write-Host "已复制转换工具：$toolsTarget"
+}
+
 Write-Host "发布完成：$outputPath"

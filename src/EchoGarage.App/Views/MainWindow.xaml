@@ -418,9 +418,10 @@
         </Style>
 
         <!-- ================= Context menus ================= -->
-        <ContextMenu x:Key="TrackMenu">
+        <ContextMenu x:Key="TrackMenu" Opened="OnTrackMenuOpened">
             <MenuItem Header="播放" Click="OnPlaySelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
+            <MenuItem Header="转换" SubmenuOpened="OnConversionMenuOpened" />
             <Separator />
             <MenuItem Header="添加到播放列表…" Click="OnAddToPlaylistClick" />
             <MenuItem Header="从当前播放列表移除" Click="OnRemoveSelectedClick" />
@@ -461,6 +462,7 @@
                         <Separator />
                         <MenuItem Header="注册为默认播放器…" Command="{Binding RegisterDefaultPlayerCommand}" />
                         <MenuItem Header="设置…" Command="{Binding OpenSettingsCommand}" />
+                        <MenuItem Header="转换器设置…" Click="OnConversionSettingsClick" />
                         <MenuItem Header="打开日志目录" Command="{Binding OpenLogsCommand}" />
                         <Separator />
                         <MenuItem Header="退出" Click="OnExitMenuClick" />
@@ -622,6 +624,11 @@
                           UnloadingRow="OnTrackGridUnloadingRow"
                           Sorting="OnTrackGridSorting"
                           ContextMenu="{StaticResource TrackMenu}"
+                          PreviewMouseRightButtonDown="OnTrackGridPreviewMouseRightButtonDown"
+                          PreviewMouseLeftButtonDown="OnTrackGridMarqueeStart"
+                          PreviewMouseMove="OnTrackGridMarqueeMove"
+                          PreviewMouseLeftButtonUp="OnTrackGridMarqueeEnd"
+                          LostMouseCapture="OnMarqueeLostCapture"
                           VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                           ScrollViewer.CanContentScroll="True"
                           Margin="0,0,0,0" />
@@ -684,6 +691,11 @@
                               SelectionChanged="OnGroupedSelectionChanged"
                               MouseDoubleClick="OnGroupedDoubleClick"
                               ContextMenu="{StaticResource TrackMenu}"
+                              PreviewMouseRightButtonDown="OnGroupedListPreviewMouseRightButtonDown"
+                              PreviewMouseLeftButtonDown="OnGroupedListMarqueeStart"
+                              PreviewMouseMove="OnGroupedListMarqueeMove"
+                              PreviewMouseLeftButtonUp="OnGroupedListMarqueeEnd"
+                              LostMouseCapture="OnMarqueeLostCapture"
                               Background="Transparent" BorderThickness="0" Padding="0"
                               SelectionMode="Extended"
                               ItemContainerStyle="{StaticResource GroupedTrackItem}"
@@ -738,6 +750,15 @@
                                Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
                                HorizontalAlignment="Center" />
                 </StackPanel>
+
+                <!-- Rubber-band selection overlay; drawn while dragging on empty list space. -->
+                <Canvas x:Name="MarqueeLayer" Grid.Row="1" IsHitTestVisible="False"
+                        ClipToBounds="True" Visibility="Collapsed">
+                    <Border x:Name="MarqueeBorder" Visibility="Collapsed"
+                            Background="{DynamicResource AccentSoftBrush}"
+                            BorderBrush="{DynamicResource AccentBrush}"
+                            BorderThickness="1" Opacity="0.7" />
+                </Canvas>
             </Grid>
 
             <!-- Album panel -->

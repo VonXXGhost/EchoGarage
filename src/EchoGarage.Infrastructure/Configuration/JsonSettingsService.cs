@@ -133,6 +133,8 @@ public sealed class JsonSettingsService : ISettingsService
         settings.LibraryLayout = ViewLayoutFactory.Normalize(settings.LibraryLayout);
         settings.ColumnPresets ??= [];
         settings.Hotkeys = NormalizeHotkeys(settings.Hotkeys);
+        settings.ConversionPresets = ConversionPresetFactory.NormalizeAll(settings.ConversionPresets, settings.Hotkeys, _logger);
+        settings.Encoders = ConversionPresetFactory.NormalizeEncoders(settings.Encoders);
 
         var builtIns = ViewLayoutFactory.CreateBuiltInPresets();
         foreach (var builtIn in builtIns)

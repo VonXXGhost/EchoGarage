@@ -140,9 +140,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
 
     public string StatusGlyph => IsPlaying ? "▶" : string.Empty;
 
-    public string IndexDisplay => Track.TrackNumber > 0
-        ? Track.TrackNumber.ToString("00")
-        : RowNumber.ToString();
+    public string IndexDisplay => TrackIndexFormatter.Format(Track.DiscNumber, Track.TrackNumber);
 
     public string Title => Track.DisplayTitle;
     public string Artist => Track.Artist;
@@ -201,6 +199,5 @@ public sealed partial class TrackRowViewModel : ObservableObject
         }
 
         RowNumber = number;
-        OnPropertyChanged(nameof(IndexDisplay));
     }
 }

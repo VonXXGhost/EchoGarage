@@ -26,6 +26,12 @@ public sealed class AudioPlaybackStateChangedEventArgs : EventArgs
     public string? Error { get; init; }
 }
 
+/// <summary>
+/// One additional tag field found in the file that is not part of the common
+/// editable fields (e.g. BPM, ISRC, MusicBrainz ids, custom ID3 frames).
+/// </summary>
+public sealed record AudioTagEntry(string Name, string Value);
+
 public sealed record AudioTagData(
     string Title,
     string Artist,
@@ -43,7 +49,11 @@ public sealed record AudioTagData(
     int Channels,
     string Codec,
     byte[]? CoverBytes,
-    string? CoverMime);
+    string? CoverMime)
+{
+    /// <summary>Other tags present in the file, shown read-only in the tag editor.</summary>
+    public IReadOnlyList<AudioTagEntry> AdditionalTags { get; init; } = [];
+}
 
 public sealed class TagEditModel
 {

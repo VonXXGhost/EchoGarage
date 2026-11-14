@@ -19,15 +19,28 @@ public sealed class DialogService : IDialogService
         return window.ShowDialog() == true ? window.Result : null;
     }
 
+    public ConversionSettingsResult? EditConversionSettings(IReadOnlyList<ConversionPreset> presets)
+    {
+        var window = new ConversionSettingsWindow(presets, this) { Owner = _owner };
+        return window.ShowDialog() == true ? window.Result : null;
+    }
+
+    public ConversionConflictChoice ShowConversionConflict(int conflictCount)
+    {
+        var window = new ConversionConflictWindow(conflictCount) { Owner = _owner };
+        window.ShowDialog();
+        return window.Choice;
+    }
+
     public SmartPlaylistDefinition? EditSmartPlaylist(string playlistName, SmartPlaylistDefinition definition)
     {
         var window = new SmartPlaylistWindow(playlistName, definition) { Owner = _owner };
         return window.ShowDialog() == true ? window.Result : null;
     }
 
-    public TagEditModel? EditTags(Track track, AudioTagData currentTags)
+    public TagBatchEdit? EditTags(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> currentTags)
     {
-        var window = new TagPropertiesWindow(track, currentTags) { Owner = _owner };
+        var window = new TagPropertiesWindow(tracks, currentTags) { Owner = _owner };
         return window.ShowDialog() == true ? window.Result : null;
     }
 

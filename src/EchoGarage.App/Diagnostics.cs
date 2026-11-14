@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
 using EchoGarage.App.Views;
 using EchoGarage.Core.Models;
@@ -37,7 +38,30 @@ internal static class Diagnostics
                     180000, 320, 44100, 2, "FLAC", null, null);
             }
 
-            await CaptureWindowAsync(new TagPropertiesWindow(firstTrack, tags), directory, "dialog-tags.png", main);
+            await CaptureWindowAsync(new TagPropertiesWindow([firstTrack], [tags]), directory, "dialog-tags.png", main);
+
+            var multiTracks = vm.Tracks.Take(3).Select(r => r.Track).ToList();
+            if (multiTracks.Count > 1)
+            {
+                var multiTags = new List<AudioTagData>();
+                foreach (var track in multiTracks)
+                {
+                    try
+                    {
+                        multiTags.Add(host.TagService.Read(track.Path));
+                    }
+                    catch
+                    {
+                        multiTags.Add(tags);
+                    }
+                }
+
+                await CaptureWindowAsync(
+                    new TagPropertiesWindow(multiTracks, multiTags),
+                    directory,
+                    "dialog-tags-multi.png",
+                    main);
+            }
         }
 
         await CaptureWindowAsync(new SmartPlaylistWindow("智能播放列表", new SmartPlaylistDefinition
@@ -58,6 +82,13 @@ internal static class Diagnostics
             main);
         await CaptureWindowAsync(new FieldGuideWindow(), directory, "dialog-field-guide.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
+        var dialogs = new DialogService(main);
+        await CaptureWindowAsync(
+            new ConversionSettingsWindow(host.Settings.Current.ConversionPresets, dialogs),
+            directory,
+            "dialog-conversion-settings.png",
+            main);
+        await CaptureWindowAsync(new ConversionConflictWindow(3), directory, "dialog-conversion-conflict.png", main);
         await CaptureWindowAsync(new FileAssociationWindow(host), directory, "dialog-associations.png", main);
         await CaptureWindowAsync(new PlaylistPickerWindow(
             [new Playlist { Id = 2, Name = "测试播放列表" }, new Playlist { Id = 3, Name = "另一个列表" }],

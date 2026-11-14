@@ -17,7 +17,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
     private readonly IAppLogger _logger;
 
     private WasapiOut? _output;
-    private AudioFileReader? _reader;
+    private SharedAudioFileReader? _reader;
     private VolumeSampleProvider? _volumeProvider;
     private MMDevice? _device;
     private WaveFormat? _deviceMixFormat;
@@ -167,7 +167,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                     DisposeDevice();
                     CurrentTrackPath = path;
 
-                    var reader = new AudioFileReader(path);
+                    var reader = new SharedAudioFileReader(path);
                     _reader = reader;
 
                     if (playWhenReady)
@@ -338,7 +338,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
         }
     }
 
-    private void StartOutput(AudioFileReader reader, TimeSpan position, bool keepReaderPosition = false)
+    private void StartOutput(SharedAudioFileReader reader, TimeSpan position, bool keepReaderPosition = false)
     {
         if (!keepReaderPosition && position > TimeSpan.Zero)
         {

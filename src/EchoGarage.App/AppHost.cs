@@ -5,6 +5,7 @@ using EchoGarage.Core.Models;
 using EchoGarage.Infrastructure.Audio;
 using EchoGarage.Infrastructure.Caching;
 using EchoGarage.Infrastructure.Configuration;
+using EchoGarage.Infrastructure.Conversion;
 using EchoGarage.Infrastructure.Data;
 using EchoGarage.Infrastructure.Library;
 using EchoGarage.Infrastructure.Logging;
@@ -32,6 +33,7 @@ public sealed class AppHost : IAsyncDisposable
         LibraryRepository = new SqliteLibraryRepository(Database, Logger);
         PlaylistRepository = new SqlitePlaylistRepository(Database, Logger);
         TagService = new TagLibTagService(Logger);
+        Converter = new AudioConverter(TagService, Logger, Paths);
         Scanner = new LibraryScanner(LibraryRepository, TagService, Logger);
         Watcher = new LibraryFileWatcher(Logger);
         Player = new WasapiAudioPlayer(Logger);
@@ -44,6 +46,7 @@ public sealed class AppHost : IAsyncDisposable
     public ILibraryRepository LibraryRepository { get; }
     public IPlaylistRepository PlaylistRepository { get; }
     public ITagService TagService { get; }
+    public IAudioConverter Converter { get; }
     public ILibraryScanner Scanner { get; }
     public IFileWatcherService Watcher { get; }
     public IAudioPlayer Player { get; }
@@ -61,6 +64,8 @@ public sealed class AppHost : IAsyncDisposable
         await Database.InitializeAsync(cancellationToken);
         await PlaylistRepository.EnsureDefaultsAsync(cancellationToken);
         App.Timeline.Mark("database-ready");
+
+        AudioConverter.CleanupStaleTempFolders(Paths, Logger);
 
         Covers = new FileCoverCache(Settings.Current.CacheDirectory, Logger);
         CoverImages = new CoverImageService(Covers, Logger);

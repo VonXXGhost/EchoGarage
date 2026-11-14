@@ -113,6 +113,7 @@ public interface IAudioPlayer : IDisposable
     void Pause();
     void Stop();
     void Seek(TimeSpan position);
+
     void ConfigureOutput(string? deviceId, OutputMode mode);
 }
 
