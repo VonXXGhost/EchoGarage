@@ -47,12 +47,12 @@
   播放不中断且位置连续）**已获 owner 批准并归档到 `docs/adr/`**。
 - 2026-11-14：新增提案 `ADR-021-file-operations.md`（歌曲右键菜单「文件操作」：复制 到 / 移动 到
   的级联目标目录（设置页可配置并记忆）、删除文件走回收站、忽略「重命名 到…」；
-  移动 / 删除后同步 `tracks` 与 `playlist_items.TrackPath`）——**待 owner 批准**。
+  移动 / 删除后同步 `tracks` 与 `playlist_items.TrackPath`）——**已获 owner 批准（2026-11-15）并归档到 `docs/adr/`**。
 - 2026-11-15：`ADR-022-web-tag-search.md`（独立三步式 Web 标签搜索：Apple Music 日本源、
   可选代理、字段勾选记忆、专辑级多文件匹配与写入）**已获 owner 批准并归档到 `docs/adr/`**。
 - 2026-11-15：新增提案 `ADR-023-playback-visualizer.md`（右栏「正在播放」面板精简：
   删除标题 / 格式 / 路径行与年份；下方新增可切换的「播放可视化」子面板，第一阶段为分段频谱图：
   无锁环形缓冲抽头 + 渲染帧拉取分析、几何级数频段、dBFS 标定、斜率补偿与弹道、参数全部可配置并持久化、
   自定义 `OnRender` 控件 + 主题令牌，实测 134–144 FPS 无丢帧）——**已获 owner 批准（2026-11-15）并归档到 `docs/adr/`**。
-- 当前状态：待批准提案 1 个（`ADR-021-file-operations.md`）。
+- 当前状态：无待批准提案（`docs/proposals/` 下已无 ADR / KB 提案文件）。
 
