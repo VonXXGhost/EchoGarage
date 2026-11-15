@@ -3,8 +3,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:views="clr-namespace:EchoGarage.App.Views"
                     Title="设置"
-                    Width="720" Height="720"
-                    MinWidth="640" MinHeight="560"
+                    Width="880" Height="760"
+                    MinWidth="760" MinHeight="560"
                     WindowStartupLocation="CenterOwner"
                     Background="{DynamicResource WindowBackgroundBrush}"
                     Foreground="{DynamicResource TextPrimaryBrush}"
@@ -35,353 +35,608 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="SettingsNavItem" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </views:ThemedWindow.Resources>
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="196" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <!-- General -->
-                <TextBlock Text="通用设置" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="内置编码器：FLAC、LAME、SSRC 随软件附带，无需配置路径。"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
-                        <TextBlock x:Name="EncoderStatusText" Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="90" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Nero AAC" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBox Grid.Column="1" x:Name="NeroAacPathBox" Height="28" Margin="0,0,10,0"
-                                     LostFocus="OnNeroAacPathLostFocus"
-                                     ToolTip="neroAacEnc.exe 的完整路径" />
-                            <Button Grid.Column="2" Content="浏览…" Style="{StaticResource FlatButton}"
-                                    Click="OnBrowseNeroAac" />
-                        </Grid>
-                        <TextBlock Text="转换 AAC 需要 Nero AAC 编码器。其许可不允许随软件分发，请自行下载 neroAacEnc.exe 并在此指定路径。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                   Margin="90,8,0,0" />
-                    </StackPanel>
-                </Border>
+        <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1" CornerRadius="6" Padding="6">
+            <ListBox x:Name="SettingsNav" Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     SelectionChanged="OnSettingsNavChanged"
+                     ItemContainerStyle="{StaticResource SettingsNavItem}">
+                <ListBoxItem Content="外观" Tag="Appearance" />
+                <ListBoxItem Content="播放与音频" Tag="Playback" />
+                <ListBoxItem Content="快捷键" Tag="Hotkeys" />
+                <ListBoxItem Content="媒体库与缓存" Tag="Library" />
+                <ListBoxItem Content="文件与转换" Tag="Files" />
+                <ListBoxItem Content="网络与标签" Tag="Network" />
+                <ListBoxItem Content="关于" Tag="About" />
+            </ListBox>
+        </Border>
 
-                <!-- Appearance -->
-                <TextBlock Text="界面" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="90" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="主题" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
-                                      ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
-                        </Grid>
-                        <TextBlock Text="切换立即生效，并保存在配置中。浅色为默认主题，深色适合夜间使用。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   TextWrapping="Wrap" Margin="90,8,0,0" />
-                    </StackPanel>
-                </Border>
+        <ScrollViewer Grid.Column="1" Margin="18,0,0,0" VerticalScrollBarVisibility="Auto">
+            <Grid>
 
-                <!-- Audio output -->
-                <TextBlock Text="音频输出" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="90" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="输出设备" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding Devices}" DisplayMemberPath="FriendlyName"
-                                      SelectedItem="{Binding SelectedDevice}" Height="28" Margin="0,0,10,0" />
-                            <Button Grid.Column="2" Content="刷新" Style="{StaticResource FlatButton}"
-                                    Click="OnRefreshDevices" />
-                        </Grid>
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="90" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="输出模式" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
-                                      ItemsSource="{Binding OutputModeOptions}" SelectedIndex="{Binding OutputModeIndex}" />
-                        </Grid>
-                        <TextBlock Text="{Binding OutputDescription}" Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="11" Margin="90,10,0,0" TextWrapping="Wrap" />
-                        <TextBlock Text="独占模式绕过系统混音器，可减少处理环节；其他程序将无法同时播放声音。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                   Margin="90,6,0,0" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Hotkeys -->
-                <TextBlock Text="快捷键" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="播放控制与搜索快捷键。勾选“全局”后，即使焦点在其他程序也会生效；留空表示不设置（“打开高级搜索”留空时默认 Ctrl+F）。格式示例：Ctrl+Alt+Space、MediaPlayPause、Alt+F5。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
-                        <ListBox x:Name="HotkeyList" Margin="0,10,0,0" Background="Transparent" BorderThickness="0"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,2" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="90" />
-                                            <ColumnDefinition Width="190" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding ActionLabel}" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
-                                        <TextBox Grid.Column="1" Height="26" Margin="0,0,10,0"
-                                                 Text="{Binding Gesture, UpdateSourceTrigger=PropertyChanged}"
-                                                 TextChanged="OnHotkeyGestureChanged"
-                                                 ToolTip="例如 Ctrl+Alt+Space；留空表示不设置。" />
-                                        <CheckBox Grid.Column="2" Content="全局" IsChecked="{Binding Global}"
-                                                  Click="OnHotkeyGlobalChanged" VerticalAlignment="Center" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                        <TextBlock x:Name="HotkeyStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   Margin="0,8,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Library -->
-                <TextBlock Text="媒体库" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <CheckBox x:Name="AutoScanCheck" Content="启动时自动扫描媒体库（仅处理变化的文件）"
-                                  Click="OnToggleAutoScan" />
-                        <CheckBox x:Name="RestoreLastCheck" Content="启动时恢复上次打开的播放列表"
-                                  Margin="0,10,0,0" Click="OnToggleRestoreLast" />
-                        <TextBlock x:Name="LibrarySummaryText" Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Margin="0,10,0,0" />
-                        <ListBox x:Name="FolderList" Margin="0,10,0,0" MaxHeight="150" Background="Transparent"
-                                 BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Folder.Path}" ToolTip="{Binding Folder.Path}"
-                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
-                                        <Button Grid.Column="1" Content="移除" Style="{StaticResource FlatButton}"
-                                                Foreground="{DynamicResource DangerBrush}" Click="OnRemoveFolder" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Content="扫描媒体库" Style="{StaticResource FlatButton}" Click="OnRescan" />
+                <StackPanel x:Name="PageAppearance" Visibility="Visible">
+                    <!-- Appearance -->
+                    <TextBlock Text="界面" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="主题" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                                          ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
+                            </Grid>
+                            <TextBlock Text="切换立即生效，并保存在配置中。浅色为默认主题，深色适合夜间使用。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="90,8,0,0" />
                         </StackPanel>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </StackPanel>
 
-                <!-- Cache -->
-                <TextBlock Text="缓存与数据" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="封面缓存目录" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <Grid Margin="0,6,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="CacheDirBox" Grid.Column="0" Height="28" />
-                            <Button Grid.Column="1" Content="浏览…" Style="{StaticResource FlatButton}"
-                                    Margin="8,0,0,0" Click="OnBrowseCache" />
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="应用目录" Style="{StaticResource FlatButton}" Click="OnApplyCache" />
-                            <Button Content="打开目录" Style="{StaticResource FlatButton}" Click="OnOpenCache" />
-                            <Button x:Name="ClearCacheButton" Content="清空缓存 ▾" Style="{StaticResource FlatButton}"
-                                    Click="OnClearCacheMenuClick">
-                                <Button.ContextMenu>
-                                    <ContextMenu x:Name="ClearCacheMenu" Opened="OnClearCacheMenuOpened">
-                                        <MenuItem x:Name="ClearCoverCacheItem" Header="清空封面缓存" Click="OnClearCoverCache" />
-                                        <MenuItem x:Name="ClearWaveformCacheItem" Header="清空波形缓存" Click="OnClearWaveformCache" />
-                                        <Separator />
-                                        <MenuItem x:Name="ClearAllCachesItem" Header="清空全部缓存" Click="OnClearAllCaches" />
-                                    </ContextMenu>
-                                </Button.ContextMenu>
-                            </Button>
+                <StackPanel x:Name="PagePlayback" Visibility="Collapsed">
+                    <!-- Audio output -->
+                    <TextBlock Text="音频输出" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="输出设备" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Devices}" DisplayMemberPath="FriendlyName"
+                                          SelectedItem="{Binding SelectedDevice}" Height="28" Margin="0,0,10,0" />
+                                <Button Grid.Column="2" Content="刷新" Style="{StaticResource FlatButton}"
+                                        Click="OnRefreshDevices" />
+                            </Grid>
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="输出模式" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                                          ItemsSource="{Binding OutputModeOptions}" SelectedIndex="{Binding OutputModeIndex}" />
+                            </Grid>
+                            <TextBlock Text="{Binding OutputDescription}" Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="11" Margin="90,10,0,0" TextWrapping="Wrap" />
+                            <TextBlock Text="独占模式绕过系统混音器，可减少处理环节；其他程序将无法同时播放声音。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="90,6,0,0" />
                         </StackPanel>
-                        <TextBlock x:Name="CacheStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   Margin="0,8,0,0" TextWrapping="Wrap" />
-                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="波形缓存上限" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       VerticalAlignment="Center" />
-                            <ComboBox x:Name="WaveformLimitBox" Grid.Column="1" Width="130"
-                                      SelectionChanged="OnWaveformLimitChanged">
-                                <ComboBoxItem Content="128 MB" Tag="128" />
-                                <ComboBoxItem Content="256 MB（默认）" Tag="256" />
-                                <ComboBoxItem Content="512 MB" Tag="512" />
-                                <ComboBoxItem Content="1024 MB" Tag="1024" />
-                                <ComboBoxItem Content="不限制" Tag="0" />
-                            </ComboBox>
-                        </Grid>
-                        <TextBlock Text="超过上限时删除最久未使用的波形；不限制会让 Waveforms 目录随听歌量增长。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
-                                   TextWrapping="Wrap" />
-                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="打开配置目录" Style="{StaticResource FlatButton}" Click="OnOpenConfig" />
-                            <Button Content="打开数据目录" Style="{StaticResource FlatButton}" Click="OnOpenData" />
-                            <Button Content="打开日志目录" Style="{StaticResource FlatButton}" Click="OnOpenLogs" />
-                        </StackPanel>
-                        <TextBlock x:Name="DataDirText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   Margin="0,8,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
+                    </Border>
 
-                <!-- File operation destinations (ADR-021) -->
-                <TextBlock Text="文件操作目标文件夹" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="右键菜单「文件操作 → 复制 到 / 移动 到」会按此顺序列出这些文件夹。"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
-                        <Border Background="{DynamicResource PanelAltBackgroundBrush}" CornerRadius="4" Margin="0,8,0,0"
-                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="4">
-                            <ListBox x:Name="FileDestinationList" Height="112" Background="Transparent"
-                                     BorderThickness="0" ItemContainerStyle="{StaticResource DestinationListItem}"
+                    <!-- Playback visualizer (ADR-023) -->
+                    <TextBlock Text="播放可视化" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="右栏「正在播放」下方的实时频谱。所有参数改动立即生效，并随配置一起保存。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                            <TextBlock Text="分段数越大低频分得越细；FFT 越大频率分辨率越高、柱体反应越迟钝。默认 32 段、4096 点、−50 dB 下限。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="可视化方式" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="VisualizerKindBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="关闭" Tag="None" />
+                                    <ComboBoxItem Content="分段频谱图" Tag="Spectrum" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="分段数" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="SpectrumBandBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="16 段" Tag="16" />
+                                    <ComboBoxItem Content="24 段" Tag="24" />
+                                    <ComboBoxItem Content="32 段（默认）" Tag="32" />
+                                    <ComboBoxItem Content="40 段" Tag="40" />
+                                    <ComboBoxItem Content="48 段" Tag="48" />
+                                    <ComboBoxItem Content="64 段" Tag="64" />
+                                    <ComboBoxItem Content="96 段" Tag="96" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="FFT 大小" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="SpectrumFftBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="1024（最灵敏）" Tag="1024" />
+                                    <ComboBoxItem Content="2048" Tag="2048" />
+                                    <ComboBoxItem Content="4096（默认）" Tag="4096" />
+                                    <ComboBoxItem Content="8192（低频最准）" Tag="8192" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="频率范围" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <ComboBox x:Name="SpectrumMinFreqBox" Width="110"
+                                              SelectionChanged="OnVisualizerComboChanged">
+                                        <ComboBoxItem Content="20 Hz" Tag="20" />
+                                        <ComboBoxItem Content="30 Hz" Tag="30" />
+                                        <ComboBoxItem Content="40 Hz（默认）" Tag="40" />
+                                        <ComboBoxItem Content="50 Hz" Tag="50" />
+                                        <ComboBoxItem Content="80 Hz" Tag="80" />
+                                    </ComboBox>
+                                    <TextBlock Text="—" Margin="8,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                    <ComboBox x:Name="SpectrumMaxFreqBox" Width="130"
+                                              SelectionChanged="OnVisualizerComboChanged">
+                                        <ComboBoxItem Content="12 kHz" Tag="12000" />
+                                        <ComboBoxItem Content="14 kHz" Tag="14000" />
+                                        <ComboBoxItem Content="16 kHz" Tag="16000" />
+                                        <ComboBoxItem Content="18 kHz（默认）" Tag="18000" />
+                                        <ComboBoxItem Content="20 kHz" Tag="20000" />
+                                        <ComboBoxItem Content="22 kHz" Tag="22000" />
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="频段聚合" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="SpectrumSummationBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="平均功率（RMS，默认）" Tag="Rms" />
+                                    <ComboBoxItem Content="峰值（Peak）" Tag="Peak" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="显示下限" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="SpectrumFloorBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="−90 dB" Tag="-90" />
+                                    <ComboBoxItem Content="−80 dB" Tag="-80" />
+                                    <ComboBoxItem Content="−70 dB" Tag="-70" />
+                                    <ComboBoxItem Content="−60 dB" Tag="-60" />
+                                    <ComboBoxItem Content="−50 dB（默认）" Tag="-50" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="频谱斜率" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="SpectrumSlopeBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="0 dB/oct（平坦）" Tag="0" />
+                                    <ComboBoxItem Content="1.5 dB/oct" Tag="1.5" />
+                                    <ComboBoxItem Content="3 dB/oct（默认）" Tag="3" />
+                                    <ComboBoxItem Content="4.5 dB/oct" Tag="4.5" />
+                                    <ComboBoxItem Content="6 dB/oct" Tag="6" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="释放速度" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="SpectrumReleaseBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="10 dB/s（缓慢）" Tag="10" />
+                                    <ComboBoxItem Content="20 dB/s" Tag="20" />
+                                    <ComboBoxItem Content="30 dB/s" Tag="30" />
+                                    <ComboBoxItem Content="45 dB/s（默认）" Tag="45" />
+                                    <ComboBoxItem Content="60 dB/s（迅速回落）" Tag="60" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="峰值保持" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <CheckBox x:Name="SpectrumPeakShowCheck" Content="显示峰值线" VerticalAlignment="Center"
+                                              Checked="OnVisualizerToggleChanged" Unchecked="OnVisualizerToggleChanged" />
+                                    <ComboBox x:Name="SpectrumPeakHoldBox" Width="140" Margin="12,0,0,0"
+                                              SelectionChanged="OnVisualizerComboChanged">
+                                        <ComboBoxItem Content="不保持" Tag="0" />
+                                        <ComboBoxItem Content="400 ms" Tag="400" />
+                                        <ComboBoxItem Content="800 ms（默认）" Tag="800" />
+                                        <ComboBoxItem Content="1200 ms" Tag="1200" />
+                                        <ComboBoxItem Content="2000 ms" Tag="2000" />
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="刻度" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <CheckBox x:Name="SpectrumGraticuleCheck" Content="dB 刻度线" VerticalAlignment="Center"
+                                              Checked="OnVisualizerToggleChanged" Unchecked="OnVisualizerToggleChanged" />
+                                    <CheckBox x:Name="SpectrumFrequencyLabelsCheck" Content="频率标签" Margin="16,0,0,0"
+                                              VerticalAlignment="Center"
+                                              Checked="OnVisualizerToggleChanged" Unchecked="OnVisualizerToggleChanged" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Button Content="恢复默认参数" Style="{StaticResource FlatButton}" HorizontalAlignment="Left"
+                                    Margin="0,8,0,0" Click="OnResetVisualizerSettings" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="PageHotkeys" Visibility="Collapsed">
+                    <TextBlock Text="快捷键" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="播放控制与搜索快捷键。勾选“全局”后，即使焦点在其他程序也会生效；留空表示不设置（“打开高级搜索”留空时默认 Ctrl+F）。格式示例：Ctrl+Alt+Space、MediaPlayPause、Alt+F5。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                            <ListBox x:Name="HotkeyList" Margin="0,10,0,0" Background="Transparent" BorderThickness="0"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,2" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="190" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding ActionLabel}" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            <TextBox Grid.Column="1" Height="26" Margin="0,0,10,0"
+                                                     Text="{Binding Gesture, UpdateSourceTrigger=PropertyChanged}"
+                                                     TextChanged="OnHotkeyGestureChanged"
+                                                     ToolTip="例如 Ctrl+Alt+Space；留空表示不设置。" />
+                                            <CheckBox Grid.Column="2" Content="全局" IsChecked="{Binding Global}"
+                                                      Click="OnHotkeyGlobalChanged" VerticalAlignment="Center" />
+                                        </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                        </Border>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="添加文件夹…" Style="{StaticResource FlatButton}" Click="OnAddFileDestination" />
-                            <Button Content="移除" Style="{StaticResource FlatButton}" Click="OnRemoveFileDestination" />
-                            <Button Content="上移" Style="{StaticResource FlatButton}" Click="OnMoveFileDestinationUp" />
-                            <Button Content="下移" Style="{StaticResource FlatButton}" Click="OnMoveFileDestinationDown" />
+                            <TextBlock x:Name="HotkeyStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       Margin="0,8,0,0" TextWrapping="Wrap" />
                         </StackPanel>
-                        <TextBlock x:Name="FileDestinationStatusText" Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                                   Text="最多记住 20 个文件夹；右键菜单里的「选择文件夹…」也会自动记住新目录。" />
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </StackPanel>
 
-                <!-- Associations -->
-                <TextBlock Text="文件关联" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock x:Name="AssociationStatusText" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Content="管理文件关联…" Style="{StaticResource FlatButton}" Click="OnManageAssociations" />
+                <StackPanel x:Name="PageLibrary" Visibility="Collapsed">
+                    <!-- Library -->
+                    <TextBlock Text="媒体库" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <CheckBox x:Name="AutoScanCheck" Content="启动时自动扫描媒体库（仅处理变化的文件）"
+                                      Click="OnToggleAutoScan" />
+                            <CheckBox x:Name="RestoreLastCheck" Content="启动时恢复上次打开的播放列表"
+                                      Margin="0,10,0,0" Click="OnToggleRestoreLast" />
+                            <TextBlock x:Name="LibrarySummaryText" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="0,10,0,0" />
+                            <ListBox x:Name="FolderList" Margin="0,10,0,0" MaxHeight="150" Background="Transparent"
+                                     BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Folder.Path}" ToolTip="{Binding Folder.Path}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            <Button Grid.Column="1" Content="移除" Style="{StaticResource FlatButton}"
+                                                    Foreground="{DynamicResource DangerBrush}" Click="OnRemoveFolder" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="扫描媒体库" Style="{StaticResource FlatButton}" Click="OnRescan" />
+                            </StackPanel>
                         </StackPanel>
-                        <TextBlock Text="文件关联是可选手动操作，启动时不会自动注册；注册时可以选择具体格式。Windows 10/11 会保护用户已选择的默认应用，注册后需要在系统设置中确认 EchoGarage。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                   Margin="0,8,0,0" />
-                    </StackPanel>
-                </Border>
+                    </Border>
 
-                <!-- Network / Web tag sources (ADR-022) -->
-                <TextBlock Text="网络与 Web 标签" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="Web 搜索标签会访问 Apple Music 日本网页；仅在你主动搜索时联网，启动过程不会发起网络请求。"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
-                        <Grid Margin="0,12,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="代理模式" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       VerticalAlignment="Center" />
-                            <ComboBox x:Name="ProxyModeBox" Grid.Column="1" Width="210"
-                                      SelectionChanged="OnProxyModeChanged">
-                                <ComboBoxItem Content="跟随系统" Tag="System" />
-                                <ComboBoxItem Content="不使用代理" Tag="Direct" />
-                                <ComboBoxItem Content="自定义 HTTP/HTTPS 代理" Tag="Custom" />
-                            </ComboBox>
-                        </Grid>
-                        <Grid Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="代理地址" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       VerticalAlignment="Center" />
-                            <TextBox x:Name="ProxyUrlBox" Grid.Column="1" Width="300" Height="28"
-                                     ToolTip="例如 http://127.0.0.1:7890（仅支持 http/https）"
-                                     TextChanged="OnProxyUrlChanged" />
-                        </Grid>
-                        <TextBlock x:Name="ProxyHintText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   Margin="0,6,0,0" TextWrapping="Wrap" />
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
-                            <Button Content="测试连接" Style="{StaticResource FlatButton}" Click="OnTestWebConnection" />
-                            <TextBlock x:Name="WebConnectionStatusText" Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <!-- Cache -->
+                    <TextBlock Text="缓存与数据" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="封面缓存目录" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <Grid Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="CacheDirBox" Grid.Column="0" Height="28" />
+                                <Button Grid.Column="1" Content="浏览…" Style="{StaticResource FlatButton}"
+                                        Margin="8,0,0,0" Click="OnBrowseCache" />
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="应用目录" Style="{StaticResource FlatButton}" Click="OnApplyCache" />
+                                <Button Content="打开目录" Style="{StaticResource FlatButton}" Click="OnOpenCache" />
+                                <Button x:Name="ClearCacheButton" Content="清空缓存 ▾" Style="{StaticResource FlatButton}"
+                                        Click="OnClearCacheMenuClick">
+                                    <Button.ContextMenu>
+                                        <ContextMenu x:Name="ClearCacheMenu" Opened="OnClearCacheMenuOpened">
+                                            <MenuItem x:Name="ClearCoverCacheItem" Header="清空封面缓存" Click="OnClearCoverCache" />
+                                            <MenuItem x:Name="ClearWaveformCacheItem" Header="清空波形缓存" Click="OnClearWaveformCache" />
+                                            <Separator />
+                                            <MenuItem x:Name="ClearAllCachesItem" Header="清空全部缓存" Click="OnClearAllCaches" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                            </StackPanel>
+                            <TextBlock x:Name="CacheStatusText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       Margin="0,8,0,0" TextWrapping="Wrap" />
+                            <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="波形缓存上限" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <ComboBox x:Name="WaveformLimitBox" Grid.Column="1" Width="130"
+                                          SelectionChanged="OnWaveformLimitChanged">
+                                    <ComboBoxItem Content="128 MB" Tag="128" />
+                                    <ComboBoxItem Content="256 MB（默认）" Tag="256" />
+                                    <ComboBoxItem Content="512 MB" Tag="512" />
+                                    <ComboBoxItem Content="1024 MB" Tag="1024" />
+                                    <ComboBoxItem Content="不限制" Tag="0" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock Text="超过上限时删除最久未使用的波形；不限制会让 Waveforms 目录随听歌量增长。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
+                                       TextWrapping="Wrap" />
+                            <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="打开配置目录" Style="{StaticResource FlatButton}" Click="OnOpenConfig" />
+                                <Button Content="打开数据目录" Style="{StaticResource FlatButton}" Click="OnOpenData" />
+                                <Button Content="打开日志目录" Style="{StaticResource FlatButton}" Click="OnOpenLogs" />
+                            </StackPanel>
+                            <TextBlock x:Name="DataDirText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       Margin="0,8,0,0" TextWrapping="Wrap" />
                         </StackPanel>
-                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
-                        <CheckBox x:Name="AppleMusicSourceCheck" Content="启用 Apple Music（日本）网页源"
-                                  Checked="OnWebSourceChanged" Unchecked="OnWebSourceChanged" />
-                        <TextBlock Text="第一阶段仅内置该源。搜索关键词、结果与标签均来自 Apple Music 网页返回的数据。"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </StackPanel>
 
-                <!-- About -->
-                <TextBlock Text="关于" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
-                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="EchoGarage v0.1.0" FontWeight="SemiBold" />
-                        <TextBlock Text="本地音乐播放器 · WPF / .NET 10 · NAudio WASAPI" Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Margin="0,4,0,0" />
-                        <TextBlock x:Name="StartupText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   Margin="0,8,0,0" TextWrapping="Wrap" />
-                        <TextBlock x:Name="DataPathText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   Margin="0,8,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
-            </StackPanel>
+                <StackPanel x:Name="PageFiles" Visibility="Collapsed">
+                    <!-- Encoders -->
+                    <TextBlock Text="编码器" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="内置编码器：FLAC、LAME、SSRC 随软件附带，无需配置路径。"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="EncoderStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Nero AAC" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <TextBox Grid.Column="1" x:Name="NeroAacPathBox" Height="28" Margin="0,0,10,0"
+                                         LostFocus="OnNeroAacPathLostFocus"
+                                         ToolTip="neroAacEnc.exe 的完整路径" />
+                                <Button Grid.Column="2" Content="浏览…" Style="{StaticResource FlatButton}"
+                                        Click="OnBrowseNeroAac" />
+                            </Grid>
+                            <TextBlock Text="转换 AAC 需要 Nero AAC 编码器。其许可不允许随软件分发，请自行下载 neroAacEnc.exe 并在此指定路径。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="90,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- File operation destinations (ADR-021) -->
+                    <TextBlock Text="文件操作目标文件夹" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="右键菜单「文件操作 → 复制 到 / 移动 到」会按此顺序列出这些文件夹。"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                            <Border Background="{DynamicResource PanelAltBackgroundBrush}" CornerRadius="4" Margin="0,8,0,0"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="4">
+                                <ListBox x:Name="FileDestinationList" Height="112" Background="Transparent"
+                                         BorderThickness="0" ItemContainerStyle="{StaticResource DestinationListItem}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding}" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="添加文件夹…" Style="{StaticResource FlatButton}" Click="OnAddFileDestination" />
+                                <Button Content="移除" Style="{StaticResource FlatButton}" Click="OnRemoveFileDestination" />
+                                <Button Content="上移" Style="{StaticResource FlatButton}" Click="OnMoveFileDestinationUp" />
+                                <Button Content="下移" Style="{StaticResource FlatButton}" Click="OnMoveFileDestinationDown" />
+                            </StackPanel>
+                            <TextBlock x:Name="FileDestinationStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Text="最多记住 20 个文件夹；右键菜单里的「选择文件夹…」也会自动记住新目录。" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Associations -->
+                    <TextBlock Text="文件关联" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock x:Name="AssociationStatusText" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="管理文件关联…" Style="{StaticResource FlatButton}" Click="OnManageAssociations" />
+                            </StackPanel>
+                            <TextBlock Text="文件关联是可选手动操作，启动时不会自动注册；注册时可以选择具体格式。Windows 10/11 会保护用户已选择的默认应用，注册后需要在系统设置中确认 EchoGarage。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="PageNetwork" Visibility="Collapsed">
+                    <!-- Network / Web tag sources (ADR-022) -->
+                    <TextBlock Text="网络与 Web 标签" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="Web 搜索标签会访问 Apple Music 日本网页；仅在你主动搜索时联网，启动过程不会发起网络请求。"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="代理模式" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <ComboBox x:Name="ProxyModeBox" Grid.Column="1" Width="210"
+                                          SelectionChanged="OnProxyModeChanged">
+                                    <ComboBoxItem Content="跟随系统" Tag="System" />
+                                    <ComboBoxItem Content="不使用代理" Tag="Direct" />
+                                    <ComboBoxItem Content="自定义 HTTP/HTTPS 代理" Tag="Custom" />
+                                </ComboBox>
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="代理地址" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <TextBox x:Name="ProxyUrlBox" Grid.Column="1" Width="300" Height="28"
+                                         ToolTip="例如 http://127.0.0.1:7890（仅支持 http/https）"
+                                         TextChanged="OnProxyUrlChanged" />
+                            </Grid>
+                            <TextBlock x:Name="ProxyHintText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       Margin="0,6,0,0" TextWrapping="Wrap" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
+                                <Button Content="测试连接" Style="{StaticResource FlatButton}" Click="OnTestWebConnection" />
+                                <TextBlock x:Name="WebConnectionStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                           FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
+                            <CheckBox x:Name="AppleMusicSourceCheck" Content="启用 Apple Music（日本）网页源"
+                                      Checked="OnWebSourceChanged" Unchecked="OnWebSourceChanged" />
+                            <TextBlock Text="第一阶段仅内置该源。搜索关键词、结果与标签均来自 Apple Music 网页返回的数据。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="PageAbout" Visibility="Collapsed">
+                    <!-- About -->
+                    <TextBlock Text="关于" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="EchoGarage v0.1.0" FontWeight="SemiBold" />
+                            <TextBlock Text="本地音乐播放器 · WPF / .NET 10 · NAudio WASAPI" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="0,4,0,0" />
+                            <TextBlock x:Name="StartupText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       Margin="0,8,0,0" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DataPathText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       Margin="0,8,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="关闭" Style="{StaticResource AccentButton}" Click="OnClose" IsDefault="True" />
         </StackPanel>
     </Grid>

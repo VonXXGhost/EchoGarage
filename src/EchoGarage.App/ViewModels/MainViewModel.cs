@@ -583,40 +583,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public bool HasCurrentTrack => CurrentRow is not null || !string.IsNullOrEmpty(CurrentTitle) && CurrentTitle != "未在播放";
 
-    public string CurrentFormatText
-    {
-        get
-        {
-            if (CurrentRow is null)
-            {
-                return string.Empty;
-            }
-
-            var track = CurrentRow.Track;
-            var parts = new List<string> { track.FormatDisplay };
-            var sampleRate = DisplayFormatter.SampleRate(track.SampleRate);
-            if (!string.IsNullOrEmpty(sampleRate))
-            {
-                parts.Add(sampleRate + "Hz");
-            }
-
-            var bitrate = DisplayFormatter.Bitrate(track.Bitrate);
-            if (!string.IsNullOrEmpty(bitrate))
-            {
-                parts.Add(bitrate + "bps");
-            }
-
-            if (track.Channels > 0)
-            {
-                parts.Add(track.Channels == 2 ? "立体声" : track.Channels == 1 ? "单声道" : $"{track.Channels} 声道");
-            }
-
-            return string.Join(" | ", parts);
-        }
-    }
-
-    public string CurrentFilePath => CurrentRow?.Track.Path ?? string.Empty;
-
     /// <summary>
     /// Single-line "♪ title — artist — album" summary for the status bar. Missing tags are
     /// skipped and the resting state falls back to "就绪".
@@ -664,11 +630,35 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnCurrentRowChanged(TrackRowViewModel? value)
     {
-        OnPropertyChanged(nameof(CurrentFormatText));
-        OnPropertyChanged(nameof(CurrentFilePath));
         OnPropertyChanged(nameof(HasCurrentTrack));
         OnPropertyChanged(nameof(ShowCoverPlaceholder));
         OnPropertyChanged(nameof(NowPlayingStatusText));
+    }
+
+    // =====================================================================
+    // 播放可视化（ADR-023）
+    // =====================================================================
+
+    /// <summary>右栏频谱可视化的数据源（由 AppHost 持有，生命周期与应用一致）。</summary>
+    public ISpectrumSource Spectrum => _host.Spectrum;
+
+    /// <summary>渲染层使用的不可变参数快照；设置变更时整体替换以触发视图重建。</summary>
+    [ObservableProperty]
+    private SpectrumOptions? _spectrumOptions;
+
+    /// <summary>右栏是否显示可视化（设置里关掉时整块隐藏，把空间还给窗口）。</summary>
+    public bool ShowVisualizer => Settings.Visualization.Kind != VisualizerKind.None;
+
+    /// <summary>
+    /// 把设置里的可视化参数推给分析引擎，并刷新视图用的快照。
+    /// 启动、设置窗改参数、导入配置后调用。
+    /// </summary>
+    public void RefreshVisualizer()
+    {
+        var visualization = Settings.Visualization;
+        _host.Spectrum.Apply(visualization);
+        SpectrumOptions = EchoGarage.Core.Models.SpectrumOptions.From(visualization.Spectrum);
+        OnPropertyChanged(nameof(ShowVisualizer));
     }
 
     // =====================================================================
@@ -676,6 +666,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // =====================================================================
     public async Task InitializeAsync()
     {
+        RefreshVisualizer();
         var stopwatch = Stopwatch.StartNew();
         await ReloadSourcesAsync();
         _host.Logger.Info($"Sources loaded in {stopwatch.ElapsedMilliseconds} ms.");
@@ -1652,11 +1643,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(track.Album))
         {
             parts.Add(track.Album);
-        }
-
-        if (track.Year is > 0)
-        {
-            parts.Add(track.Year.Value.ToString());
         }
 
         CurrentInfo = string.Join(" · ", parts);
@@ -3230,6 +3216,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ThemeIndex = _host.Settings.Current.Theme == ThemeKind.Light ? 0 : 1;
             _suppressThemeApply = false;
             ThemeManager.Apply(_host.Settings.Current.Theme);
+            RefreshVisualizer();
 
             ApplyOutput();
             LayoutChanged?.Invoke(this, EventArgs.Empty);
@@ -3297,6 +3284,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Settings.OutputDeviceId = SelectedDevice?.Id;
         Settings.ShowAlbumPanel = ShowAlbumPanel;
         await _host.Settings.SaveAsync();
+
+        // 可视化性能验收数据：平均 / 最大每帧分析耗时写进日志（ADR-023 §10）。
+        var stats = _host.Spectrum.Stats;
+        if (stats.Frames > 0)
+        {
+            _host.Logger.Info(
+                $"Spectrum stats: frames={stats.Frames}, avg={stats.AverageMilliseconds:F3} ms, " +
+                $"max={stats.MaxMilliseconds:F3} ms, rate={stats.SampleRate}Hz, bands={stats.BandCount}");
+        }
     }
 
     public void Dispose()

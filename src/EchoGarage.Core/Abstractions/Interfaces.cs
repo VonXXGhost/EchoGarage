@@ -195,3 +195,57 @@ public interface IWaveformService
 
     Task RelocateAsync(string newRoot, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// 音频样本抽头（ADR-023 §6.2）：播放器在重采样 / 声道转换之后、音量调节之前把样本交给可视化引擎，
+/// 因此静音时仍能出图（符合 ADR-012 的静音验收要求）。实现运行在音频线程上，必须无锁、无阻塞、不分配。
+/// </summary>
+public interface IAudioSampleSink
+{
+    /// <summary>输出链建立时调用，告知实际的输出采样率与声道数。</summary>
+    void Configure(int sampleRate, int channels);
+
+    /// <summary>
+    /// 音频线程回调。<paramref name="samples"/> 为交错样本（帧数 = count / channels）。
+    /// 只在该调用内有效，不得保存引用。
+    /// </summary>
+    void Write(float[] samples, int offset, int count);
+
+    /// <summary>跳转 / 停止 / 换曲：丢弃已缓冲的旧样本与弹道状态。</summary>
+    void Reset();
+}
+
+/// <summary>
+/// 频谱数据源（ADR-023 §6.3）：由 UI 渲染线程每帧调用 <see cref="NextFrame"/> 拉取一帧，分析在调用内
+/// 同步完成（4096 点 FFT 约 0.06 ms，远小于一帧预算），因此不需要后台线程与跨线程发布。
+/// 参数通过 <see cref="Apply"/> 整体替换，可在任意线程调用。
+/// </summary>
+public interface ISpectrumSource
+{
+    /// <summary>应用新的可视化设置；下一帧生效。</summary>
+    void Apply(VisualizationSettings settings);
+
+    /// <summary>重置弹道与已缓冲样本（跳转 / 换曲）。</summary>
+    void Reset();
+
+    /// <summary>
+    /// 计算并返回一帧。<paramref name="dtSeconds"/> 是距上一帧的秒数，用于弹道推进。
+    /// 必须在渲染线程（UI 线程）调用，不要在工作线程调用。
+    /// </summary>
+    SpectrumFrame NextFrame(double dtSeconds);
+
+    /// <summary>诊断统计（日志 / 性能验收用）。</summary>
+    SpectrumStats Stats { get; }
+}
+
+/// <summary>频谱分析的运行统计（ADR-023 §11）：帧数、累计与单帧最大分析耗时、采样率。</summary>
+public readonly record struct SpectrumStats(
+    long Frames,
+    double TotalMilliseconds,
+    double MaxMilliseconds,
+    int SampleRate,
+    int BandCount)
+{
+    /// <summary>平均每帧分析耗时（毫秒）；尚无数据时为 0。</summary>
+    public double AverageMilliseconds => Frames > 0 ? TotalMilliseconds / Frames : 0.0;
+}

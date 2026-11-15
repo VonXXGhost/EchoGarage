@@ -26,6 +26,7 @@ public sealed class AppHost : IAsyncDisposable
     public const string WaveformCacheFolderName = "Waveforms";
 
     private readonly Stopwatch _lifetime = Stopwatch.StartNew();
+    private readonly SpectrumAnalyzer _spectrumAnalyzer;
     private bool _shutdown;
     private FileWaveformCache? _waveformCacheImpl;
 
@@ -42,7 +43,9 @@ public sealed class AppHost : IAsyncDisposable
         Converter = new AudioConverter(TagService, Logger, Paths);
         Scanner = new LibraryScanner(LibraryRepository, TagService, Logger);
         Watcher = new LibraryFileWatcher(Logger);
-        Player = new WasapiAudioPlayer(Logger);
+        // 播放可视化数据源（ADR-023）：播放器把解码后的样本喂给它，右栏控件按渲染帧拉取。
+        _spectrumAnalyzer = new SpectrumAnalyzer(Logger);
+        Player = new WasapiAudioPlayer(Logger, _spectrumAnalyzer);
         Files = new FileOperationService(Logger);
 
         var webTagHttp = new WebTagHttpClientFactory();
@@ -64,6 +67,8 @@ public sealed class AppHost : IAsyncDisposable
     public ILibraryScanner Scanner { get; }
     public IFileWatcherService Watcher { get; }
     public IAudioPlayer Player { get; }
+    /// <summary>右栏「播放可视化」的数据源（ADR-023）；由 MainViewModel 在启动与设置变更时 Apply。</summary>
+    public ISpectrumSource Spectrum => _spectrumAnalyzer;
     /// <summary>复制 / 移动 / 删除到回收站（ADR-021）。</summary>
     public IFileOperationService Files { get; }
     /// <summary>Web 搜索标签源服务（ADR-022）；构造时不联网。</summary>
@@ -237,6 +242,7 @@ public sealed class AppHost : IAsyncDisposable
         {
             Watcher.Dispose();
             Player.Dispose();
+            _spectrumAnalyzer.Dispose();
             CoverImages.Dispose();
         }
         catch (Exception ex)

@@ -105,9 +105,10 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 默认是便携模式：配置与媒体库都在 exe 旁的 `EchoGarageData`，不要读写 `%APPDATA%` / `%LOCALAPPDATA%`。
 - 日志级别：`[INFO]` 生命周期与关键操作、`[WARN]` 可恢复问题、`[ERROR]` 需要用户/开发介入、`[DEBUG]` 高频细节。
 - 内置诊断开关：`--screenshot <png>`、`--screenshot-all <dir>`、`--play-file <file>`、`--seek-seconds <n>`、
-  `--waveform <file> <png>`
+  `--waveform <file> <png>`、`--visualizer <file> <png> [秒数]`
   （用于高 DPI / 无 UI 交互时检查界面与跳转行为；`--waveform` 强制本次启动使用波形进度条模式，
-  播放指定文件并等待波形分析完整后截图）。
+  播放指定文件并等待波形分析完整后截图；`--visualizer` 播放指定文件后采样若干秒，
+  在日志里输出右栏可视化的渲染帧率 / 分析耗时并截图，见 ADR-023）。
 - 用户反馈问题时，优先索取：日志文件、`settings.json`、问题歌曲的格式与时长。
 
 ## 9. 提交与文档

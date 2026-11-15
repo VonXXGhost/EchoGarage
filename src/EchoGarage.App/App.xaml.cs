@@ -127,6 +127,42 @@ public partial class App : Application
                 window.SaveScreenshot(waveformScreenshot);
             }
 
+            var visualizerIndex = Array.FindIndex(e.Args,
+                a => string.Equals(a, "--visualizer", StringComparison.OrdinalIgnoreCase));
+            if (visualizerIndex >= 0 && visualizerIndex + 2 < e.Args.Length)
+            {
+                // ADR-023 诊断开关：--visualizer <音频文件> <png> [秒数]
+                // 播放文件 → 等若干秒后统计渲染帧率与每帧耗时 → 截图；无需注入鼠标键盘。
+                var visualizerFile = e.Args[visualizerIndex + 1];
+                var visualizerScreenshot = e.Args[visualizerIndex + 2];
+                var seconds = visualizerIndex + 3 < e.Args.Length &&
+                              double.TryParse(e.Args[visualizerIndex + 3],
+                                  System.Globalization.NumberStyles.Float,
+                                  System.Globalization.CultureInfo.InvariantCulture, out var requestedSeconds)
+                    ? Math.Clamp(requestedSeconds, 0.5, 30)
+                    : 3.0;
+
+                await window.ViewModel.PlayPathForDiagnosticsAsync(visualizerFile);
+                await Task.Delay(600);
+                window.Visualizer.ResetRenderStatistics();
+                await Task.Delay(TimeSpan.FromSeconds(seconds));
+
+                var visualizerStats = Host.Spectrum.Stats;
+                var renderFrames = window.Visualizer.RenderedFrames;
+                var measuredSeconds = window.Visualizer.MeasuredSeconds;
+                Host.Logger.Info(
+                    $"Visualizer diagnostic: file={visualizerFile} sampled={seconds:F1}s measured={measuredSeconds:F2}s " +
+                    $"renderFrames={renderFrames} fps={window.Visualizer.RenderedFramesPerSecond:F1} " +
+                    $"ticks={window.Visualizer.RenderingTicks} tickFps={window.Visualizer.RenderingFramesPerSecond:F1} " +
+                    $"renderAvg={window.Visualizer.AverageRenderMilliseconds:F3} ms " +
+                    $"renderMax={window.Visualizer.MaxRenderMilliseconds:F3} ms " +
+                    $"analyzerFrames={visualizerStats.Frames} " +
+                    $"analyzerAvg={visualizerStats.AverageMilliseconds:F3} ms " +
+                    $"analyzerMax={visualizerStats.MaxMilliseconds:F3} ms " +
+                    $"rate={visualizerStats.SampleRate}Hz bands={visualizerStats.BandCount}");
+                window.SaveScreenshot(visualizerScreenshot);
+            }
+
             Host.Logger.Info($"Startup complete in {Timeline.ElapsedSinceStart.TotalMilliseconds:F0} ms " +
                              $"(window shown at {Timeline.ElapsedAt("window-shown").TotalMilliseconds:F0} ms).");
         }

@@ -63,6 +63,9 @@ public sealed class AppSettings
     /// <summary>Web 标签源与字段勾选记忆（ADR-022）。</summary>
     public WebTagSettings WebTags { get; set; } = new();
 
+    /// <summary>右栏「正在播放」下方的播放可视化设置（ADR-023）。</summary>
+    public VisualizationSettings Visualization { get; set; } = new();
+
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 880;
     public double? WindowLeft { get; set; }

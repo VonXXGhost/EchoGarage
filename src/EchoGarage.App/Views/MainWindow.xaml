@@ -141,7 +141,9 @@
                         <StackPanel>
                             <Border Height="30" Background="{DynamicResource GroupHeaderBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
-                                    Padding="8,0">
+                                    Padding="8,0" Cursor="Hand"
+                                    ToolTip="单击选中本组全部歌曲（按住 Ctrl 追加到当前选择）"
+                                    MouseLeftButtonDown="OnGroupHeaderMouseLeftButtonDown">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -424,14 +426,13 @@
              （Opened / SubmenuOpened），WPF 会重建已显示的菜单容器，
              鼠标移入子菜单时整条菜单链会被收起。 -->
         <ContextMenu x:Key="TrackMenu">
-            <MenuItem Header="播放" Click="OnPlaySelectedClick" />
+            <MenuItem Header="移除列表" Click="OnRemoveSelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
             <MenuItem Header="Web 搜索标签…" Click="OnWebTagSearchClick" />
             <MenuItem Header="转换" />
             <MenuItem Header="文件操作" />
             <Separator />
             <MenuItem Header="添加到播放列表…" Click="OnAddToPlaylistClick" />
-            <MenuItem Header="从当前播放列表移除" Click="OnRemoveSelectedClick" />
             <Separator />
             <MenuItem Header="在资源管理器中显示" Click="OnRevealClick" />
         </ContextMenu>
@@ -772,10 +773,20 @@
             <Border Grid.Column="2" Background="{DynamicResource PanelBackgroundBrush}"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0"
                     Visibility="{Binding ShowAlbumPanel, Converter={StaticResource BoolToVisibility}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="18,16,18,18">
-                        <TextBlock Text="正在播放" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
-                        <StackPanel Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
+                <ScrollViewer x:Name="NowPlayingScroll" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Padding="18,16,18,18">
+                    <!-- MinHeight 绑视口高度：内容不足一屏时 Grid 撑满面板，星号行才能拿到“剩余空间”；
+                         内容超过一屏时照常滚动（小窗口 / 高 DPI 下仍然可用）。 -->
+                    <Grid MinHeight="{Binding ViewportHeight, ElementName=NowPlayingScroll}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 只留封面与基础歌曲信息：格式 / 采样率 / 路径等细节在列表与标签面板里已有，
+                             面板标题与文件信息行按 owner 要求移除（ADR-023）。 -->
+                        <StackPanel Grid.Row="0" Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
                             <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True" Height="300">
                                 <Grid>
                                     <Image Source="{Binding CurrentCover}" Stretch="Uniform"
@@ -799,22 +810,21 @@
                                        Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding CurrentInfo}" Foreground="{DynamicResource TextMutedBrush}"
                                        Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
-                            <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,14,0,12" />
-                            <TextBlock Text="{Binding CurrentFormatText}" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       FontSize="11" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding CurrentFilePath}" Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0" />
                         </StackPanel>
-                        <StackPanel Visibility="{Binding HasCurrentTrack, Converter={StaticResource InverseBoolToVisibility}}">
+                        <StackPanel Grid.Row="1" Visibility="{Binding HasCurrentTrack, Converter={StaticResource InverseBoolToVisibility}}">
                             <TextBlock Text="未在播放" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" />
                             <TextBlock Text="在列表中双击歌曲，或按空格开始播放。" Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
                         </StackPanel>
-                        <!-- Reserved for a future now-playing visualizer (e.g. a live spectrum).
-                             The output / playlist / library statistics block that used to sit here
-                             was removed on purpose; keep this area free. -->
-                        <Grid x:Name="NowPlayingVisualizerHost" Margin="0,14,0,0" />
-                    </StackPanel>
+
+                        <!-- 播放可视化（ADR-023）：第一阶段内置分段频谱图，填满面板剩余高度。 -->
+                        <controls:SpectrumView x:Name="NowPlayingSpectrum" Grid.Row="2" Margin="0,14,0,0"
+                                               MinHeight="96"
+                                               Source="{Binding Spectrum}"
+                                               Options="{Binding SpectrumOptions}"
+                                               AutomationProperties.AutomationId="NowPlayingSpectrum"
+                                               Visibility="{Binding ShowVisualizer, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
                 </ScrollViewer>
             </Border>
             <!-- Draggable column boundaries. The splitter hit area overlays the existing

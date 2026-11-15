@@ -60,6 +60,13 @@
     <SolidColorBrush x:Key="WaveformPlayedOverlayBrush" Color="#4D0E1014" />
     <SolidColorBrush x:Key="WaveformPlayheadBrush" Color="#E7EAEF" />
 
+    <!-- ADR-023 分段频谱图：深色面板上柱体由深蓝升到亮蓝，峰值线再亮一档。 -->
+    <SolidColorBrush x:Key="SpectrumBarBottomBrush" Color="#102B52" />
+    <SolidColorBrush x:Key="SpectrumBarTopBrush" Color="#4E9AEE" />
+    <SolidColorBrush x:Key="SpectrumPeakBrush" Color="#9CC9F8" />
+    <SolidColorBrush x:Key="SpectrumGridBrush" Color="#262D38" />
+    <SolidColorBrush x:Key="SpectrumLabelBrush" Color="#6C7480" />
+
     <FontFamily x:Key="UiFont">Microsoft YaHei UI, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas, Cascadia Mono, Microsoft YaHei UI</FontFamily>
 

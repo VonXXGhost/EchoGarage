@@ -771,6 +771,19 @@
         <Setter Property="FocusBrush" Value="{DynamicResource AccentBrush}" />
     </Style>
 
+    <!-- ============ Spectrum visualizer (ADR-023) ============ -->
+    <!-- 颜色全部来自主题令牌；控件本身不出现字面颜色（AGENTS.md §4 / KB-006）。 -->
+    <Style TargetType="{x:Type controls:SpectrumView}">
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="MinHeight" Value="72" />
+        <Setter Property="BarBottomBrush" Value="{DynamicResource SpectrumBarBottomBrush}" />
+        <Setter Property="BarTopBrush" Value="{DynamicResource SpectrumBarTopBrush}" />
+        <Setter Property="PeakBrush" Value="{DynamicResource SpectrumPeakBrush}" />
+        <Setter Property="GraticuleBrush" Value="{DynamicResource SpectrumGridBrush}" />
+        <Setter Property="LabelBrush" Value="{DynamicResource SpectrumLabelBrush}" />
+    </Style>
+
     <!-- 进度区左端的形态切换按钮：与右侧顺序 / 随机按钮一致，只靠图标区分当前形态，
          不画“已启用”底色（owner 2026-11-14 反馈）。 -->
     <Style x:Key="WaveformModeToggle" TargetType="ToggleButton">

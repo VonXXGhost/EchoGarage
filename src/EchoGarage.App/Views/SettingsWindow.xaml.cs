@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +30,7 @@ public partial class SettingsWindow : ThemedWindow
     private bool _loadingHotkeys;
     private bool _loadingCache;
     private bool _loadingWebSettings;
+    private bool _loadingVisualizer;
 
     public SettingsWindow(AppHost host, MainViewModel vm)
     {
@@ -63,6 +65,36 @@ public partial class SettingsWindow : ThemedWindow
         PopulateEncoders();
         UpdateAssociationStatus();
         PopulateWebTagSettings();
+        PopulateVisualizer();
+        SelectDefaultSettingsPage();
+    }
+
+    /// <summary>默认选中左侧导航的第一项（外观）。</summary>
+    private void SelectDefaultSettingsPage()
+    {
+        if (SettingsNav.SelectedIndex < 0)
+        {
+            SettingsNav.SelectedIndex = 0;
+        }
+    }
+
+    /// <summary>根据左侧导航的选中项切换右侧页面可见性。</summary>
+    private void OnSettingsNavChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PageAppearance is null)
+        {
+            // InitializeComponent 期间可能先触发一次，此时页面字段还没就绪。
+            return;
+        }
+
+        var tag = (SettingsNav.SelectedItem as ListBoxItem)?.Tag as string ?? "Appearance";
+        PageAppearance.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
+        PagePlayback.Visibility = tag == "Playback" ? Visibility.Visible : Visibility.Collapsed;
+        PageHotkeys.Visibility = tag == "Hotkeys" ? Visibility.Visible : Visibility.Collapsed;
+        PageLibrary.Visibility = tag == "Library" ? Visibility.Visible : Visibility.Collapsed;
+        PageFiles.Visibility = tag == "Files" ? Visibility.Visible : Visibility.Collapsed;
+        PageNetwork.Visibility = tag == "Network" ? Visibility.Visible : Visibility.Collapsed;
+        PageAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private string vm_LibrarySummary() => _vm.LibrarySummary;
@@ -719,6 +751,142 @@ public partial class SettingsWindow : ThemedWindow
         _host.Settings.Current.RestoreLastPlaylist = RestoreLastCheck.IsChecked == true;
         SaveSettings();
     }
+
+    /// <summary>
+    /// 把配置里的播放可视化参数播种到控件。控件只列出推荐的取值集合，若磁盘上的值不在集合内
+    /// （例如手工改过 settings.json），就选中数值最接近的一项。
+    /// </summary>
+    private void PopulateVisualizer()
+    {
+        var visualization = _host.Settings.Current.Visualization;
+        var spectrum = visualization.Spectrum;
+
+        _loadingVisualizer = true;
+        try
+        {
+            SelectComboTag(VisualizerKindBox, visualization.Kind.ToString());
+            SelectComboNearest(SpectrumBandBox, spectrum.BandCount);
+            SelectComboNearest(SpectrumFftBox, spectrum.FftSize);
+            SelectComboNearest(SpectrumMinFreqBox, spectrum.MinFrequency);
+            SelectComboNearest(SpectrumMaxFreqBox, spectrum.MaxFrequency);
+            SelectComboTag(SpectrumSummationBox, spectrum.Summation.ToString());
+            SelectComboNearest(SpectrumFloorBox, spectrum.FloorDb);
+            SelectComboNearest(SpectrumSlopeBox, spectrum.SlopeDbPerOctave);
+            SelectComboNearest(SpectrumReleaseBox, spectrum.ReleaseDbPerSecond);
+            SelectComboNearest(SpectrumPeakHoldBox, spectrum.PeakHoldMs);
+            SpectrumPeakShowCheck.IsChecked = spectrum.ShowPeaks;
+            SpectrumGraticuleCheck.IsChecked = spectrum.ShowGraticule;
+            SpectrumFrequencyLabelsCheck.IsChecked = spectrum.ShowFrequencyLabels;
+        }
+        finally
+        {
+            _loadingVisualizer = false;
+        }
+    }
+
+    private void OnVisualizerComboChanged(object sender, SelectionChangedEventArgs e) => ApplyVisualizer();
+
+    private void OnVisualizerToggleChanged(object sender, RoutedEventArgs e) => ApplyVisualizer();
+
+    /// <summary>从控件读回全部可视化参数，规范化后保存并让右栏立即生效。</summary>
+    private void ApplyVisualizer()
+    {
+        if (_loadingVisualizer)
+        {
+            return;
+        }
+
+        var visualization = _host.Settings.Current.Visualization;
+        var spectrum = visualization.Spectrum;
+
+        visualization.Kind = ReadEnumTag(VisualizerKindBox, VisualizerKind.Spectrum);
+        spectrum.BandCount = ReadIntTag(SpectrumBandBox, spectrum.BandCount);
+        spectrum.FftSize = ReadIntTag(SpectrumFftBox, spectrum.FftSize);
+        spectrum.MinFrequency = ReadDoubleTag(SpectrumMinFreqBox, spectrum.MinFrequency);
+        spectrum.MaxFrequency = ReadDoubleTag(SpectrumMaxFreqBox, spectrum.MaxFrequency);
+        spectrum.Summation = ReadEnumTag(SpectrumSummationBox, SpectrumSummation.Rms);
+        spectrum.FloorDb = ReadDoubleTag(SpectrumFloorBox, spectrum.FloorDb);
+        spectrum.SlopeDbPerOctave = ReadDoubleTag(SpectrumSlopeBox, spectrum.SlopeDbPerOctave);
+        spectrum.ReleaseDbPerSecond = ReadDoubleTag(SpectrumReleaseBox, spectrum.ReleaseDbPerSecond);
+        spectrum.ShowPeaks = SpectrumPeakShowCheck.IsChecked == true;
+        spectrum.PeakHoldMs = ReadDoubleTag(SpectrumPeakHoldBox, spectrum.PeakHoldMs);
+        spectrum.ShowGraticule = SpectrumGraticuleCheck.IsChecked == true;
+        spectrum.ShowFrequencyLabels = SpectrumFrequencyLabelsCheck.IsChecked == true;
+
+        // 参数之间互相约束（频率上下限比例、FFT 取值等）统一交给 Normalize 裁决，
+        // 然后回填控件，保证界面显示的值与频谱引擎实际使用的值一致。
+        VisualizationSettings.Normalize(visualization);
+        PopulateVisualizer();
+        _vm.RefreshVisualizer();
+        SaveSettings();
+    }
+
+    private void OnResetVisualizerSettings(object sender, RoutedEventArgs e)
+    {
+        _host.Settings.Current.Visualization = new VisualizationSettings();
+        PopulateVisualizer();
+        _vm.RefreshVisualizer();
+        SaveSettings();
+    }
+
+    private static void SelectComboTag(ComboBox box, string tag)
+    {
+        foreach (var item in box.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag as string, tag, StringComparison.OrdinalIgnoreCase))
+            {
+                box.SelectedItem = item;
+                return;
+            }
+        }
+
+        box.SelectedIndex = 0;
+    }
+
+    private static void SelectComboNearest(ComboBox box, double value)
+    {
+        ComboBoxItem? best = null;
+        var bestDistance = double.MaxValue;
+        foreach (var item in box.Items.OfType<ComboBoxItem>())
+        {
+            if (item.Tag is not string tag ||
+                !double.TryParse(tag, NumberStyles.Float, CultureInfo.InvariantCulture, out var candidate))
+            {
+                continue;
+            }
+
+            var distance = Math.Abs(candidate - value);
+            if (best is not null && distance >= bestDistance)
+            {
+                continue;
+            }
+
+            best = item;
+            bestDistance = distance;
+        }
+
+        if (best is not null)
+        {
+            box.SelectedItem = best;
+        }
+    }
+
+    private static int ReadIntTag(ComboBox box, int fallback) =>
+        box.SelectedItem is ComboBoxItem { Tag: string tag } &&
+        int.TryParse(tag, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : fallback;
+
+    private static double ReadDoubleTag(ComboBox box, double fallback) =>
+        box.SelectedItem is ComboBoxItem { Tag: string tag } &&
+        double.TryParse(tag, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : fallback;
+
+    private static T ReadEnumTag<T>(ComboBox box, T fallback) where T : struct, Enum =>
+        box.SelectedItem is ComboBoxItem { Tag: string tag } && Enum.TryParse<T>(tag, out var value)
+            ? value
+            : fallback;
 
     private void SaveSettings() => _ = _host.Settings.SaveAsync();
 

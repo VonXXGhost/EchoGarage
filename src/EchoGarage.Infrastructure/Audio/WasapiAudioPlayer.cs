@@ -15,6 +15,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 {
     private readonly object _gate = new();
     private readonly IAppLogger _logger;
+    private readonly IAudioSampleSink? _sampleSink;
 
     private WasapiOut? _output;
     private SharedAudioFileReader? _reader;
@@ -29,9 +30,10 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
     private bool _userStopRequested;
     private bool _disposed;
 
-    public WasapiAudioPlayer(IAppLogger logger)
+    public WasapiAudioPlayer(IAppLogger logger, IAudioSampleSink? sampleSink = null)
     {
         _logger = logger;
+        _sampleSink = sampleSink;
     }
 
     public event EventHandler<AudioPlaybackStateChangedEventArgs>? StateChanged;
@@ -291,6 +293,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                 }
 
                 _reader.CurrentTime = target;
+                _sampleSink?.Reset();
                 _logger.Debug(
                     $"Seek reader repositioned: reader={_reader.CurrentTime:mm\\:ss\\.fff} " +
                     $"output={(_output?.PlaybackState.ToString() ?? "none")}");
@@ -355,6 +358,14 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
             try
             {
                 var sampleProvider = Convert(reader, format.SampleRate, format.Channels);
+                if (_sampleSink is not null)
+                {
+                    // 可视化抽头（ADR-023 §6）：接在重采样 / 声道转换之后、音量之前，
+                    // 静音时仍然有数据（ADR-012 要求自动化测试静音运行）。
+                    _sampleSink.Configure(format.SampleRate, format.Channels);
+                    sampleProvider = new SampleTapProvider(sampleProvider, _sampleSink);
+                }
+
                 _volumeProvider = new VolumeSampleProvider(sampleProvider) { Volume = (float)_volume };
                 IWaveProvider waveProvider = format.Encoding == WaveFormatEncoding.IeeeFloat
                     ? new SampleToWaveProvider(_volumeProvider)
@@ -513,6 +524,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 
     private void TeardownOutput()
     {
+        _sampleSink?.Reset();
         var output = _output;
         _output = null;
         _volumeProvider = null;

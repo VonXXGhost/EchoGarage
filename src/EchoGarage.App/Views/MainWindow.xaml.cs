@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private bool _seekDragged;
     private long _lastSeekLogTimestamp;
     private ContextMenu? _playModeMenu;
+    private bool _suppressSelectionSync;
 
     /// <summary>Last user-chosen album-panel width; the column itself collapses to 0 while the panel is hidden.</summary>
     private double _albumPanelWidth = 320;
@@ -178,6 +179,11 @@ public partial class MainWindow : Window
             _vm.SetStatus($"初始化失败：{ex.Message}");
         }
     }
+
+    /// <summary>
+    /// ADR-023 诊断入口：右栏频谱控件，供 --visualizer 开关统计帧率并截图。
+    /// </summary>
+    public SpectrumView Visualizer => NowPlayingSpectrum;
 
     /// <summary>
     /// Saves the full window content as a PNG. Used by the hidden --screenshot switch
@@ -464,23 +470,30 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnTrackSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void OnTrackSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        SyncSelectedRows(TrackGrid.SelectedItems, e.RemovedItems);
+
+    /// <summary>
+    /// 把列表控件的选中项同步到 <see cref="MainViewModel.SelectedRows"/>（批量命令的唯一数据源），
+    /// 并维护 <see cref="TrackRowViewModel.IsSelected"/>，让行模板显示选中背景。
+    /// </summary>
+    private void SyncSelectedRows(System.Collections.IList current, System.Collections.IList removed)
     {
+        foreach (var item in removed)
+        {
+            if (item is TrackRowViewModel row)
+            {
+                row.IsSelected = false;
+            }
+        }
+
         _vm.SelectedRows.Clear();
-        foreach (var item in TrackGrid.SelectedItems)
+        foreach (var item in current)
         {
             if (item is TrackRowViewModel row)
             {
                 row.IsSelected = true;
                 _vm.SelectedRows.Add(row);
-            }
-        }
-
-        foreach (var item in e.RemovedItems)
-        {
-            if (item is TrackRowViewModel row)
-            {
-                row.IsSelected = false;
             }
         }
     }
@@ -498,23 +511,54 @@ public partial class MainWindow : Window
     // =====================================================================
     private void OnGroupedSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        _vm.SelectedRows.Clear();
-        foreach (var item in GroupedList.SelectedItems)
+        if (_suppressSelectionSync)
         {
-            if (item is TrackRowViewModel row)
-            {
-                row.IsSelected = true;
-                _vm.SelectedRows.Add(row);
-            }
+            // 分组栏批量选中会逐项触发 SelectionChanged，等批量改完再一次性同步。
+            return;
         }
 
-        foreach (var item in e.RemovedItems)
+        SyncSelectedRows(GroupedList.SelectedItems, e.RemovedItems);
+    }
+
+    /// <summary>
+    /// 分组栏单击：选中该分组下的全部歌曲，随后可直接做批量操作（移除、转换、文件操作…）。
+    /// 按住 Ctrl 时把整组追加到现有选择。直接改 <see cref="GroupedList"/> 的选中集会逐项
+    /// 触发 SelectionChanged，因此用 <see cref="_suppressSelectionSync"/> 压住回调后一次性同步。
+    /// </summary>
+    private void OnGroupHeaderMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left ||
+            sender is not FrameworkElement { DataContext: CollectionViewGroup group })
         {
-            if (item is TrackRowViewModel row)
+            return;
+        }
+
+        var rows = group.Items.OfType<TrackRowViewModel>().ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var target = (Keyboard.Modifiers & ModifierKeys.Control) != 0
+            ? GroupedList.SelectedItems.Cast<TrackRowViewModel>().Concat(rows).Distinct().ToList()
+            : rows;
+
+        _suppressSelectionSync = true;
+        try
+        {
+            GroupedList.SelectedItems.Clear();
+            foreach (var row in target)
             {
-                row.IsSelected = false;
+                GroupedList.SelectedItems.Add(row);
             }
         }
+        finally
+        {
+            _suppressSelectionSync = false;
+        }
+
+        SyncSelectedRows(GroupedList.SelectedItems, Array.Empty<object>());
+        e.Handled = true;
     }
 
     private void OnGroupedDoubleClick(object sender, MouseButtonEventArgs e)
@@ -544,6 +588,13 @@ public partial class MainWindow : Window
         }
 
         var items = menu.Items.OfType<MenuItem>().ToList();
+        var remove = items.FirstOrDefault(item => item.Header as string == "移除列表");
+        if (remove is not null)
+        {
+            // 「移除列表」只对普通播放列表有效：媒体库 / 智能播放列表里置灰，避免点了没反应。
+            remove.IsEnabled = _vm.SelectedSource is { Kind: SourceKind.Playlist, IsSmart: false };
+        }
+
         var conversion = items.FirstOrDefault(item => item.Header as string == "转换");
         if (conversion is not null)
         {
@@ -729,6 +780,7 @@ public partial class MainWindow : Window
         var source = e.OriginalSource as DependencyObject;
         if (FindAncestor<DataGridRow>(source) is not null ||
             FindAncestor<ListViewItem>(source) is not null ||
+            FindAncestor<GroupItem>(source) is not null ||
             FindAncestor<DataGridColumnHeader>(source) is not null ||
             FindAncestor<ScrollBar>(source) is not null ||
             FindAncestor<TextBox>(source) is not null)
@@ -1474,14 +1526,6 @@ public partial class MainWindow : Window
 
     private void OnFieldGuideMenuClick(object sender, RoutedEventArgs e) =>
         new FieldGuideWindow { Owner = this }.ShowDialog();
-
-    private void OnPlaySelectedClick(object sender, RoutedEventArgs e)
-    {
-        if (TrackGrid.SelectedItem is TrackRowViewModel row)
-        {
-            _ = _vm.PlayRowCommand.ExecuteAsync(row);
-        }
-    }
 
     private async void OnPropertiesClick(object sender, RoutedEventArgs e)
     {

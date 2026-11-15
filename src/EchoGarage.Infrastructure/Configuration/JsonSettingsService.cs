@@ -138,6 +138,7 @@ public sealed class JsonSettingsService : ISettingsService
         settings.Encoders = ConversionPresetFactory.NormalizeEncoders(settings.Encoders);
         settings.Network = NetworkSettings.Normalize(settings.Network);
         settings.WebTags = WebTagSettings.Normalize(settings.WebTags);
+        settings.Visualization = VisualizationSettings.Normalize(settings.Visualization);
 
         var builtIns = ViewLayoutFactory.CreateBuiltInPresets();
         foreach (var builtIn in builtIns)
