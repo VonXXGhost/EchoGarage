@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -45,9 +46,21 @@ public partial class TagPropertiesWindow : ThemedWindow
         public IReadOnlyList<string> Values { get; set; } = [];
     }
 
+    /// <summary>其他标签的一行编辑状态；<see cref="Value"/> 为空表示删除。</summary>
+    public sealed class AdditionalTagEditor
+    {
+        public required string Name { get; init; }
+        public required string Kind { get; init; }
+        public required string Key { get; init; }
+        public string InitialValue { get; init; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
     private readonly IReadOnlyList<Track> _tracks;
     private readonly IReadOnlyList<AudioTagData> _tags;
     private readonly List<FieldEditor> _editors = [];
+    private readonly ObservableCollection<AdditionalTagEditor> _additionalTagEditors = [];
+    private readonly List<AudioTagChange> _removedAdditionalTags = [];
 
     private byte[]? _coverBytes;
     private string? _coverMime;
@@ -77,7 +90,8 @@ public partial class TagPropertiesWindow : ThemedWindow
 
         if (tracks.Count > 1)
         {
-            SelectionHint.Text = $"正在编辑 {tracks.Count} 个文件：只保存你修改过的字段，未修改的字段保持每个文件自己的原值。";
+            SelectionHint.Text = $"正在编辑 {tracks.Count} 个文件：只保存你修改过的字段，未修改的字段保持每个文件自己的原值。"
+                + "其他标签只显示第一个文件的当前值，修改会应用到所有文件（清空或点 × 会删除该标签）。";
             SelectionHint.Visibility = Visibility.Visible;
         }
 
@@ -233,11 +247,41 @@ public partial class TagPropertiesWindow : ThemedWindow
 
     private void PopulateAdditionalTags(IReadOnlyList<AudioTagEntry> tags)
     {
-        ExtraTagsList.ItemsSource = tags;
-        var visibility = tags.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var tag in tags)
+        {
+            var value = tag.Value.Trim();
+            _additionalTagEditors.Add(new AdditionalTagEditor
+            {
+                Name = tag.Name,
+                Kind = tag.Kind,
+                Key = tag.Key,
+                InitialValue = value,
+                Value = value
+            });
+        }
+
+        ExtraTagsList.ItemsSource = _additionalTagEditors;
+        UpdateAdditionalTagsVisibility();
+        ExtraTagsHeader.Text = _tags.Count > 1 ? "其他标签（第一个文件）" : "其他标签";
+    }
+
+    private void UpdateAdditionalTagsVisibility()
+    {
+        var visibility = _additionalTagEditors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ExtraTagsHeader.Visibility = visibility;
         ExtraTagsPanel.Visibility = visibility;
-        ExtraTagsHeader.Text = _tags.Count > 1 ? "其他标签（第一个文件）" : "其他标签";
+    }
+
+    private void OnRemoveAdditionalTag(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: AdditionalTagEditor editor })
+        {
+            return;
+        }
+
+        _removedAdditionalTags.Add(new AudioTagChange(editor.Kind, editor.Key, null));
+        _additionalTagEditors.Remove(editor);
+        UpdateAdditionalTagsVisibility();
     }
 
     private void RefreshCoverPreview()
@@ -430,6 +474,22 @@ public partial class TagPropertiesWindow : ThemedWindow
 
             edit.Fields[editor.Key] = text.Trim();
         }
+
+        foreach (var editor in _additionalTagEditors)
+        {
+            var value = editor.Value?.Trim() ?? string.Empty;
+            if (value == editor.InitialValue)
+            {
+                continue;
+            }
+
+            edit.AdditionalTagChanges.Add(new AudioTagChange(
+                editor.Kind,
+                editor.Key,
+                string.IsNullOrWhiteSpace(value) ? null : value));
+        }
+
+        edit.AdditionalTagChanges.AddRange(_removedAdditionalTags);
 
         var bytes = _coverAction == CoverAction.Remove ? null : _coverBytes;
         var mime = _coverAction == CoverAction.Remove ? null : _coverMime;

@@ -30,6 +30,9 @@ public sealed class TagBatchEdit
     public string? NewCoverMime { get; set; }
 
     public bool RemoveCover { get; set; }
+
+    /// <summary>额外标签改动：值为空表示删除；未列出的额外标签保持原值。</summary>
+    public List<AudioTagChange> AdditionalTagChanges { get; } = [];
 }
 
 public static class TagBatchEditor
@@ -87,6 +90,8 @@ public static class TagBatchEditor
             model.NewCoverMime = edit.RemoveCover ? null : edit.NewCoverMime;
             model.RemoveCover = edit.RemoveCover;
         }
+
+        model.AdditionalTagChanges.AddRange(edit.AdditionalTagChanges);
 
         return model;
     }

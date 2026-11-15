@@ -293,5 +293,39 @@ public sealed class TagAndCoverTests : IDisposable
         Assert.Equal("艺术家 B", readSecond.Artist);
     }
 
+    [Fact]
+    public void AdditionalTags_RoundTripEditAndRemove()
+    {
+        var path = TestAudio.CreateWav(_workspace.Combine("media", "extra-tags.wav"));
+        var create = new TagEditModel { Title = "t" };
+        create.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3Text, "TIT1", "Grouping"));
+        create.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3UserText, "MOOD", "Happy"));
+        _tags.Write(path, create);
+
+        var stored = _tags.Read(path).AdditionalTags;
+        var grouping = Assert.Single(stored, tag => tag.Kind == AdditionalTagKinds.Id3Text && tag.Key == "TIT1");
+        Assert.Equal("分组", grouping.Name);
+        Assert.Equal("Grouping", grouping.Value);
+        var mood = Assert.Single(stored, tag => tag.Kind == AdditionalTagKinds.Id3UserText && tag.Key == "MOOD");
+        Assert.Equal("MOOD", mood.Name);
+        Assert.Equal("Happy", mood.Value);
+
+        var update = new TagEditModel { Title = "t" };
+        update.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3Text, "TIT1", "New grouping"));
+        _tags.Write(path, update);
+        Assert.Contains(
+            _tags.Read(path).AdditionalTags,
+            tag => tag.Kind == AdditionalTagKinds.Id3Text && tag.Key == "TIT1" && tag.Value == "New grouping");
+
+        var remove = new TagEditModel { Title = "t" };
+        remove.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3Text, "TIT1", null));
+        remove.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3UserText, "MOOD", string.Empty));
+        _tags.Write(path, remove);
+
+        var afterRemoval = _tags.Read(path).AdditionalTags;
+        Assert.DoesNotContain(afterRemoval, tag => tag.Kind == AdditionalTagKinds.Id3Text && tag.Key == "TIT1");
+        Assert.DoesNotContain(afterRemoval, tag => tag.Kind == AdditionalTagKinds.Id3UserText && tag.Key == "MOOD");
+    }
+
     public void Dispose() => _workspace.Dispose();
 }

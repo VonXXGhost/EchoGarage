@@ -103,4 +103,39 @@ public sealed class TagBatchEditTests
         Assert.True(model.RemoveCover);
         Assert.Null(model.NewCoverBytes);
     }
+
+    [Fact]
+    public void CreateEdit_CopiesAdditionalTagChanges()
+    {
+        var edit = new TagBatchEdit();
+        edit.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3Text, "TIT1", "Grouping"));
+        edit.AdditionalTagChanges.Add(new AudioTagChange(AdditionalTagKinds.Id3UserText, "MOOD", null));
+
+        var model = TagBatchEditor.CreateEdit(CreateTag(), edit);
+
+        Assert.Collection(
+            model.AdditionalTagChanges,
+            change =>
+            {
+                Assert.Equal(AdditionalTagKinds.Id3Text, change.Kind);
+                Assert.Equal("TIT1", change.Key);
+                Assert.Equal("Grouping", change.Value);
+            },
+            change =>
+            {
+                Assert.Equal(AdditionalTagKinds.Id3UserText, change.Kind);
+                Assert.True(change.IsRemoval);
+            });
+    }
+
+    [Fact]
+    public void AdditionalTagKey_RoundTripsAppleFreeformParts()
+    {
+        var key = AdditionalTagKey.AppleFreeform("com.apple.iTunes", "MOOD");
+
+        var (mean, name) = AdditionalTagKey.SplitAppleFreeform(key);
+
+        Assert.Equal("com.apple.iTunes", mean);
+        Assert.Equal("MOOD", name);
+    }
 }

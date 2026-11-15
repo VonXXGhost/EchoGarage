@@ -79,20 +79,21 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="140" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSecondaryBrush}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Value}"
-                                               Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                               ToolTip="{Binding Name}" />
+                                    <TextBox Grid.Column="1" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                             Height="24" VerticalContentAlignment="Center" Margin="0,0,6,0" />
+                                    <Button Grid.Column="2" Content="×" Width="22" Height="22" FontSize="14"
+                                            Style="{StaticResource ValuePickerButton}" Focusable="False"
+                                            Click="OnRemoveAdditionalTag" ToolTip="删除该标签" />
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Border>
-
-                <TextBlock Text="标签会直接写入音频文件本身（MP3/FLAC/M4A/WAV 各自的标准格式），不会存到播放器数据库。"
-                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                           Margin="0,12,0,0" />
             </StackPanel>
         </ScrollViewer>
 
@@ -136,9 +137,6 @@
                            Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,10,0" />
                 <TextBox x:Name="CoverMaxEdgeBox" Grid.Row="1" Grid.Column="1" Height="26" Text="1000" />
             </Grid>
-            <TextBlock Text="只缩小、不放大；已是 JPG 且原图小于目标边长时跳过；无需缩放时仅当转换后体积更小才采用。最大边长 0 表示不限制。"
-                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                       Margin="0,8,0,0" />
         </StackPanel>
 
         <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right"

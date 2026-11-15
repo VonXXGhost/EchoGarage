@@ -24,7 +24,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-016](ADR-016-search-hotkeys-playback-mode.md) | 列表搜索、可配置（全局）播放快捷键、顺序 / 随机播放与列宽即时记忆 | Accepted | 2026-11-14 | 列宽拖拽即时落盘；快捷键可配置且可选全局注册（RegisterHotKey）；内联搜索 + Ctrl+F 高级搜索；顺序 / 随机播放模式记忆 |
 | [ADR-017](ADR-017-audio-conversion.md) | 音频转换（编码转换） | Accepted | 2026-11-14 | 预设驱动的转换器：格式 / 输出位置 / 文件名模板 / 高质量重采样 / 标签复制，右键与快捷键触发 |
 | [ADR-018](ADR-018-track-metadata-refresh.md) | 播放列表外部文件的标签缓存刷新策略 | Accepted | 2026-11-14 | 外部文件缓存行按 `FileSize` + `ModifiedAtUtc` 比对，窗口激活 / 切换来源时后台刷新标签，不阻塞列表加载 |
-| [ADR-019](ADR-019-tag-editor-and-cover-conversion.md) | 标签编辑页重设计、额外标签展示、封面 JPG 转换与多文件批量编辑 | Accepted | 2026-11-14 | `#` 列显示「碟片号.音轨号」；标签编辑改两列表格 + 额外标签只读；封面可转 JPG 并限制最大边长；支持多文件批量编辑 |
+| [ADR-019](ADR-019-tag-editor-and-cover-conversion.md) | 标签编辑页重设计、额外标签展示、封面 JPG 转换与多文件批量编辑 | Accepted | 2026-11-14（2026-11-15 修订） | `#` 列显示「碟片号.音轨号」；标签编辑改两列表格 + 其他标签可编辑；封面可转 JPG 并限制最大边长；支持多文件批量编辑 |
 | [ADR-020](ADR-020-playing-file-write-lock.md) | 播放中文件的标签写入（共享句柄 + 临时副本原子替换） | Accepted | 2026-11-14 | 播放器共享句柄 + 写标签时临时副本 `File.Replace` 原子替换，播放中改标签不再中断播放 |
 
 ## 相关长期知识（KB）

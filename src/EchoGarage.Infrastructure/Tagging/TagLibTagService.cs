@@ -1,3 +1,4 @@
+using System.Text;
 using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
 
@@ -171,7 +172,118 @@ public sealed class TagLibTagService : ITagService
             ];
         }
 
+        ApplyAdditionalTagChanges(file, edit.AdditionalTagChanges);
         file.Save();
+    }
+
+    private static void ApplyAdditionalTagChanges(TagLib.File file, IReadOnlyList<AudioTagChange> changes)
+    {
+        foreach (var change in changes)
+        {
+            var value = change.IsRemoval ? null : change.Value!.Trim();
+            switch (change.Kind)
+            {
+                case AdditionalTagKinds.Id3Text when file.GetTag(TagLib.TagTypes.Id3v2, false) is TagLib.Id3v2.Tag id3:
+                    ApplyId3Text(id3, change.Key, value);
+                    break;
+
+                case AdditionalTagKinds.Id3UserText when file.GetTag(TagLib.TagTypes.Id3v2, false) is TagLib.Id3v2.Tag id3:
+                    ApplyId3UserText(id3, change.Key, value);
+                    break;
+
+                case AdditionalTagKinds.Xiph when file.GetTag(TagLib.TagTypes.Xiph, false) is TagLib.Ogg.XiphComment xiph:
+                    var xiphField = CanonicalXiphField(change.Key);
+                    RemoveXiphAliases(xiph, xiphField);
+                    if (value is not null)
+                    {
+                        xiph.SetField(xiphField, [value]);
+                    }
+
+                    break;
+
+                case AdditionalTagKinds.AppleAtom when file.GetTag(TagLib.TagTypes.Apple, false) is TagLib.Mpeg4.AppleTag apple:
+                    var atom = TagLib.ByteVector.FromString(change.Key, TagLib.StringType.Latin1);
+                    if (value is null)
+                    {
+                        apple.ClearData(atom);
+                    }
+                    else
+                    {
+                        apple.SetText(atom, [value]);
+                    }
+
+                    break;
+
+                case AdditionalTagKinds.AppleFreeform when file.GetTag(TagLib.TagTypes.Apple, false) is TagLib.Mpeg4.AppleTag apple:
+                    var (mean, name) = AdditionalTagKey.SplitAppleFreeform(change.Key);
+                    apple.SetDashBox(mean, name, value ?? string.Empty);
+                    break;
+
+                case AdditionalTagKinds.Asf when file.GetTag(TagLib.TagTypes.Asf, false) is TagLib.Asf.Tag asf:
+                    if (value is null)
+                    {
+                        asf.RemoveDescriptors(change.Key);
+                    }
+                    else
+                    {
+                        asf.SetDescriptorString(value, [change.Key]);
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    private static void ApplyId3Text(TagLib.Id3v2.Tag tag, string frameId, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(frameId))
+        {
+            return;
+        }
+
+        var ident = TagLib.ByteVector.FromString(frameId, TagLib.StringType.Latin1);
+        var frame = TagLib.Id3v2.TextInformationFrame.Get(tag, ident, TagLib.StringType.UTF8, false);
+        if (frame is null)
+        {
+            if (value is null)
+            {
+                return;
+            }
+
+            frame = TagLib.Id3v2.TextInformationFrame.Get(tag, ident, TagLib.StringType.UTF8, true)!;
+        }
+
+        if (value is null)
+        {
+            tag.RemoveFrame(frame);
+        }
+        else
+        {
+            frame.Text = [value];
+        }
+    }
+
+    private static void ApplyId3UserText(TagLib.Id3v2.Tag tag, string description, string? value)
+    {
+        var frame = TagLib.Id3v2.UserTextInformationFrame.Get(tag, description, TagLib.StringType.UTF8, false);
+        if (frame is null)
+        {
+            if (value is null)
+            {
+                return;
+            }
+
+            frame = TagLib.Id3v2.UserTextInformationFrame.Get(tag, description, TagLib.StringType.UTF8, true)!;
+        }
+
+        if (value is null)
+        {
+            tag.RemoveFrame(frame);
+        }
+        else
+        {
+            frame.Text = [value];
+        }
     }
 
     private IReadOnlyList<AudioTagEntry> ReadAdditionalTags(TagLib.File file)
@@ -218,10 +330,14 @@ public sealed class TagLibTagService : ITagService
             {
                 if (frame is TagLib.Id3v2.UserTextInformationFrame user)
                 {
-                    var name = string.IsNullOrWhiteSpace(user.Description)
-                        ? "TXXX"
-                        : $"TXXX ({user.Description})";
-                    AddEntry(entries, seen, name, string.Join("; ", user.Text));
+                    var name = string.IsNullOrWhiteSpace(user.Description) ? "TXXX" : user.Description;
+                    AddEntry(
+                        entries,
+                        seen,
+                        name,
+                        string.Join("; ", user.Text),
+                        AdditionalTagKinds.Id3UserText,
+                        user.Description ?? string.Empty);
                 }
                 else if (frame is TagLib.Id3v2.TextInformationFrame text)
                 {
@@ -231,7 +347,13 @@ public sealed class TagLibTagService : ITagService
                         continue;
                     }
 
-                    AddEntry(entries, seen, Id3FrameLabels.GetValueOrDefault(frameId, frameId), string.Join("; ", text.Text));
+                    AddEntry(
+                        entries,
+                        seen,
+                        Id3FrameLabels.GetValueOrDefault(frameId, frameId),
+                        string.Join("; ", text.Text),
+                        AdditionalTagKinds.Id3Text,
+                        frameId);
                 }
             }
             catch
@@ -243,15 +365,51 @@ public sealed class TagLibTagService : ITagService
 
     private static void CollectXiphFields(TagLib.Ogg.XiphComment tag, List<AudioTagEntry> entries, HashSet<string> seen)
     {
-        foreach (var field in tag)
+        var fields = tag.ToList();
+        foreach (var field in fields)
         {
-            if (KnownXiphFields.Contains(field))
+            var canonical = CanonicalXiphField(field);
+            if (!string.Equals(field, canonical, StringComparison.OrdinalIgnoreCase) &&
+                fields.Any(other => string.Equals(other, canonical, StringComparison.OrdinalIgnoreCase)))
+            {
+                // TOTALTRACKS / TOTALDISCS 是 TagLib 的旧别名；同一语义只保留规范字段，避免重复行。
+                continue;
+            }
+
+            if (KnownXiphFields.Contains(canonical))
             {
                 continue;
             }
 
             var values = tag.GetField(field);
-            AddEntry(entries, seen, XiphLabels.GetValueOrDefault(field.ToUpperInvariant(), field), string.Join("; ", values ?? []));
+            AddEntry(
+                entries,
+                seen,
+                XiphLabels.GetValueOrDefault(canonical.ToUpperInvariant(), canonical),
+                string.Join("; ", values ?? []),
+                AdditionalTagKinds.Xiph,
+                canonical);
+        }
+    }
+
+    private static string CanonicalXiphField(string field) =>
+        field.ToUpperInvariant() switch
+        {
+            "TOTALTRACKS" => "TRACKTOTAL",
+            "TOTALDISCS" => "DISCTOTAL",
+            _ => field
+        };
+
+    private static void RemoveXiphAliases(TagLib.Ogg.XiphComment tag, string field)
+    {
+        tag.RemoveField(field);
+        if (string.Equals(field, "TRACKTOTAL", StringComparison.OrdinalIgnoreCase))
+        {
+            tag.RemoveField("TOTALTRACKS");
+        }
+        else if (string.Equals(field, "DISCTOTAL", StringComparison.OrdinalIgnoreCase))
+        {
+            tag.RemoveField("TOTALDISCS");
         }
     }
 
@@ -259,36 +417,81 @@ public sealed class TagLibTagService : ITagService
     {
         foreach (var box in tag)
         {
-            CollectAppleBox(box, entries, seen);
+            try
+            {
+                var atom = AtomName(box.BoxType);
+                if (atom == "----")
+                {
+                    CollectAppleFreeform(box, entries, seen);
+                    continue;
+                }
+
+                if (KnownAppleAtoms.Contains(atom))
+                {
+                    continue;
+                }
+
+                var data = box.Children.OfType<TagLib.Mpeg4.AppleDataBox>().FirstOrDefault();
+                if (data is null || string.IsNullOrWhiteSpace(data.Text))
+                {
+                    continue;
+                }
+
+                AddEntry(
+                    entries,
+                    seen,
+                    AppleAtomLabels.GetValueOrDefault(atom, atom),
+                    data.Text,
+                    AdditionalTagKinds.AppleAtom,
+                    atom);
+            }
+            catch
+            {
+                // Ignore malformed atoms.
+            }
         }
     }
 
-    private static void CollectAppleBox(TagLib.Mpeg4.Box box, List<AudioTagEntry> entries, HashSet<string> seen)
+    private static void CollectAppleFreeform(
+        TagLib.Mpeg4.Box box,
+        List<AudioTagEntry> entries,
+        HashSet<string> seen)
     {
-        try
+        var mean = ChildText(box, "mean");
+        var name = ChildText(box, "name");
+        if (string.IsNullOrWhiteSpace(mean) && string.IsNullOrWhiteSpace(name))
         {
-            if (box is TagLib.Mpeg4.AppleDataBox data && !string.IsNullOrWhiteSpace(data.Text))
-            {
-                var atom = data.BoxType.ToString();
-                if (!KnownAppleAtoms.Contains(atom))
-                {
-                    AddEntry(entries, seen, AppleAtomLabels.GetValueOrDefault(atom, atom), data.Text);
-                }
-            }
+            return;
+        }
 
-            if (box.HasChildren)
-            {
-                foreach (var child in box.Children)
-                {
-                    CollectAppleBox(child, entries, seen);
-                }
-            }
-        }
-        catch
+        var data = box.Children.OfType<TagLib.Mpeg4.AppleDataBox>().FirstOrDefault();
+        if (data is null || string.IsNullOrWhiteSpace(data.Text))
         {
-            // Ignore malformed atoms.
+            return;
         }
+
+        AddEntry(
+            entries,
+            seen,
+            string.IsNullOrWhiteSpace(name) ? mean : name,
+            data.Text,
+            AdditionalTagKinds.AppleFreeform,
+            AdditionalTagKey.AppleFreeform(mean, name));
     }
+
+    private static string ChildText(TagLib.Mpeg4.Box box, string atom) =>
+        box.Children
+            .Where(child => AtomName(child.BoxType) == atom)
+            .Select(child => child switch
+            {
+                TagLib.Mpeg4.AppleAdditionalInfoBox info => info.Text,
+                TagLib.Mpeg4.AppleDataBox data => data.Text,
+                _ => null
+            })
+            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text))
+            ?.Trim() ?? string.Empty;
+
+    private static string AtomName(TagLib.ByteVector type) => Encoding.Latin1.GetString(type.Data);
 
     private static void CollectAsfDescriptors(TagLib.Asf.Tag tag, List<AudioTagEntry> entries, HashSet<string> seen)
     {
@@ -299,11 +502,23 @@ public sealed class TagLibTagService : ITagService
                 continue;
             }
 
-            AddEntry(entries, seen, descriptor.Name, descriptor.ToString());
+            AddEntry(
+                entries,
+                seen,
+                descriptor.Name,
+                descriptor.ToString(),
+                AdditionalTagKinds.Asf,
+                descriptor.Name);
         }
     }
 
-    private static void AddEntry(List<AudioTagEntry> entries, HashSet<string> seen, string? name, string? value)
+    private static void AddEntry(
+        List<AudioTagEntry> entries,
+        HashSet<string> seen,
+        string? name,
+        string? value,
+        string kind,
+        string key)
     {
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value))
         {
@@ -311,18 +526,19 @@ public sealed class TagLibTagService : ITagService
         }
 
         name = name.Trim();
+        key = key.Trim();
         value = value.Trim();
         if (value.Length > 400)
         {
             value = string.Concat(value.AsSpan(0, 400), "…");
         }
 
-        if (!seen.Add(name))
+        if (!seen.Add($"{kind}\u0000{key}"))
         {
             return;
         }
 
-        entries.Add(new AudioTagEntry(name, value));
+        entries.Add(new AudioTagEntry(name, value) { Kind = kind, Key = key });
     }
 
     private static readonly HashSet<string> KnownId3FrameIds = new(StringComparer.OrdinalIgnoreCase)
