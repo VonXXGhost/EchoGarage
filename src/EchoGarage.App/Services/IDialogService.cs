@@ -21,6 +21,7 @@ public interface IDialogService
     ConversionSettingsResult? EditConversionSettings(IReadOnlyList<ConversionPreset> presets);
     SmartPlaylistDefinition? EditSmartPlaylist(string playlistName, SmartPlaylistDefinition definition);
     TagBatchEdit? EditTags(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> currentTags);
+    WebTagApplyPlan? SearchWebTags(IReadOnlyList<Track> tracks);
     SearchQuery? ShowAdvancedSearch(SearchQuery? current);
     string? AskText(string title, string prompt, string initialValue);
     long? PickPlaylist(IReadOnlyList<Playlist> candidates, string title);

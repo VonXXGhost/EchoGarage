@@ -1,0 +1,679 @@
+<views:ThemedWindow x:Class="EchoGarage.App.Views.WebTagSearchWindow"
+                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="clr-namespace:EchoGarage.App.Views"
+                    Title="从 Web 获取标签"
+                    Width="1100" Height="760"
+                    MinWidth="980" MinHeight="640"
+                    WindowStartupLocation="CenterOwner"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
+                    FontFamily="{StaticResource UiFont}"
+                    FontSize="12"
+                    ShowInTaskbar="False"
+                    KeyDown="OnWindowKeyDown">
+    <views:ThemedWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- 弱化文字链：手动链接 / albumId 兜底入口 -->
+        <Style x:Key="WeakLinkButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StepBase" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="Step1Label" TargetType="TextBlock" BasedOn="{StaticResource StepBase}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Step}" Value="1">
+                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Step2Label" TargetType="TextBlock" BasedOn="{StaticResource StepBase}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Step}" Value="2">
+                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Step3Label" TargetType="TextBlock" BasedOn="{StaticResource StepBase}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Step}" Value="3">
+                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StepArrow" TargetType="TextBlock" BasedOn="{StaticResource StepBase}">
+            <Setter Property="Margin" Value="10,0,10,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+
+        <Style x:Key="PanelBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <Style x:Key="PreviewPanel" TargetType="Border" BasedOn="{StaticResource PanelBorder}">
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+
+        <Style x:Key="FieldValueText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,1,0,1" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasValue}" Value="False">
+                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 远程曲目行：拖拽悬停高亮 -->
+        <Style x:Key="RemoteRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsDragOver}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </views:ThemedWindow.Resources>
+
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 步骤指示 -->
+        <Border Grid.Row="0" Style="{StaticResource PanelBorder}" Background="{DynamicResource PanelAltBackgroundBrush}"
+                Padding="14,8" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="① 搜索专辑" Style="{StaticResource Step1Label}" />
+                <TextBlock Text="›" Style="{StaticResource StepArrow}" />
+                <TextBlock Text="② 选择结果" Style="{StaticResource Step2Label}" />
+                <TextBlock Text="›" Style="{StaticResource StepArrow}" />
+                <TextBlock Text="③ 匹配与写入" Style="{StaticResource Step3Label}" />
+            </StackPanel>
+        </Border>
+
+        <!-- ============ 第一步：搜索 ============ -->
+        <Grid Grid.Row="1" Visibility="{Binding IsStep1, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{StaticResource PanelBorder}" Padding="14,10">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                Visibility="{Binding HasMultipleAlbumGroups, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="要搜索的专辑" Foreground="{DynamicResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox Width="460" Height="30" VerticalContentAlignment="Center"
+                                  ItemsSource="{Binding AlbumGroups}" DisplayMemberPath="Display"
+                                  SelectedItem="{Binding SelectedAlbumGroup, Mode=TwoWay}"
+                                  ToolTip="选中歌曲来自多张专辑时，一次只处理一个专辑组；切换分组会重新填充关键词与本地文件" />
+                    </StackPanel>
+                    <TextBlock Text="本次要写入的歌曲" Style="{StaticResource MutedText}" />
+                    <TextBlock Text="{Binding GroupSummary}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="来源" Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox Grid.Column="1" Width="190" Height="30" VerticalContentAlignment="Center"
+                          ItemsSource="{Binding Sources}" DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          ToolTip="标签来源，可在设置中启用多个来源" />
+                <TextBlock Grid.Column="2" Text="关键词" Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="16,0,8,0" />
+                <TextBox Grid.Column="3" x:Name="KeywordBox" Height="30" VerticalContentAlignment="Center"
+                         Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
+                         KeyDown="OnKeywordKeyDown"
+                         ToolTip="默认由歌曲的专辑信息自动填充，可自行编辑；按 Enter 直接搜索" />
+                <Button Grid.Column="4" Content="搜索" Style="{StaticResource AccentButton}"
+                        MinWidth="84" Margin="10,0,0,0" Command="{Binding SearchCommand}" />
+            </Grid>
+
+            <TextBlock Grid.Row="2" Margin="0,8,0,0" Style="{StaticResource MutedText}"
+                       Text="窗口打开时不会联网；点击“搜索”后才请求所选来源。搜索为空时保持空列表。" />
+
+            <StackPanel Grid.Row="4" Margin="0,16,0,0">
+                <Button Content="手动链接 / 专辑 ID ▸" Style="{StaticResource WeakLinkButton}"
+                        HorizontalAlignment="Left" Command="{Binding ToggleManualLinkCommand}" />
+                <Border Style="{StaticResource PanelBorder}" Padding="12" Margin="0,8,0,0"
+                        Visibility="{Binding IsManualLinkOpen, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="ManualLinkBox" Height="30" VerticalContentAlignment="Center"
+                                     Text="{Binding ManualLinkInput, UpdateSourceTrigger=PropertyChanged}"
+                                     KeyDown="OnManualLinkKeyDown"
+                                     ToolTip="粘贴专辑链接或专辑 ID；识别成功后直接进入第三步" />
+                            <Button Grid.Column="1" Content="加载" Style="{StaticResource FlatButton}"
+                                    MinWidth="68" Margin="8,0,0,0" Command="{Binding UseManualLinkCommand}" />
+                        </Grid>
+                        <TextBlock Text="{Binding ManualLinkHint}" Style="{StaticResource MutedText}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <!-- ============ 第二步：选择结果 ============ -->
+        <Grid Grid.Row="1" Visibility="{Binding IsStep2, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="{Binding SearchSummary}" Style="{StaticResource MutedText}" Margin="0,0,0,8" />
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="340" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource PanelBorder}" Padding="8">
+                    <Grid>
+                        <DataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}"
+                                  SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
+                                  SelectionMode="Single" RowHeight="56"
+                                  MouseDoubleClick="OnResultsGridDoubleClick">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="56" Header="封面">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Width="40" Height="40" CornerRadius="3" ClipToBounds="True"
+                                                    Background="{DynamicResource CoverPlaceholderBrush}"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Grid>
+                                                    <TextBlock Text="♪" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource EmptyGlyphBrush}" />
+                                                    <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="*" Header="专辑" MinWidth="140">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" ToolTip="{Binding DisplayTitle}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="160" Header="艺术家">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="64" Header="曲目数">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TrackCountDisplay}" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="54" Header="年份">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding YearDisplay}" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="104" Header="类型">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding KindNote}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextMutedBrush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock Text="{Binding SearchSummary}" Style="{StaticResource MutedText}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{Binding IsResultsEmpty, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource PreviewPanel}">
+                    <StackPanel>
+                        <TextBlock Text="专辑详情" Style="{StaticResource MutedText}" />
+                        <Border Width="150" Height="150" CornerRadius="6" Margin="0,10,0,0"
+                                HorizontalAlignment="Left" ClipToBounds="True"
+                                Background="{DynamicResource CoverBoxBrush}">
+                            <Grid>
+                                <TextBlock Text="♪" FontSize="34" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource EmptyGlyphBrush}" />
+                                <Image Source="{Binding SelectedResult.Thumbnail}" Stretch="UniformToFill" />
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="{Binding SelectedResult.DisplayTitle}" FontSize="14" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" Margin="0,12,0,0" />
+                        <TextBlock Text="{Binding SelectedResult.DisplayArtist}" Style="{StaticResource MutedText}"
+                                   TextWrapping="Wrap" Margin="0,4,0,0" />
+                        <TextBlock Style="{StaticResource MutedText}" Margin="0,10,0,0">
+                            <Run Text="曲目数：" /><Run Text="{Binding SelectedResult.TrackCountDisplay, Mode=OneWay}" />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource MutedText}" Margin="0,2,0,0">
+                            <Run Text="年份：" /><Run Text="{Binding SelectedResult.YearDisplay, Mode=OneWay}" />
+                        </TextBlock>
+                        <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="4" Padding="8,5" Margin="0,10,0,0"
+                                Visibility="{Binding SelectedResult.IsDerived, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="由单曲结果推导，字段可能不完整。" TextWrapping="Wrap" FontSize="11" />
+                        </Border>
+                        <TextBlock Text="双击列表项可直接进入匹配步骤；若详情加载失败可重试。"
+                                   Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,14,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Grid.Row="2" Margin="0,8,0,0" Style="{StaticResource MutedText}"
+                       Text="上一步会保留关键词与搜索结果；返回后再次搜索同一关键词不会重复联网。" />
+        </Grid>
+
+        <!-- ============ 第三步：匹配与写入 ============ -->
+        <Grid Grid.Row="1" Visibility="{Binding IsStep3, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- 顶部：歌曲级 / 专辑级预览（mp3tag 风格） -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.15*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource PreviewPanel}">
+                    <StackPanel>
+                        <TextBlock Text="歌曲级标签（只写入已匹配的本地文件）" Style="{StaticResource MutedText}" />
+                        <TextBlock Style="{StaticResource MutedText}" Margin="0,3,0,0">
+                            <Run Text="当前远程曲目：" /><Run Text="{Binding SelectedRemoteRow.OrdinalDisplay, Mode=OneWay}" />
+                            <Run Text=" " /><Run Text="{Binding SelectedRemoteRow.TitleDisplay, Mode=OneWay}" />
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding TrackFields}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,1,0,1">
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  IsEnabled="{Binding IsCheckboxEnabled}"
+                                                  VerticalAlignment="Center" Width="20" Margin="0,0,4,0" />
+                                        <TextBlock Text="{Binding DisplayName}" Width="62" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding DisplayValue}" Style="{StaticResource FieldValueText}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="上方勾选是全局写入策略：每个匹配文件写入它自己对应远程曲目的值。"
+                                   Style="{StaticResource MutedText}" TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource PreviewPanel}">
+                    <StackPanel>
+                        <TextBlock Text="专辑级标签（写入全部本地文件）" Style="{StaticResource MutedText}" />
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ItemsControl Grid.Column="0" ItemsSource="{Binding AlbumFields}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,1,0,1">
+                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      IsEnabled="{Binding IsCheckboxEnabled}"
+                                                      VerticalAlignment="Center" Width="20" Margin="0,0,4,0" />
+                                            <TextBlock Text="{Binding DisplayName}" Width="62" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            <TextBlock Text="{Binding DisplayValue}" Style="{StaticResource FieldValueText}"
+                                                       MaxWidth="150" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Border Grid.Column="1" Width="86" Height="86" CornerRadius="5" ClipToBounds="True"
+                                    Background="{DynamicResource CoverBoxBrush}" Margin="8,0,0,0"
+                                    VerticalAlignment="Top">
+                                <Grid>
+                                    <TextBlock Text="♪" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource EmptyGlyphBrush}" />
+                                    <Image Source="{Binding CoverImage}" Stretch="UniformToFill" />
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <CheckBox Content="转换 JPG" IsChecked="{Binding ConvertCoverEnabled, Mode=TwoWay}"
+                                      VerticalAlignment="Center" />
+                            <TextBlock Text="质量" Style="{StaticResource MutedText}" VerticalAlignment="Center"
+                                       Margin="12,0,5,0" />
+                            <TextBox Text="{Binding CoverQualityText, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding ConvertCoverEnabled}" Width="64" Height="24"
+                                     VerticalContentAlignment="Center" FontSize="11"
+                                     ToolTip="1 - 100，默认 90" />
+                            <TextBlock Text="最大边长" Style="{StaticResource MutedText}" VerticalAlignment="Center"
+                                       Margin="10,0,5,0" />
+                            <TextBox Text="{Binding CoverMaxEdgeText, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding ConvertCoverEnabled}" Width="72" Height="24"
+                                     VerticalContentAlignment="Center" FontSize="11"
+                                     ToolTip="像素；只缩小不放大，默认 1000" />
+                            <Button Content="重试" Style="{StaticResource ToolbarButton}" Margin="8,0,0,0"
+                                    Command="{Binding RetryCoverCommand}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding CoverStatus}" Style="{StaticResource MutedText}"
+                                   TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="0,10,0,8">
+                <TextBlock Text="{Binding ReleaseSummary}" Foreground="{DynamicResource TextPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Step3Summary}" Style="{StaticResource MutedText}"
+                           TextWrapping="Wrap" Margin="0,3,0,0" />
+            </StackPanel>
+
+            <!-- 下方：左远程曲目 / 右本地文件 -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.7*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource PanelBorder}" Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,2,4,6">
+                            <TextBlock Text="远程曲目" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <TextBlock Text="｜把右侧本地文件拖到目标行即可手动绑定" Style="{StaticResource MutedText}"
+                                       Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" x:Name="RemoteGrid" ItemsSource="{Binding RemoteTracks}"
+                                  SelectedItem="{Binding SelectedRemoteRow, Mode=TwoWay}"
+                                  SelectionMode="Single" RowStyle="{StaticResource RemoteRowStyle}"
+                                  AllowDrop="True"
+                                  DragOver="OnRemoteGridDragOver" DragLeave="OnRemoteGridDragLeave"
+                                  Drop="OnRemoteGridDrop">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="Auto" Header="写入">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsWriteEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEnabled="{Binding IsWriteToggleEnabled}" HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      ToolTip="该行参与歌曲级字段写入（仅对已绑定文件的远程曲目有效）" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="Auto" Header="序号">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding OrdinalDisplay}" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="*" Header="标题" MinWidth="70">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TitleDisplay}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" ToolTip="{Binding TitleDisplay}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="96" Header="艺术家">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ArtistDisplay}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="78" Header="作曲">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ComposerDisplay}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="Auto" Header="时长">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DurationDisplay}" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="146" Header="已绑定文件">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Height="24" FontSize="11" VerticalAlignment="Center"
+                                                      ItemsSource="{Binding DataContext.LocalFileOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                      DisplayMemberPath="Display"
+                                                      SelectedItem="{Binding SelectedLocalOption, Mode=TwoWay}"
+                                                      ToolTip="行内下拉兜底：拖拽不方便时也可在此选择绑定文件" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="Auto" Header="匹配">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding MatchKindDisplay}" VerticalAlignment="Center"
+                                                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="×" Style="{StaticResource FlatButton}" Padding="6,0" FontSize="13"
+                                                    Command="{Binding DataContext.UnbindRemoteCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    CommandParameter="{Binding}"
+                                                    Visibility="{Binding IsBound, Converter={StaticResource BoolToVisibility}}"
+                                                    ToolTip="解除该行的绑定" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource PanelBorder}" Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,2,4,6">
+                            <TextBlock Text="本地文件" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <TextBlock Text="｜拖回列表空白处可解除绑定" Style="{StaticResource MutedText}"
+                                       Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" x:Name="LocalGrid" ItemsSource="{Binding LocalFiles}"
+                                  SelectionMode="Single" AllowDrop="True"
+                                  PreviewMouseLeftButtonDown="OnLocalGridPreviewMouseLeftButtonDown"
+                                  PreviewMouseMove="OnLocalGridPreviewMouseMove"
+                                  PreviewMouseLeftButtonUp="OnLocalGridPreviewMouseLeftButtonUp"
+                                  DragOver="OnLocalGridDragOver" Drop="OnLocalGridDrop">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="☰" Cursor="SizeAll" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       ToolTip="按住鼠标左键拖动到左侧远程曲目进行绑定" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="Auto" Header="音轨号">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TrackNumberDisplay}" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="*" Header="标题 / 文件名" MinWidth="90">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding TitleDisplay}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding TitleDisplay}" />
+                                                <TextBlock Text="{Binding FileNameDisplay}" FontSize="10.5"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           ToolTip="{Binding FileNameDisplay}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="Auto" Header="时长">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DurationDisplay}" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Width="76" Header="匹配状态">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding MatchStatus}" VerticalAlignment="Center" FontSize="11"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- 忙碌提示 -->
+        <Border Grid.Row="1" Panel.ZIndex="10" Padding="14,8" CornerRadius="6"
+                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0"
+                Background="{DynamicResource PanelAltBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
+                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel Orientation="Horizontal">
+                <ProgressBar Width="96" IsIndeterminate="True" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding BusyText}" Margin="10,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <!-- 状态消息 -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Style="{StaticResource MutedText}"
+                   TextWrapping="Wrap" Margin="0,8,0,0"
+                   Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibility}}" />
+
+        <!-- 底部操作栏 -->
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="{Binding WriteHint}" Style="{StaticResource MutedText}"
+                       VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0" />
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                        Visibility="{Binding IsStep1, Converter={StaticResource BoolToVisibility}}">
+                <Button Content="取消" Style="{StaticResource FlatButton}" MinWidth="76"
+                        Command="{Binding CancelCommand}" />
+                <Button Content="搜索" Style="{StaticResource AccentButton}" MinWidth="88" Margin="8,0,0,0"
+                        Command="{Binding SearchCommand}" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                        Visibility="{Binding IsStep2, Converter={StaticResource BoolToVisibility}}">
+                <Button Content="上一步" Style="{StaticResource FlatButton}" MinWidth="76"
+                        Command="{Binding BackCommand}" />
+                <Button Content="取消" Style="{StaticResource FlatButton}" MinWidth="76" Margin="8,0,0,0"
+                        Command="{Binding CancelCommand}" />
+                <Button Content="下一步" Style="{StaticResource AccentButton}" MinWidth="88" Margin="8,0,0,0"
+                        Command="{Binding GoToMatchCommand}" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                        Visibility="{Binding IsStep3, Converter={StaticResource BoolToVisibility}}">
+                <Button Content="上一步" Style="{StaticResource FlatButton}" MinWidth="68"
+                        Command="{Binding BackCommand}" />
+                <Button Content="重新自动匹配" Style="{StaticResource FlatButton}" MinWidth="96" Margin="8,0,0,0"
+                        Command="{Binding ReAutoMatchCommand}"
+                        ToolTip="丢弃手动绑定并按标签重新计算匹配" />
+                <Button Content="清空匹配" Style="{StaticResource FlatButton}" MinWidth="76" Margin="8,0,0,0"
+                        Command="{Binding ClearMatchesCommand}" />
+                <Button Content="取消" Style="{StaticResource FlatButton}" MinWidth="68" Margin="8,0,0,0"
+                        Command="{Binding CancelCommand}" />
+                <Button Content="写入" Style="{StaticResource AccentButton}" MinWidth="88" Margin="8,0,0,0"
+                        Command="{Binding WriteCommand}" ToolTip="先保存字段勾选记忆，再生成写入计划" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</views:ThemedWindow>

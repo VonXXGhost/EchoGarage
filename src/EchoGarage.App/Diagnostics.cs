@@ -82,7 +82,7 @@ internal static class Diagnostics
             main);
         await CaptureWindowAsync(new FieldGuideWindow(), directory, "dialog-field-guide.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
-        var dialogs = new DialogService(main);
+        var dialogs = new DialogService(main, host);
         await CaptureWindowAsync(
             new ConversionSettingsWindow(host.Settings.Current.ConversionPresets, dialogs),
             directory,

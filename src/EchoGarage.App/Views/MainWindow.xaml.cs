@@ -54,7 +54,7 @@ public partial class MainWindow : Window
         _host = host;
         InitializeComponent();
 
-        _dialogs = new DialogService(this);
+        _dialogs = new DialogService(this, host);
         _vm = new MainViewModel(host, _dialogs, waveformModeDiagnostics);
         _hotkeys = new HotkeyService(_vm, host.Logger);
         _conversion = new ConversionCoordinator(host, _vm, _dialogs, this);
@@ -1488,6 +1488,14 @@ public partial class MainWindow : Window
         if (TrackGrid.SelectedItem is TrackRowViewModel row)
         {
             await _vm.EditTagsCommand.ExecuteAsync(row);
+        }
+    }
+
+    private async void OnWebTagSearchClick(object sender, RoutedEventArgs e)
+    {
+        if (TrackGrid.SelectedItem is TrackRowViewModel row)
+        {
+            await _vm.SearchWebTagsCommand.ExecuteAsync(row);
         }
     }
 

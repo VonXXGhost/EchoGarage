@@ -56,6 +56,13 @@ public sealed class AppSettings
 
     /// <summary>「复制到 / 移动到」记住的目标文件夹（绝对路径，顺序即菜单顺序；ADR-021）。</summary>
     public List<string> FileDestinations { get; set; } = [];
+
+    /// <summary>网络代理设置（ADR-022）。</summary>
+    public NetworkSettings Network { get; set; } = new();
+
+    /// <summary>Web 标签源与字段勾选记忆（ADR-022）。</summary>
+    public WebTagSettings WebTags { get; set; } = new();
+
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 880;
     public double? WindowLeft { get; set; }

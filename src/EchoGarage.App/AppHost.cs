@@ -11,6 +11,7 @@ using EchoGarage.Infrastructure.Files;
 using EchoGarage.Infrastructure.Library;
 using EchoGarage.Infrastructure.Logging;
 using EchoGarage.Infrastructure.Tagging;
+using EchoGarage.Infrastructure.WebTags;
 using EchoGarage.Infrastructure.Windows;
 
 namespace EchoGarage.App;
@@ -43,6 +44,13 @@ public sealed class AppHost : IAsyncDisposable
         Watcher = new LibraryFileWatcher(Logger);
         Player = new WasapiAudioPlayer(Logger);
         Files = new FileOperationService(Logger);
+
+        var webTagHttp = new WebTagHttpClientFactory();
+        WebTags = new WebTagService(
+            [new AppleMusicWebTagSource(webTagHttp, Settings, Logger)],
+            Settings,
+            webTagHttp,
+            Logger);
     }
 
     public AppPaths Paths { get; }
@@ -58,6 +66,8 @@ public sealed class AppHost : IAsyncDisposable
     public IAudioPlayer Player { get; }
     /// <summary>复制 / 移动 / 删除到回收站（ADR-021）。</summary>
     public IFileOperationService Files { get; }
+    /// <summary>Web 搜索标签源服务（ADR-022）；构造时不联网。</summary>
+    public IWebTagService WebTags { get; }
     public ICoverCache? Covers { get; private set; }
     public CoverImageService CoverImages { get; private set; } = null!;
     public IWaveformService Waveforms { get; private set; } = null!;

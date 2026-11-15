@@ -26,6 +26,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-018](ADR-018-track-metadata-refresh.md) | 播放列表外部文件的标签缓存刷新策略 | Accepted | 2026-11-14 | 外部文件缓存行按 `FileSize` + `ModifiedAtUtc` 比对，窗口激活 / 切换来源时后台刷新标签，不阻塞列表加载 |
 | [ADR-019](ADR-019-tag-editor-and-cover-conversion.md) | 标签编辑页重设计、额外标签展示、封面 JPG 转换与多文件批量编辑 | Accepted | 2026-11-14（2026-11-15 修订） | `#` 列显示「碟片号.音轨号」；标签编辑改两列表格 + 其他标签可编辑；封面可转 JPG 并限制最大边长；支持多文件批量编辑 |
 | [ADR-020](ADR-020-playing-file-write-lock.md) | 播放中文件的标签写入（共享句柄 + 临时副本原子替换） | Accepted | 2026-11-14 | 播放器共享句柄 + 写标签时临时副本 `File.Replace` 原子替换，播放中改标签不再中断播放 |
+| [ADR-022](ADR-022-web-tag-search.md) | Web 搜索标签（第一阶段：Apple Music 日本网页源） | Accepted | 2026-11-15 | 独立三步窗口：Apple Music 网页搜索/专辑详情 → 专辑级+歌曲级预览与字段勾选 → 音轨号自动匹配 + 拖拽纠正；可配置代理与字段记忆 |
 
 ## 相关长期知识（KB）
 

@@ -48,5 +48,7 @@
 - 2026-11-14：新增提案 `ADR-021-file-operations.md`（歌曲右键菜单「文件操作」：复制 到 / 移动 到
   的级联目标目录（设置页可配置并记忆）、删除文件走回收站、忽略「重命名 到…」；
   移动 / 删除后同步 `tracks` 与 `playlist_items.TrackPath`）——**待 owner 批准**。
+- 2026-11-15：`ADR-022-web-tag-search.md`（独立三步式 Web 标签搜索：Apple Music 日本源、
+  可选代理、字段勾选记忆、专辑级多文件匹配与写入）**已获 owner 批准并归档到 `docs/adr/`**。
 - 当前状态：待批准提案 1 个（`ADR-021-file-operations.md`）。
 

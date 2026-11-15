@@ -116,6 +116,7 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 引入新依赖前：确认是否真的需要、许可证、是否影响启动时间与安装体积，并记录到 ADR 提案。
 - 改动架构、数据模型、缓存策略、默认播放器注册方式时，必须同步准备 ADR 提案，等待 owner 批准。
 - **不要提交截图 / 录屏等二进制验证产物**：界面验证截图统一写到 `artifacts/` 或 `.scratch/` 等已被 `.gitignore` 忽略的目录；需要长期记录界面时用文字 / 控件描述，避免 git 历史体积膨胀。`docs/screenshots/` 中已有的截图属历史遗留，不再新增文件。
+- **文档中的示例歌曲 / 专辑名称必须使用 dummy 演示值**：所有可能提交到 git 的文档（ADR、提案、KB、README、测试说明等）不得出现真实歌曲、专辑名称，也不得保留真实艺术家 / 作曲者姓名作示例或调研证据；统一改为 `Demo Album A`、`Demo Artist`、`Demo Track 01` 这类 dummy 值，并保留字段格式、语言与数据形态，避免版权 / 权利风险。真实调研记录应先脱敏再写入文档。
 
 ## 其他
 

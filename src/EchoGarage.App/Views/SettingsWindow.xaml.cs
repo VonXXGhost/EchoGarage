@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -27,6 +28,7 @@ public partial class SettingsWindow : ThemedWindow
     private readonly List<HotkeyEditRow> _hotkeyRows = [];
     private bool _loadingHotkeys;
     private bool _loadingCache;
+    private bool _loadingWebSettings;
 
     public SettingsWindow(AppHost host, MainViewModel vm)
     {
@@ -60,6 +62,7 @@ public partial class SettingsWindow : ThemedWindow
         PopulateHotkeys();
         PopulateEncoders();
         UpdateAssociationStatus();
+        PopulateWebTagSettings();
     }
 
     private string vm_LibrarySummary() => _vm.LibrarySummary;
@@ -550,6 +553,159 @@ public partial class SettingsWindow : ThemedWindow
         var window = new FileAssociationWindow(_host) { Owner = this };
         window.ShowDialog();
         UpdateAssociationStatus();
+    }
+
+    private void PopulateWebTagSettings()
+    {
+        _loadingWebSettings = true;
+        try
+        {
+            var network = _host.Settings.Current.Network;
+            ProxyModeBox.SelectedIndex = network.ProxyMode switch
+            {
+                WebProxyMode.Direct => 1,
+                WebProxyMode.Custom => 2,
+                _ => 0
+            };
+            ProxyUrlBox.Text = network.CustomProxyUrl;
+            ProxyUrlBox.IsEnabled = network.ProxyMode == WebProxyMode.Custom;
+            AppleMusicSourceCheck.IsChecked = _host.Settings.Current.WebTags.EnabledSourceIds
+                .Contains(WebTagSourceIds.AppleMusicJp, StringComparer.OrdinalIgnoreCase);
+            UpdateProxyHint();
+        }
+        finally
+        {
+            _loadingWebSettings = false;
+        }
+    }
+
+    private WebProxyMode SelectedProxyMode => (ProxyModeBox.SelectedItem as ComboBoxItem)?.Tag switch
+    {
+        "Direct" => WebProxyMode.Direct,
+        "Custom" => WebProxyMode.Custom,
+        _ => WebProxyMode.System
+    };
+
+    private void UpdateProxyHint()
+    {
+        var mode = SelectedProxyMode;
+        ProxyUrlBox.IsEnabled = mode == WebProxyMode.Custom;
+        ProxyHintText.Text = mode switch
+        {
+            WebProxyMode.Direct => "直接连接，不使用代理。",
+            WebProxyMode.Custom when NetworkSettings.TryNormalizeProxyUrl(ProxyUrlBox.Text, out var normalized) =>
+                $"将使用代理 {normalized}。",
+            WebProxyMode.Custom => "请输入以 http:// 或 https:// 开头的代理地址，例如 http://127.0.0.1:7890。",
+            _ => "使用 Windows 系统代理设置；系统未配置代理时直接连接。"
+        };
+    }
+
+    private void OnProxyModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingWebSettings)
+        {
+            return;
+        }
+
+        UpdateProxyHint();
+        var network = _host.Settings.Current.Network;
+        network.ProxyMode = SelectedProxyMode;
+        if (network.ProxyMode != WebProxyMode.Custom ||
+            NetworkSettings.TryNormalizeProxyUrl(network.CustomProxyUrl, out _))
+        {
+            SaveSettings();
+        }
+    }
+
+    private void OnProxyUrlChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loadingWebSettings)
+        {
+            return;
+        }
+
+        var network = _host.Settings.Current.Network;
+        network.CustomProxyUrl = ProxyUrlBox.Text.Trim();
+        UpdateProxyHint();
+        if (network.ProxyMode == WebProxyMode.Custom)
+        {
+            if (NetworkSettings.TryNormalizeProxyUrl(network.CustomProxyUrl, out var normalized))
+            {
+                network.CustomProxyUrl = normalized;
+                SaveSettings();
+            }
+        }
+        else
+        {
+            SaveSettings();
+        }
+    }
+
+    private void OnWebSourceChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingWebSettings)
+        {
+            return;
+        }
+
+        if (AppleMusicSourceCheck.IsChecked != true)
+        {
+            // 第一阶段只有一个源：取消后 Normalize 会重新启用，直接恢复勾选并提示。
+            _loadingWebSettings = true;
+            AppleMusicSourceCheck.IsChecked = true;
+            _loadingWebSettings = false;
+            WebConnectionStatusText.Text = "至少需要保留一个 Web 标签源。";
+            return;
+        }
+
+        var settings = _host.Settings.Current.WebTags;
+        if (!settings.EnabledSourceIds.Contains(WebTagSourceIds.AppleMusicJp, StringComparer.OrdinalIgnoreCase))
+        {
+            settings.EnabledSourceIds.Add(WebTagSourceIds.AppleMusicJp);
+        }
+
+        settings.DefaultSourceId = WebTagSourceIds.AppleMusicJp;
+        SaveSettings();
+        WebConnectionStatusText.Text = string.Empty;
+    }
+
+    private async void OnTestWebConnection(object sender, RoutedEventArgs e)
+    {
+        var mode = SelectedProxyMode;
+        string? normalized = null;
+        if (mode == WebProxyMode.Custom)
+        {
+            if (!NetworkSettings.TryNormalizeProxyUrl(ProxyUrlBox.Text, out var validProxy))
+            {
+                WebConnectionStatusText.Text = "代理地址无效，请输入 http:// 或 https:// 地址。";
+                return;
+            }
+
+            normalized = validProxy;
+        }
+
+        var network = _host.Settings.Current.Network;
+        network.ProxyMode = mode;
+        if (normalized is not null)
+        {
+            network.CustomProxyUrl = normalized;
+        }
+
+        SaveSettings();
+        WebConnectionStatusText.Text = "正在连接 Apple Music…";
+        try
+        {
+            var result = await _host.WebTags.TestConnectionAsync(
+                WebTagSourceIds.AppleMusicJp, CancellationToken.None);
+            WebConnectionStatusText.Text = result.Success
+                ? $"连接成功（{result.Elapsed.TotalMilliseconds:F0} ms）"
+                : $"连接失败：{result.Message}";
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Warn($"Web tag connection test failed: {ex.Message}");
+            WebConnectionStatusText.Text = $"连接失败：{ex.Message}";
+        }
     }
 
     private void OnToggleAutoScan(object sender, RoutedEventArgs e)

@@ -426,6 +426,7 @@
         <ContextMenu x:Key="TrackMenu">
             <MenuItem Header="播放" Click="OnPlaySelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
+            <MenuItem Header="Web 搜索标签…" Click="OnWebTagSearchClick" />
             <MenuItem Header="转换" />
             <MenuItem Header="文件操作" />
             <Separator />

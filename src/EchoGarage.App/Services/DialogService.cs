@@ -7,10 +7,12 @@ namespace EchoGarage.App.Services;
 public sealed class DialogService : IDialogService
 {
     private readonly Window _owner;
+    private readonly AppHost _host;
 
-    public DialogService(Window owner)
+    public DialogService(Window owner, AppHost host)
     {
         _owner = owner;
+        _host = host;
     }
 
     public ColumnsEditResult? EditColumns(PlaylistViewLayout layout, IReadOnlyList<ColumnPreset> presets)
@@ -41,6 +43,12 @@ public sealed class DialogService : IDialogService
     public TagBatchEdit? EditTags(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> currentTags)
     {
         var window = new TagPropertiesWindow(tracks, currentTags) { Owner = _owner };
+        return window.ShowDialog() == true ? window.Result : null;
+    }
+
+    public WebTagApplyPlan? SearchWebTags(IReadOnlyList<Track> tracks)
+    {
+        var window = new WebTagSearchWindow(tracks, _host.WebTags, _host.Settings, _host.Logger) { Owner = _owner };
         return window.ShowDialog() == true ? window.Result : null;
     }
 

@@ -2763,57 +2763,131 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var saved = 0;
-            var failures = new List<string>();
-            for (var i = 0; i < rows.Count; i++)
-                {
-                    var target = rows[i];
-                    try
-                    {
-                        var model = TagBatchEditor.CreateEdit(tags[i], edit);
-                        var oldCover = target.Track.CoverKey;
-                        await Task.Run(() => _host.TagService.Write(target.Track.Path, model));
-                        var updated = await _host.Scanner.IndexFileAsync(target.Track.Path, target.Track.IsInLibrary, target.Track.FolderId);
-                        if (updated is not null)
-                        {
-                            target.UpdateTrack(updated);
-                            _host.Covers?.Invalidate(oldCover);
-                            _host.Covers?.Invalidate(updated.CoverKey);
-                            _host.CoverImages.Invalidate(oldCover);
-                            _host.CoverImages.Invalidate(updated.CoverKey);
-                            await LoadRowCoverAsync(target, force: true);
-                            if (ReferenceEquals(CurrentRow, target))
-                            {
-                                UpdateNowPlayingMetadata(target);
-                                BeginNowPlayingCoverLoad(updated);
-                            }
-                        }
-
-                        saved++;
-                    }
-                    catch (Exception ex)
-                    {
-                        _host.Logger.Error($"Tag edit failed for {target.Track.Path}", ex);
-                        failures.Add($"{System.IO.Path.GetFileName(target.Track.Path)}：{ex.Message}");
-                    }
-                }
-
-            await ReloadSourcesAsync();
-            if (failures.Count > 0)
-            {
-                _dialogs.Error($"标签保存完成：成功 {saved} 个，失败 {failures.Count} 个。\n" + string.Join("\n", failures.Take(5)));
-                SetStatus($"标签保存：成功 {saved} 个，失败 {failures.Count} 个");
-            }
-            else
-            {
-                _host.Logger.Info($"Tags saved: {saved} file(s)");
-                SetStatus(saved > 1 ? $"已保存 {saved} 个文件的标签" : "标签已保存");
-            }
+            await ApplyTagEditsAsync(rows, tags, rows.Select(_ => edit).ToList(), "标签");
         }
         catch (Exception ex)
         {
             _host.Logger.Error("Tag edit failed", ex);
             _dialogs.Error($"保存标签失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>Web 搜索标签（ADR-022）：选择字段与匹配后，复用本地标签写入/刷新闭环。</summary>
+    [RelayCommand]
+    private async Task SearchWebTagsAsync(TrackRowViewModel? row)
+    {
+        var rows = Tracks.Where(IsRowSelected).ToList();
+        if (rows.Count <= 1)
+        {
+            row ??= SelectedRow;
+            rows = row is null ? [] : [row];
+        }
+
+        if (rows.Count == 0)
+        {
+            _dialogs.Info("请先选择要搜索标签的歌曲。");
+            return;
+        }
+
+        var tracks = rows.Select(r => r.Track).ToList();
+        try
+        {
+            var plan = _dialogs.SearchWebTags(tracks);
+            if (plan is null || plan.Edits.Count == 0)
+            {
+                return;
+            }
+
+            // 计划只包含真正有字段变化的文件；按路径找回对应行（窗口使用同一批 Track 对象）。
+            var planned = new List<(TrackRowViewModel Row, TagBatchEdit Edit)>();
+            foreach (var edit in plan.Edits)
+            {
+                var target = rows.FirstOrDefault(r =>
+                    ReferenceEquals(r.Track, edit.Track) ||
+                    string.Equals(r.Track.Path, edit.Track.Path, StringComparison.OrdinalIgnoreCase));
+                if (target is not null)
+                {
+                    planned.Add((target, edit.Edit));
+                }
+            }
+
+            if (planned.Count == 0)
+            {
+                SetStatus("没有可写入的 Web 标签字段");
+                return;
+            }
+
+            var tags = await Task.Run(() =>
+                planned.Select(p => _host.TagService.Read(p.Row.Track.Path)).ToList());
+            await ApplyTagEditsAsync(
+                planned.Select(p => p.Row).ToList(),
+                tags,
+                planned.Select(p => p.Edit).ToList(),
+                "Web 标签");
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error("Web tag apply failed", ex);
+            _dialogs.Error($"写入 Web 标签失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 标签写入闭环：以每个文件当前标签为底稿合并编辑，写入后重新索引、失效封面缓存并刷新列表。
+    /// 标签编辑与 Web 搜索共用，避免复制第二份写文件代码。
+    /// </summary>
+    private async Task ApplyTagEditsAsync(
+        IReadOnlyList<TrackRowViewModel> rows,
+        IReadOnlyList<AudioTagData> tags,
+        IReadOnlyList<TagBatchEdit> edits,
+        string operation)
+    {
+        var saved = 0;
+        var failures = new List<string>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var target = rows[i];
+            try
+            {
+                var model = TagBatchEditor.CreateEdit(tags[i], edits[i]);
+                var oldCover = target.Track.CoverKey;
+                await Task.Run(() => _host.TagService.Write(target.Track.Path, model));
+                var updated = await _host.Scanner.IndexFileAsync(target.Track.Path, target.Track.IsInLibrary, target.Track.FolderId);
+                if (updated is not null)
+                {
+                    target.UpdateTrack(updated);
+                    _host.Covers?.Invalidate(oldCover);
+                    _host.Covers?.Invalidate(updated.CoverKey);
+                    _host.CoverImages.Invalidate(oldCover);
+                    _host.CoverImages.Invalidate(updated.CoverKey);
+                    await LoadRowCoverAsync(target, force: true);
+                    if (ReferenceEquals(CurrentRow, target))
+                    {
+                        UpdateNowPlayingMetadata(target);
+                        BeginNowPlayingCoverLoad(updated);
+                    }
+                }
+
+                saved++;
+            }
+            catch (Exception ex)
+            {
+                _host.Logger.Error($"Tag edit failed for {target.Track.Path}", ex);
+                failures.Add($"{System.IO.Path.GetFileName(target.Track.Path)}：{ex.Message}");
+            }
+        }
+
+        await ReloadSourcesAsync();
+        if (failures.Count > 0)
+        {
+            _dialogs.Error($"{operation}保存完成：成功 {saved} 个，失败 {failures.Count} 个。\n" +
+                           string.Join("\n", failures.Take(5)));
+            SetStatus($"{operation}保存：成功 {saved} 个，失败 {failures.Count} 个");
+        }
+        else
+        {
+            _host.Logger.Info($"{operation} saved: {saved} file(s)");
+            SetStatus(saved > 1 ? $"已保存 {saved} 个文件的{operation}" : $"{operation}已保存");
         }
     }
 
