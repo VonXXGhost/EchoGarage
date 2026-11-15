@@ -42,7 +42,8 @@
 
         <!-- ================= Cell templates ================= -->
         <DataTemplate x:Key="Cell.Cover">
-            <Border Width="24" Height="24" CornerRadius="3" Background="{DynamicResource CoverPlaceholderBrush}" ClipToBounds="True"
+            <Border Width="24" Height="24" CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
+                    BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1" ClipToBounds="True"
                     Visibility="{Binding DataContext.IsGroupedViewActive, RelativeSource={RelativeSource AncestorType=Window},
                                          Converter={StaticResource InverseBoolToVisibility}}">
                 <Image Source="{Binding CoverImage}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" />
@@ -61,11 +62,16 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
-                                SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
-                        </Border>
+                        <!-- 播放中的行：左侧 3px 主题强调色竖条（owner 规范）。 -->
+                        <Grid>
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                    BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="PlayingBar" Width="3" HorizontalAlignment="Left"
+                                    Background="{DynamicResource PlayingLeftBarBrush}" Visibility="Collapsed" />
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
@@ -73,6 +79,9 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowSelectedBrush}" />
                             </Trigger>
+                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                <Setter TargetName="PlayingBar" Property="Visibility" Value="Visible" />
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -153,7 +162,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding Items[0].AlbumGroupTitle}"
                                                FontSize="13" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource AccentBrush}"
+                                               Foreground="{DynamicResource AlbumGroupForegroundBrush}"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="1" Text="{Binding Items[0].AlbumGroupArtist}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
@@ -182,7 +191,8 @@
                                 <Border Grid.Column="0" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top"
                                         Width="{Binding Path=(views:GroupCoverMetrics.CoverSize), RelativeSource={RelativeSource Self}}"
                                         Height="{Binding Path=(views:GroupCoverMetrics.CoverSize), RelativeSource={RelativeSource Self}}"
-                                        CornerRadius="4" Background="{DynamicResource CoverPlaceholderBrush}"
+                                        CornerRadius="6" Background="{DynamicResource CoverPlaceholderBrush}"
+                                        BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
                                         ClipToBounds="True" Loaded="OnGroupCoverLoaded"
                                         IsVisibleChanged="OnGroupCoverIsVisibleChanged"
                                         DataContextChanged="OnGroupCoverDataContextChanged"
@@ -199,8 +209,8 @@
         </Style>
 
         <DataTemplate x:Key="Cell.Status">
-            <TextBlock Text="{Binding StatusGlyph}" Foreground="{DynamicResource AccentBrush}" FontSize="10"
-                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding StatusGlyph}" Foreground="{DynamicResource AccentBrush}" FontSize="13"
+                       FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </DataTemplate>
 
         <DataTemplate x:Key="Cell.Index">
@@ -210,7 +220,18 @@
 
         <DataTemplate x:Key="Cell.Title">
             <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}" />
+                <!-- 播放中的行标题使用主题的“播放行标题”色（owner 规范）。 -->
+                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource PlayingTitleBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
                 <TextBlock Style="{StaticResource SecondaryCellText}"
                            Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=title}" />
             </StackPanel>
@@ -398,7 +419,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding Glyph}" Foreground="{DynamicResource TextMutedBrush}"
+                                <TextBlock Grid.Column="0" Text="{Binding Glyph}" Foreground="{DynamicResource NavIconBrush}"
                                            VerticalAlignment="Center" FontSize="12" />
                                 <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
                                            VerticalAlignment="Center" Margin="2,0,6,0" />
@@ -408,11 +429,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SidebarHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
-                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SidebarSelectedBackgroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource SidebarSelectedForegroundBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -447,7 +468,7 @@
         </Grid.RowDefinitions>
 
         <!-- ===================== Top bar ===================== -->
-        <Border Grid.Row="0" Height="48" Background="{DynamicResource HeaderBackgroundBrush}"
+        <Border Grid.Row="0" Height="48" Background="{DynamicResource ToolbarBackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <Grid Margin="12,0">
                 <Grid.ColumnDefinitions>
@@ -490,8 +511,24 @@
                         <MenuItem Header="显示专辑信息面板" Command="{Binding ToggleAlbumPanelCommand}" />
                         <MenuItem Header="按专辑分组" IsCheckable="True" IsChecked="{Binding GroupByAlbum, Mode=TwoWay}"
                                   ToolTip="分组列表只在按“专辑”或“专辑艺术家”排序时显示；开启分组会自动切换为按专辑排序，这两列可以隐藏。" />
-                        <MenuItem Header="使用浅色主题" Command="{Binding SetThemeCommand}" CommandParameter="0" />
-                        <MenuItem Header="使用深色主题" Command="{Binding SetThemeCommand}" CommandParameter="1" />
+                        <!-- 主题统一收进二级菜单：一级项只保留一个「主题」，点击后选择具体主题。 -->
+                        <MenuItem x:Name="ThemeMenu" Header="主题">
+                            <MenuItem Header="纯净极简白" Tag="0" IsCheckable="True"
+                                      Command="{Binding SetThemeCommand}" CommandParameter="0"
+                                      ToolTip="通透克制的默认浅色主题" />
+                            <MenuItem Header="温润纸感白" Tag="1" IsCheckable="True"
+                                      Command="{Binding SetThemeCommand}" CommandParameter="1"
+                                      ToolTip="暖白纸张质感，长时间阅读更柔和" />
+                            <MenuItem Header="极简冰青白" Tag="2" IsCheckable="True"
+                                      Command="{Binding SetThemeCommand}" CommandParameter="2"
+                                      ToolTip="冷调冰蓝，清爽利落" />
+                            <MenuItem Header="午夜黑胶" Tag="3" IsCheckable="True"
+                                      Command="{Binding SetThemeCommand}" CommandParameter="3"
+                                      ToolTip="暖色深色主题，黑胶夜色氛围" />
+                            <MenuItem Header="深海蓝灰" Tag="4" IsCheckable="True"
+                                      Command="{Binding SetThemeCommand}" CommandParameter="4"
+                                      ToolTip="冷灰深色主题，沉稳专业" />
+                        </MenuItem>
                         <MenuItem Header="列与布局…" Command="{Binding EditColumnsCommand}" />
                         <MenuItem Header="显示字段说明…" Click="OnFieldGuideMenuClick" />
                         <Separator />
@@ -521,7 +558,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Sidebar -->
-            <Border Grid.Column="0" Background="{DynamicResource PanelBackgroundBrush}"
+            <Border Grid.Column="0" Background="{DynamicResource SidebarBackgroundBrush}"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -558,7 +595,7 @@
             </Border>
 
             <!-- Track list -->
-            <Grid Grid.Column="1" Background="{DynamicResource WindowBackgroundBrush}">
+            <Grid Grid.Column="1" Background="{DynamicResource MainBackgroundBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -577,6 +614,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Grid Width="240" Margin="0,0,10,0" VerticalAlignment="Center">
                             <TextBox x:Name="SearchBox" Height="28" Padding="7,0,24,0" FontSize="12"
+                                     Background="{DynamicResource SearchBackgroundBrush}"
                                      AutomationProperties.AutomationId="SearchBox"
                                      Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
                                      KeyDown="OnSearchBoxKeyDown"
@@ -787,7 +825,9 @@
                         <!-- 只留封面与基础歌曲信息：格式 / 采样率 / 路径等细节在列表与标签面板里已有，
                              面板标题与文件信息行按 owner 要求移除（ADR-023）。 -->
                         <StackPanel Grid.Row="0" Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
-                            <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True" Height="300">
+                            <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}"
+                                    BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
+                                    ClipToBounds="True" Height="300">
                                 <Grid>
                                     <Image Source="{Binding CurrentCover}" Stretch="Uniform"
                                            RenderOptions.BitmapScalingMode="HighQuality" />
@@ -890,7 +930,7 @@
         </Border>
 
         <!-- ===================== Transport ===================== -->
-        <Border Grid.Row="3" Height="72" Background="{DynamicResource PanelBackgroundBrush}"
+        <Border Grid.Row="3" Height="72" Background="{DynamicResource TransportBackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
             <Grid Margin="16,0">
                 <Grid.ColumnDefinitions>
@@ -1073,3 +1113,4 @@
         </Border>
     </Grid>
 </Window>
+

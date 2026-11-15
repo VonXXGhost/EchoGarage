@@ -176,6 +176,8 @@ public static class JsonDefaults
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() }
+        // ThemeKind 转换器必须排在 JsonStringEnumConverter 之前：它兼容旧配置的
+        // "Light"/"Dark" 名称，防止升级后反序列化失败、整份设置被重置。
+        Converters = { new ThemeKindJsonConverter(), new JsonStringEnumConverter() }
     };
 }

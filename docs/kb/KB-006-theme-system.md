@@ -4,12 +4,15 @@
 - 日期：2026-11-09
 - 适用范围：EchoGarage.App 的 WPF 主题
 
+> **2026-11-16 更新**：主题体系已升级为五套（见 `docs/adr/ADR-024-multi-theme-system.md`），
+> 本文件保留为“两套主题时代”的历史笔记；当前令牌清单、旧配置迁移与无人工输入验证流程见
+> `docs/kb/KB-015-theme-token-map.md`。
+
 ## 结构
 
 ```
 src/EchoGarage.App/Resources/
-  Themes/DarkTheme.xaml    深色
-  Themes/LightTheme.xaml   白色基底浅色（默认）
+  Themes/*Theme.xaml       五套主题（2026-11-16 起；旧 Dark/Light 两字典已移除）
   Controls.xaml            控件样式，只引用颜色令牌
 ```
 

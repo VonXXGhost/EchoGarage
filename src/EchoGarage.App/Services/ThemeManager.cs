@@ -8,15 +8,23 @@ namespace EchoGarage.App.Services;
 /// </summary>
 public static class ThemeManager
 {
-    private static readonly Uri DarkUri =
-        new("pack://application:,,,/EchoGarage;component/Resources/Themes/DarkTheme.xaml", UriKind.Absolute);
+    private static readonly Dictionary<ThemeKind, Uri> ThemeUris = new()
+    {
+        [ThemeKind.PureStudio] = new(
+            "pack://application:,,,/EchoGarage;component/Resources/Themes/PureStudioTheme.xaml", UriKind.Absolute),
+        [ThemeKind.WarmPaper] = new(
+            "pack://application:,,,/EchoGarage;component/Resources/Themes/WarmPaperTheme.xaml", UriKind.Absolute),
+        [ThemeKind.NordicIce] = new(
+            "pack://application:,,,/EchoGarage;component/Resources/Themes/NordicIceTheme.xaml", UriKind.Absolute),
+        [ThemeKind.MidnightVinyl] = new(
+            "pack://application:,,,/EchoGarage;component/Resources/Themes/MidnightVinylTheme.xaml", UriKind.Absolute),
+        [ThemeKind.SlateStudio] = new(
+            "pack://application:,,,/EchoGarage;component/Resources/Themes/SlateStudioTheme.xaml", UriKind.Absolute)
+    };
 
-    private static readonly Uri LightUri =
-        new("pack://application:,,,/EchoGarage;component/Resources/Themes/LightTheme.xaml", UriKind.Absolute);
+    public static ThemeKind Current { get; private set; } = ThemeKind.PureStudio;
 
-    public static ThemeKind Current { get; private set; } = ThemeKind.Light;
-
-    public static bool IsDark => Current == ThemeKind.Dark;
+    public static bool IsDark => ThemeCatalog.IsDark(Current);
 
     public static event EventHandler<ThemeKind>? ThemeApplied;
 
@@ -32,7 +40,7 @@ public static class ThemeManager
         var dictionaries = application.Resources.MergedDictionaries;
         var dictionary = new System.Windows.ResourceDictionary
         {
-            Source = theme == ThemeKind.Light ? LightUri : DarkUri
+            Source = ThemeUris[theme]
         };
 
         if (dictionaries.Count > 0)

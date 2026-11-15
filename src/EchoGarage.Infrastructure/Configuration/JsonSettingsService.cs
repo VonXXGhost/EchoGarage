@@ -121,7 +121,7 @@ public sealed class JsonSettingsService : ISettingsService
         settings.SchemaVersion = Math.Max(1, settings.SchemaVersion);
         if (!Enum.IsDefined(settings.Theme))
         {
-            settings.Theme = ThemeKind.Light;
+            settings.Theme = ThemeKind.PureStudio;
         }
 
         settings.Volume = Math.Clamp(settings.Volume, 0, 1);

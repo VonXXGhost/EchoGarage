@@ -6,10 +6,15 @@
 | 实现 | **P0 + P1 已实现（2026-11-14）**，提交 `af9ddf2` / `51107d6` / `d187305`；P2 / P3 未做 |
 | 日期 | 2026-11-14 |
 | 关联 | ADR-002（分层）、ADR-003（文件是真相）、ADR-006（配置与库分离）、ADR-010（缓存失效）、KB-001（解码）、KB-007（Seek 输入） |
-| 影响面 | 新增 Core 抽象 / 新增磁盘缓存格式 / 新增 App 控件 / 主题令牌 / AppSettings 字段 |
+| 影响面 | 新增 Core 抽象 / 新增磁盘缓存格式 / 新增 App 控件 / 主题令牌 / AppSettings 字段（2026-11-16 起按 ADR-024 五套主题提供令牌） |
 | 不改动 | SQLite schema、`IAudioPlayer`、扫描器、现有 `SeekSlider` 的行为 |
 
 > 本文是已批准的方案（owner 于 2026-11-14 批准），按 §13 分阶段实施。P0 + P1 已实现并合入。
+>
+> **2026-11-16 修订（ADR-015-A1，owner 已批准）**：已播放区不再用半透明遮罩覆盖，改为按区域
+> clip + `PushOpacity(0.26)` 直接绘制三色带（未播放区 100% 不透明度），`WaveformPlayedOverlayBrush`
+> 令牌与依赖属性已删除；三色带配色随 ADR-024 五套主题重定（低饱和赤陶 / 麦金 / 蔚蓝体系）。
+> 本文中与上述冲突的 §5.3、§6、§9.5 描述以 ADR-015-A1 为准。
 > 实施过程中 owner 又确认了三处调整（切换按钮形态、波形高度、归一化策略），本文已同步为**实际实现**的规格；修订点见 §17 修订记录。
 
 ---
@@ -206,12 +211,12 @@ y = H   └───────────────────────
 | `WaveformMidBrush` | `#C98335` | `#B2691F` | 中频层 |
 | `WaveformHighBrush` | `#1E43C8` | `#2F55C8` | 高频层 |
 | `WaveformTrackBackgroundBrush` | `#1A1F27` | `#F0F2F6` | 波形轨道底 |
-| `WaveformPlayedOverlayBrush` | `#4D0E1014` | `#73FFFFFF` | 已播放区遮罩（面板色 + alpha） |
+| ~~`WaveformPlayedOverlayBrush`~~ | — | — | **2026-11-16 删除**（ADR-015-A1）：已播放区改为三色带 26% 不透明度 |
 | `WaveformPlayheadBrush` | `#E7EAEF` | `#1B1F27` | 播放头（用文本主色，两种主题都够亮） |
 
-已播放区用**面板色半透明覆盖**而不是乘 0.62 或混灰：前者保留色相、只是“变暗”，后者会发橄榄灰（原型阶段实测）。深色 alpha 0.28–0.35、浅色 0.45–0.50；具体值在实现时用截图对比微调。
+~~已播放区用面板色半透明覆盖（深色 alpha 0.28–0.35、浅色 0.45–0.50）。~~ **2026-11-16 改为 ADR-015-A1 方案**：已播放区直接绘制三色带、整体 `PushOpacity(0.26)`，不做颜色混合；未播放区 100%。
 
-> 令牌必须同时写进 `DarkTheme.xaml` 与 `LightTheme.xaml`，控件默认样式里用 `DynamicResource` 绑定；主题切换时 `DynamicResource` 会重新求值，控件需在画刷变化时使几何缓存失效（§9.2）。
+> 令牌必须同时写进主题字典（2026-11-16 起为 ADR-024 的 5 套；旧 `DarkTheme.xaml`/`LightTheme.xaml` 已移除），控件默认样式里用 `DynamicResource` 绑定；主题切换时 `DynamicResource` 会重新求值，控件需在画刷变化时使几何缓存失效（§9.2）。
 
 ### 5.4 状态
 
@@ -615,7 +620,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 ### 9.5 播放头与已播放区
 
 - 播放头 `x = Position/Duration × W`，1.5 设备像素宽，`WaveformPlayheadBrush`；
-- 已播放区 `[0, x)` 覆盖 `WaveformPlayedOverlayBrush`；不要用“乘 0.62”或“混 50% 灰”，前者在浅色主题发脏、后者发橄榄灰；
+- 已播放区 `[0, x)` 以 26% 不透明度绘制三色带（`PushOpacity`），未播放区 100%；删除原遮罩方案（ADR-015-A1，2026-11-16）；
 - 播放头到达右端时钳制在 `W-1`，避免画到控件外；
 - 位置更新频率沿用 200 ms（5 Hz）。在 3 分钟/900 px 下每 tick 移动 6 px，肉眼可见轻微跳动；P2 可选：波形模式下把定时器降到 100 ms，或在控件内做 200 ms 线性插值。
 
@@ -822,3 +827,4 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 | 2026-11-14 | 批准并实施 P0 / P1（`af9ddf2`） | owner 批准 |
 | 2026-11-14 | 切换按钮改为 30 px 仅图标、与顺序/随机按钮同一观感；波形高度改为填满传输条（§0、§5.5） | owner UI 反馈（`51107d6`） |
 | 2026-11-14 | 渐进归一化窗口锁死 −48…0 dB（上限 0 dBFS），完成时一次整曲归一化；删除前缀窗口切换（§0.9、§6.10、§9.7、§12.1） | owner 反馈“生成过程中波形会变形”（`d187305`） |
+

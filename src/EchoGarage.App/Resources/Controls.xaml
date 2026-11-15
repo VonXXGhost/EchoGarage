@@ -97,7 +97,7 @@
 
     <Style x:Key="PlayButton" TargetType="Button" BasedOn="{StaticResource TransportButton}">
         <Setter Property="FontSize" Value="17" />
-        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentContrastBrush}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -124,7 +124,7 @@
 
     <!-- ============ TextBox ============ -->
     <Style TargetType="TextBox">
-        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SearchBackgroundBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -161,7 +161,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
-                    <Border x:Name="Bd" Background="{DynamicResource PanelBackgroundBrush}"
+                    <Border x:Name="Bd" Background="{DynamicResource SearchBackgroundBrush}"
                             BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="4">
                         <TextBlock Text="▾" Foreground="{DynamicResource TextMutedBrush}" FontSize="10"
                                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,9,0" />
@@ -222,7 +222,7 @@
                         <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
                                IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Fade">
                             <Border MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                    Background="{DynamicResource PanelAltBackgroundBrush}"
+                                    Background="{DynamicResource PopupBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
                                     CornerRadius="5" Padding="4" Margin="0,3,0,0" Effect="{StaticResource PopupShadow}">
                                 <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}"
@@ -447,7 +447,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
-                    <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                    <Border Background="{DynamicResource PopupBackgroundBrush}"
                             BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
                             CornerRadius="6" Padding="4" MinWidth="180" Effect="{StaticResource PopupShadow}">
                         <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
@@ -490,7 +490,7 @@
                         <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Right"
                                HorizontalOffset="2" IsOpen="{TemplateBinding IsSubmenuOpen}" Focusable="False"
                                PopupAnimation="Fade">
-                            <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                            <Border Background="{DynamicResource PopupBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
                                     CornerRadius="6" Padding="4" MinWidth="200"
                                     Effect="{StaticResource PopupShadow}">
@@ -541,7 +541,7 @@
                         <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
                                IsOpen="{TemplateBinding IsSubmenuOpen}" Focusable="False"
                                PopupAnimation="Fade">
-                            <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                            <Border Background="{DynamicResource PopupBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
                                     CornerRadius="6" Padding="4" MinWidth="200" Margin="0,2,0,0"
                                     Effect="{StaticResource PopupShadow}">
@@ -583,7 +583,7 @@
 
     <!-- ============ ToolTip ============ -->
     <Style TargetType="ToolTip">
-        <Setter Property="Background" Value="{DynamicResource PanelAltBackgroundBrush}" />
+        <Setter Property="Background" Value="{DynamicResource PopupBackgroundBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -679,13 +679,23 @@
                 <ControlTemplate TargetType="DataGridRow">
                     <!-- Bottom border lives on the row (not on cells) so the 1px separator
                          spans the full row width even past the last column. -->
-                    <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
-                            SnapsToDevicePixels="True">
-                        <DataGridCellsPresenter x:Name="PART_CellsPresenter"
-                                                ItemsPanel="{TemplateBinding ItemsPanel}"
-                                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
-                    </Border>
+                    <Grid>
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource RowSeparatorBrush}" BorderThickness="0,0,0,1"
+                                SnapsToDevicePixels="True">
+                            <DataGridCellsPresenter x:Name="PART_CellsPresenter"
+                                                    ItemsPanel="{TemplateBinding ItemsPanel}"
+                                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Border>
+                        <!-- 播放中的行：左侧 3px 主题强调色竖条（owner 规范）。 -->
+                        <Border x:Name="PlayingBar" Width="3" HorizontalAlignment="Left"
+                                Background="{DynamicResource PlayingLeftBarBrush}" Visibility="Collapsed" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                            <Setter TargetName="PlayingBar" Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -765,7 +775,6 @@
         <Setter Property="MidBrush" Value="{DynamicResource WaveformMidBrush}" />
         <Setter Property="HighBrush" Value="{DynamicResource WaveformHighBrush}" />
         <Setter Property="TrackBrush" Value="{DynamicResource WaveformTrackBackgroundBrush}" />
-        <Setter Property="PlayedOverlayBrush" Value="{DynamicResource WaveformPlayedOverlayBrush}" />
         <Setter Property="PlayheadBrush" Value="{DynamicResource WaveformPlayheadBrush}" />
         <Setter Property="HoverBrush" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="FocusBrush" Value="{DynamicResource AccentBrush}" />

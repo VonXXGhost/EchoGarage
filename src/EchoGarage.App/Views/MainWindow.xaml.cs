@@ -105,9 +105,32 @@ public partial class MainWindow : Window
         DragOver += OnWindowDragOver;
         Drop += OnWindowDrop;
         ThemeManager.ThemeApplied += OnThemeApplied;
+        UpdateThemeMenuChecks();
     }
 
-    private void OnThemeApplied(object? sender, EchoGarage.Core.Models.ThemeKind theme) => TryEnableDarkTitleBar();
+    private void OnThemeApplied(object? sender, EchoGarage.Core.Models.ThemeKind theme)
+    {
+        TryEnableDarkTitleBar();
+        UpdateThemeMenuChecks();
+    }
+
+    /// <summary>主题菜单的勾选状态以 ThemeManager.Current 为唯一真相，避免菜单与配置不一致。</summary>
+    private void UpdateThemeMenuChecks()
+    {
+        if (ThemeMenu is null)
+        {
+            return;
+        }
+
+        var currentIndex = ThemeCatalog.IndexOf(ThemeManager.Current);
+        foreach (var item in ThemeMenu.Items)
+        {
+            if (item is MenuItem menuItem)
+            {
+                menuItem.IsChecked = int.TryParse(menuItem.Tag as string, out var index) && index == currentIndex;
+            }
+        }
+    }
 
     private void OnClosed(object? sender, EventArgs e)
     {

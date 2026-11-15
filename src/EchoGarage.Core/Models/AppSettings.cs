@@ -2,10 +2,19 @@ using EchoGarage.Core.Services;
 
 namespace EchoGarage.Core.Models;
 
+/// <summary>界面主题。顺序与 <see cref="ThemeCatalog"/> 保持一致，索引即 UI 中的主题序号。</summary>
 public enum ThemeKind
 {
-    Dark,
-    Light
+    /// <summary>Pure Studio：默认浅色主题。</summary>
+    PureStudio = 0,
+    /// <summary>Warm Paper：暖白纸张浅色主题。</summary>
+    WarmPaper = 1,
+    /// <summary>Nordic Ice：冷调冰蓝浅色主题。</summary>
+    NordicIce = 2,
+    /// <summary>Midnight Vinyl：暖色深色主题。</summary>
+    MidnightVinyl = 3,
+    /// <summary>Slate Studio：冷灰深色主题。</summary>
+    SlateStudio = 4
 }
 
 /// <summary>How the transport picks the next track.</summary>
@@ -25,7 +34,7 @@ public enum SeekBarMode
 public sealed class AppSettings
 {
     public int SchemaVersion { get; set; } = 1;
-    public ThemeKind Theme { get; set; } = ThemeKind.Light;
+    public ThemeKind Theme { get; set; } = ThemeKind.PureStudio;
     public string? OutputDeviceId { get; set; }
     public OutputMode OutputMode { get; set; } = OutputMode.Shared;
     public double Volume { get; set; } = 0.75;

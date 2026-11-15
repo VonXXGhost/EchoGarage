@@ -7,7 +7,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 
 | 编号 | 标题 | 状态 | 日期 | 一句话结论 |
 | --- | --- | --- | --- | --- |
-| [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09 | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题，v0.1 为白色基底浅色（默认）+ 深色 |
+| [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09（2026-11-16 修订主题条目） | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题，v0.1 为五套（ADR-024）：纯净极简白（默认）、温润纸感白、极简冰青白、午夜黑胶、深海蓝灰 |
 | [ADR-002](ADR-002-layered-architecture.md) | 分层架构 | Accepted | 2026-11-09 | Core / Infrastructure / App 单向依赖，能力经接口暴露，AppHost 统一装配 |
 | [ADR-003](ADR-003-files-are-truth.md) | 文件是唯一真相 | Accepted | 2026-11-09 | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数等软件状态除外 |
 | [ADR-004](ADR-004-playlist-model.md) | 播放列表模型 | Accepted | 2026-11-09 | 普通列表存显式条目，智能列表存条件；默认列表由外部打开覆盖 |
@@ -20,7 +20,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-012](ADR-012-test-playback-volume.md) | 测试运行时的输出音量 | Accepted | 2026-11-12 | 实际运行并播放音频的测试必须先静音/调到最低音量（音量相关测试除外），并使用独立数据目录副本 |
 | [ADR-013](ADR-013-secondary-row-info-and-composer.md) | 列表行次要信息与作曲家标签 | Accepted | 2026-11-14 | 每列可选次行复合格式（默认关闭、填格式自动启用）；Composer 标签贯通文件/缓存/编辑；SQLite schema v2；两行渲染 |
 | [ADR-014](ADR-014-cache-repair-schema-v3.md) | 缓存修复迁移：schema v3 回填作曲家 | Accepted | 2026-11-14 | schema v3 数据修复迁移把 `FolderId IS NOT NULL` 的缓存行 `DurationMs` 清零，复用「无时长=缓存失效」规则让扫描回填 Composer |
-| [ADR-015](ADR-015-waveform-seekbar.md) | 播放进度条的波形视图 | Accepted | 2026-11-14 | 进度条可切整曲三频段波形：平底三层堆叠、逐曲分位拉伸 + 频段份额幂次、50 列/秒 EGWV 缓存 + LRU、按段渐进渲染、点击/拖动跳转 |
+| [ADR-015](ADR-015-waveform-seekbar.md) | 播放进度条的波形视图 | Accepted（2026-11-16 由 ADR-015-A1 修订） | 2026-11-14 | 进度条可切整曲三频段波形：平底三层堆叠、逐曲分位拉伸 + 频段份额幂次、50 列/秒 EGWV 缓存 + LRU、按段渐进渲染、点击/拖动跳转 |
 | [ADR-016](ADR-016-search-hotkeys-playback-mode.md) | 列表搜索、可配置（全局）播放快捷键、顺序 / 随机播放与列宽即时记忆 | Accepted | 2026-11-14 | 列宽拖拽即时落盘；快捷键可配置且可选全局注册（RegisterHotKey）；内联搜索 + Ctrl+F 高级搜索；顺序 / 随机播放模式记忆 |
 | [ADR-017](ADR-017-audio-conversion.md) | 音频转换（编码转换） | Accepted | 2026-11-14 | 预设驱动的转换器：格式 / 输出位置 / 文件名模板 / 高质量重采样 / 标签复制，右键与快捷键触发 |
 | [ADR-018](ADR-018-track-metadata-refresh.md) | 播放列表外部文件的标签缓存刷新策略 | Accepted | 2026-11-14 | 外部文件缓存行按 `FileSize` + `ModifiedAtUtc` 比对，窗口激活 / 切换来源时后台刷新标签，不阻塞列表加载 |
@@ -29,6 +29,8 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-021](ADR-021-file-operations.md) | 歌曲右键菜单「文件操作」（复制到 / 移动到 / 删除到回收站） | Accepted | 2026-11-14（2026-11-15 批准） | 级联目标目录（设置页记忆、最多 20 个）+ 同目录重名递增不覆盖 + 回收站删除；移动 / 删除后在一个事务里同步 `tracks` 与 `playlist_items.TrackPath` |
 | [ADR-022](ADR-022-web-tag-search.md) | Web 搜索标签（第一阶段：Apple Music 日本网页源） | Accepted | 2026-11-15 | 独立三步窗口：Apple Music 网页搜索/专辑详情 → 专辑级+歌曲级预览与字段勾选 → 音轨号自动匹配 + 拖拽纠正；可配置代理与字段记忆 |
 | [ADR-023](ADR-023-playback-visualizer.md) | 右栏「播放可视化」（第一阶段：分段频谱图） | Accepted | 2026-11-15 | 右栏只留封面 + 基础信息（去标题/格式/路径/年份）；下方可切换可视化，第一阶段分段频谱：无锁环形缓冲抽头 + 渲染帧拉取 FFT、几何频段、dBFS 标定 + 斜率补偿 + 弹道、参数全可配置持久化、自定义 OnRender + 主题令牌，实测 140 FPS / 0.17 ms 无丢帧 |
+| [ADR-024](ADR-024-multi-theme-system.md) | 五套主题体系与单配置切换 | Accepted | 2026-11-16 | ThemeKind 五值（PureStudio 默认）+ ThemeCatalog 单一来源；5 个主题字典各 57 个令牌；`视图 → 主题` 中文二级菜单 + 设置页下拉；ThemeKindJsonConverter 兼容旧 Light/Dark；移除旧两主题字典 |
+| [ADR-015-A1](ADR-015-A1-waveform-played-fade.md) | 波形已播放区改为整体降低不透明度（ADR-015 修订） | Accepted | 2026-11-16 | 删除 WaveformPlayedOverlayBrush；已播放区按区域 clip + PushOpacity(0.26) 绘制三色带，未播放区 100%；三色带配色随五套主题重定 |
 
 ## 相关长期知识（KB）
 
@@ -48,6 +50,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 - `KB-012` 分组视图偶发巨大封面的祖先绑定失效、可继承附加属性加固与状态栏双击跳转
 - `KB-013` 来源切换后的布局记忆：分组丢失的根因与修复
 - `KB-014` 分组表头左右固定与拖拽边界、音量区滚轮、顶栏悬停菜单与图标重做
+- `KB-015` 五主题令牌清单、旧配置迁移与验证手册
 
 > 2026-11-09：owner 批准全部 ADR / KB 提案，并要求：
 > 1）ADR-001 增加“多套主题、先做白色基底亮色主题”；
@@ -66,5 +69,6 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 > 2026-11-14：owner 批准全部待批提案并归档：`ADR-014`（schema v3 缓存修复）、`ADR-016`（搜索 / 快捷键 / 播放模式 / 列宽记忆）、`ADR-017`（音频转换）、`ADR-018`（外部文件标签缓存刷新）、`ADR-019`（标签编辑页与封面转换）、`ADR-020`（播放中写标签）。自此 `docs/proposals/` 不再有待批 ADR。
 > 2026-11-15：owner 批准 `ADR-023`（右栏播放可视化：面板精简 + 第一阶段分段频谱图）并归档；同日实现完成、测试全绿并发布 Release 验收版本。
 > 2026-11-15：owner 批准 `ADR-021`（歌曲右键菜单「文件操作」：复制到 / 移动到 / 删除到回收站）并归档；实现已于 2026-11-14 在 `052a353`（菜单 / 目标目录记忆 / 回收站删除 / 库同步）与 `67cc05a`（移动前二次确认）提交，本次仅归档文档，未重新编译发布。
+> 2026-11-16：owner 批准并归档 `ADR-024`（五套主题体系与单配置切换）、`ADR-015-A1`（波形已播放区改为整体降低不透明度，修订 ADR-015）、`KB-015`（五主题令牌手册）；ADR-001 的主题条目、ADR-015 的遮罩描述与 KB-006 的结构块已同步修订。同日完成第二轮调整（主题名称中文化、五套波形配色改为低饱和赤陶/麦金/蔚蓝体系），实现与验证记录见 ADR-024 / KB-015。
 
 

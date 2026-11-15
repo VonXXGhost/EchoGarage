@@ -54,5 +54,17 @@
   删除标题 / 格式 / 路径行与年份；下方新增可切换的「播放可视化」子面板，第一阶段为分段频谱图：
   无锁环形缓冲抽头 + 渲染帧拉取分析、几何级数频段、dBFS 标定、斜率补偿与弹道、参数全部可配置并持久化、
   自定义 `OnRender` 控件 + 主题令牌，实测 134–144 FPS 无丢帧）——**已获 owner 批准（2026-11-15）并归档到 `docs/adr/`**。
-- 当前状态：无待批准提案（`docs/proposals/` 下已无 ADR / KB 提案文件）。
+- 2026-11-15：新增待批准提案三份：
+  - `ADR-024-multi-theme-system.md`（五套主题体系：Pure Studio / Warm Paper / Nordic Ice / Midnight Vinyl /
+    Slate Studio；`ThemeKind` 枚举 + `ThemeCatalog` 单一来源；`ThemeKindJsonConverter` 兼容旧 `"Light"`/`"Dark"`；
+    5 个主题字典、57 个令牌；`视图 → 主题` 二级菜单与设置页 5 项下拉）；
+  - `ADR-015-A1-waveform-played-fade.md`（修订 ADR-015：已播放区不再用 `WaveformPlayedOverlayBrush` 覆盖，
+    改为按区域 clip + `PushOpacity(0.26)` 绘制三色带；未播放区 100% 不透明度，删除覆盖层令牌/DP）；
+  - `KB-015-theme-token-map.md`（五主题令牌清单、新增令牌检查清单、旧配置迁移与无人工输入验证流程）。
+  **2026-11-16：owner 批准全部三份提案并归档**：`ADR-024`、`ADR-015-A1` → `docs/adr/`，
+  `KB-015` → `docs/kb/`；`docs/adr/ADR-index.md` 已同步（ADR-001 / ADR-015 条目修订）。
+- 2026-11-16：同日完成第二轮调整并更新归档文档 —— 主题显示名中文化（纯净极简白 / 温润纸感白 /
+  极简冰青白 / 午夜黑胶 / 深海蓝灰，`ThemeInfo` 增加 `EnglishName`，界面与菜单不再出现英文名）、
+  五套波形配色按低饱和赤陶 / 麦金 / 蔚蓝体系重定；实现与验证记录见 `docs/adr/ADR-024-*`、`docs/kb/KB-015-*`。
+- 当前状态：**无待批准提案**；所有提案均已获 owner 批准并归档。
 

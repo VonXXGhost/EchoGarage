@@ -16,7 +16,8 @@
 2. UI：WPF（不用第三方 UI 框架，自绘主题）。
 3. **主题**：支持多套 UI 风格，主题以独立 `ResourceDictionary` 提供，控件用 `DynamicResource`
    引用颜色令牌，可在运行时切换并持久化到配置。
-   - v0.1 提供两套：白色基底的浅色主题（默认）与深色主题。
+   - v0.1 提供五套（ADR-024）：纯净极简白（Pure Studio，默认浅色）、温润纸感白、极简冰青白、
+     午夜黑胶、深海蓝灰；后两套为深色主题。
    - 后续新增主题只需增加一个主题字典并在设置/视图菜单中暴露，不改控件代码。
 4. 音频：NAudio 2.2（`WasapiOut` + `AudioFileReader` + `WdlResamplingSampleProvider`）。
 5. 标签：TagLib#（NuGet 包 `TagLibSharp` 2.3）。
@@ -42,3 +43,4 @@
 
 - **Tauri/Electron**：跨平台与 UI 灵活，但 WASAPI 独占、标签读写需要额外原生插件，启动与内存开销更大。
 - **LibVLC / BASS**：解码能力更强，但体积、许可证与“只保留必要功能”的目标不符。
+

@@ -113,7 +113,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Volume = Settings.Volume * 100;
         _suppressVolumeSave = false;
         _suppressThemeApply = true;
-        ThemeIndex = Settings.Theme == ThemeKind.Light ? 0 : 1;
+        ThemeIndex = (int)Settings.Theme;
         _suppressThemeApply = false;
         OutputDescription = _host.Player.OutputDescription;
         StatusMessage = "就绪";
@@ -133,7 +133,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<ColumnPreset> Presets { get; }
 
     public IReadOnlyList<string> OutputModeOptions { get; } = ["共享模式", "独占模式"];
-    public IReadOnlyList<string> ThemeOptions { get; } = ["浅色", "深色"];
+    public IReadOnlyList<string> ThemeOptions { get; } = ThemeCatalog.All.Select(theme => theme.DisplayName).ToArray();
 
     [ObservableProperty]
     private int _themeIndex;
@@ -154,12 +154,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var theme = value == 0 ? ThemeKind.Light : ThemeKind.Dark;
-        Settings.Theme = theme;
-        ThemeManager.Apply(theme);
-        _host.Logger.Info($"Theme switched to {theme}");
+        var theme = ThemeCatalog.ByIndex(value);
+        Settings.Theme = theme.Kind;
+        ThemeManager.Apply(theme.Kind);
+        _host.Logger.Info($"Theme switched to {theme.Kind} ({theme.DisplayName})");
         QueueSettingsSave();
-        SetStatus($"界面主题：{(value == 0 ? "浅色" : "深色")}");
+        SetStatus($"界面主题：{theme.DisplayName}");
     }
 
     [ObservableProperty]
@@ -3213,7 +3213,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             _suppressThemeApply = true;
-            ThemeIndex = _host.Settings.Current.Theme == ThemeKind.Light ? 0 : 1;
+            ThemeIndex = (int)_host.Settings.Current.Theme;
             _suppressThemeApply = false;
             ThemeManager.Apply(_host.Settings.Current.Theme);
             RefreshVisualizer();

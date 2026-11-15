@@ -105,7 +105,7 @@
                                 <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
                                           ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
                             </Grid>
-                            <TextBlock Text="切换立即生效，并保存在配置中。浅色为默认主题，深色适合夜间使用。"
+                            <TextBlock Text="切换立即生效，并保存在配置中。纯净极简白为默认浅色主题；午夜黑胶 / 深海蓝灰为深色主题，适合夜间使用。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                        TextWrapping="Wrap" Margin="90,8,0,0" />
                         </StackPanel>
@@ -641,3 +641,4 @@
         </StackPanel>
     </Grid>
 </views:ThemedWindow>
+

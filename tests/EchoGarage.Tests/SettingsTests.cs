@@ -134,5 +134,76 @@ public sealed class SettingsTests : IDisposable
         Assert.False(hotkey.Global);
     }
 
+    [Fact]
+    public async Task Load_LegacyThemeNamesAreMigrated()
+    {
+        await _settings.LoadAsync();
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+
+        // 旧配置里只有 Light / Dark 两个名字，必须能读出来且不能触发“损坏 → 全部重置”。
+        await File.WriteAllTextAsync(_paths.SettingsFile, json.Replace("\"theme\": \"PureStudio\"", "\"theme\": \"Dark\""));
+        var dark = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await dark.LoadAsync();
+        Assert.Equal(ThemeKind.SlateStudio, dark.Current.Theme);
+
+        await File.WriteAllTextAsync(_paths.SettingsFile, json.Replace("\"theme\": \"PureStudio\"", "\"theme\": \"Light\""));
+        var light = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await light.LoadAsync();
+        Assert.Equal(ThemeKind.PureStudio, light.Current.Theme);
+    }
+
+    [Fact]
+    public async Task Load_UnknownThemeFallsBackToDefault()
+    {
+        await _settings.LoadAsync();
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+        await File.WriteAllTextAsync(_paths.SettingsFile, json.Replace("\"theme\": \"PureStudio\"", "\"theme\": \"NoSuchTheme\""));
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(ThemeKind.PureStudio, reloaded.Current.Theme);
+        // 其余配置不能被“损坏文件”分支重置。
+        Assert.Equal(0.75, reloaded.Current.Volume, 3);
+    }
+
+    [Fact]
+    public async Task Save_RoundTripsAllThemes()
+    {
+        await _settings.LoadAsync();
+
+        foreach (var theme in Enum.GetValues<ThemeKind>())
+        {
+            _settings.Current.Theme = theme;
+            await _settings.SaveAsync();
+
+            var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+            await reloaded.LoadAsync();
+            Assert.Equal(theme, reloaded.Current.Theme);
+        }
+    }
+
+    [Fact]
+    public void ThemeCatalog_CoversAllKindsInOrder()
+    {
+        Assert.Equal(Enum.GetValues<ThemeKind>().Length, ThemeCatalog.All.Count);
+        for (var index = 0; index < ThemeCatalog.All.Count; index++)
+        {
+            var theme = ThemeCatalog.All[index];
+            Assert.Equal(index, (int)theme.Kind);
+            Assert.Equal(theme.Kind, ThemeCatalog.ByIndex(index).Kind);
+            Assert.False(string.IsNullOrWhiteSpace(theme.DisplayName));
+            Assert.Equal(index, ThemeCatalog.IndexOf(theme.Kind));
+        }
+
+        Assert.Equal(ThemeKind.PureStudio, ThemeCatalog.ByIndex(-5).Kind);
+        Assert.Equal(ThemeKind.SlateStudio, ThemeCatalog.ByIndex(99).Kind);
+        Assert.False(ThemeCatalog.IsDark(ThemeKind.PureStudio));
+        Assert.False(ThemeCatalog.IsDark(ThemeKind.WarmPaper));
+        Assert.False(ThemeCatalog.IsDark(ThemeKind.NordicIce));
+        Assert.True(ThemeCatalog.IsDark(ThemeKind.MidnightVinyl));
+        Assert.True(ThemeCatalog.IsDark(ThemeKind.SlateStudio));
+    }
+
     public void Dispose() => _workspace.Dispose();
 }

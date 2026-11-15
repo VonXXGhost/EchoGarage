@@ -48,10 +48,6 @@ public sealed class WaveformSeekBar : FrameworkElement
         nameof(TrackBrush), typeof(Brush), typeof(WaveformSeekBar),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    public static readonly DependencyProperty PlayedOverlayBrushProperty = DependencyProperty.Register(
-        nameof(PlayedOverlayBrush), typeof(Brush), typeof(WaveformSeekBar),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
-
     public static readonly DependencyProperty PlayheadBrushProperty = DependencyProperty.Register(
         nameof(PlayheadBrush), typeof(Brush), typeof(WaveformSeekBar),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
@@ -63,6 +59,9 @@ public sealed class WaveformSeekBar : FrameworkElement
     public static readonly DependencyProperty FocusBrushProperty = DependencyProperty.Register(
         nameof(FocusBrush), typeof(Brush), typeof(WaveformSeekBar),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    // 已播放区域的整体不透明度（owner 规范 25%–28%）：只压低存在感，不改变频段色相。
+    private const double PlayedOpacity = 0.26;
 
     // 每个频段一个 GeometryGroup，内部按设备像素列存放已冻结的矩形 figure。
     // 绘制时一次 DrawGeometry 就完成整层，播放位置刷新不会重建几何。
@@ -133,12 +132,6 @@ public sealed class WaveformSeekBar : FrameworkElement
     {
         get => (Brush?)GetValue(TrackBrushProperty);
         set => SetValue(TrackBrushProperty, value);
-    }
-
-    public Brush? PlayedOverlayBrush
-    {
-        get => (Brush?)GetValue(PlayedOverlayBrushProperty);
-        set => SetValue(PlayedOverlayBrushProperty, value);
     }
 
     public Brush? PlayheadBrush
@@ -236,9 +229,34 @@ public sealed class WaveformSeekBar : FrameworkElement
 
         EnsureGeometry(deviceWidth, deviceHeight, peaks);
 
-        DrawBand(dc, _lowGeometry, LowBrush);
-        DrawBand(dc, _midGeometry, MidBrush);
-        DrawBand(dc, _highGeometry, HighBrush);
+        // 分段绘制：播放头右侧（未播放）100% 不透明，左侧（已播放）整体淡出到 26%。
+        // 三频段仍是各自不透明的纯色填充，不做半透明混色（ADR-015）。
+        var playheadDeviceX = Duration > 0 ? PlayheadDeviceX(deviceWidth) : 0;
+        var playedWidth = Math.Clamp(playheadDeviceX, 0, deviceWidth);
+
+        if (playedWidth < deviceWidth)
+        {
+            var unplayedClip = new RectangleGeometry(DeviceRect(playedWidth, 0, deviceWidth - playedWidth, deviceHeight));
+            unplayedClip.Freeze();
+            dc.PushClip(unplayedClip);
+            DrawBand(dc, _lowGeometry, LowBrush);
+            DrawBand(dc, _midGeometry, MidBrush);
+            DrawBand(dc, _highGeometry, HighBrush);
+            dc.Pop();
+        }
+
+        if (playedWidth > 0)
+        {
+            var playedClip = new RectangleGeometry(DeviceRect(0, 0, playedWidth, deviceHeight));
+            playedClip.Freeze();
+            dc.PushClip(playedClip);
+            dc.PushOpacity(PlayedOpacity);
+            DrawBand(dc, _lowGeometry, LowBrush);
+            DrawBand(dc, _midGeometry, MidBrush);
+            DrawBand(dc, _highGeometry, HighBrush);
+            dc.Pop();
+            dc.Pop();
+        }
 
         var validColumns = ClampValidCount(peaks);
         var analyzedDeviceWidth = (int)Math.Round((double)validColumns / peaks.ColumnCount * deviceWidth);
@@ -250,16 +268,6 @@ public sealed class WaveformSeekBar : FrameworkElement
             dc.PushOpacity(0.45);
             dc.DrawRectangle(pendingBrush, null, DeviceRect(analyzedDeviceWidth, 0, 1, deviceHeight));
             dc.Pop();
-        }
-
-        // 已播放遮罩：面板色半透明覆盖，保留色相，只压暗。
-        if (PlayedOverlayBrush is { } overlay && Duration > 0)
-        {
-            var playhead = PlayheadDeviceX(deviceWidth);
-            if (playhead > 0)
-            {
-                dc.DrawRectangle(overlay, null, DeviceRect(0, 0, playhead, deviceHeight));
-            }
         }
 
         // 悬停 / 拖动预览线。

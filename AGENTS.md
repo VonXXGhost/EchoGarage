@@ -35,7 +35,8 @@ src/EchoGarage.App/
   Services/        对话框服务、封面图片解码缓存、单实例、主题管理、格式化、转换器
   ViewModels/      MainViewModel / TrackRowViewModel / SourceNodeViewModel
   Views/           MainWindow 与各对话框（列布局、智能播放列表、标签属性、设置…）
-  Resources/       主题字典（Themes/DarkTheme.xaml、LightTheme.xaml）与控件样式（Controls.xaml）
+  Resources/       主题字典（Themes/PureStudioTheme.xaml、WarmPaperTheme.xaml、NordicIceTheme.xaml、
+                   MidnightVinylTheme.xaml、SlateStudioTheme.xaml）与控件样式（Controls.xaml）
 
 tests/EchoGarage.Tests/   xUnit v3，覆盖布局归一化、智能查询、路径、仓储、扫描、标签、缓存、设置
 ```
