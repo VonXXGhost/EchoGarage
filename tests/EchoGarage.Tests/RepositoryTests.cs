@@ -395,6 +395,66 @@ public sealed class RepositoryTests : IDisposable
         Assert.Equal("dup", moved.Title);
     }
 
+    [Fact]
+    public async Task RemovePlaylistItemsByPath_RemovesFromEveryNormalPlaylist_AndKeepsOtherItems()
+    {
+        // ADR-021-A1：删除到回收站后，同一首歌在所有普通播放列表里的条目都应移除，
+        // 其它歌曲的条目保留；返回实际删除的行数。
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var deletedTrack = MakeTrack("deleted.wav", folderId: folder.Id);
+        var keptTrack = MakeTrack("kept.wav", folderId: folder.Id);
+        await _library.UpsertTracksAsync([deletedTrack, keptTrack]);
+
+        var first = await _playlists.CreatePlaylistAsync("List A", PlaylistKind.Normal, null);
+        var second = await _playlists.CreatePlaylistAsync("List B", PlaylistKind.Normal, null);
+        await _playlists.AddPlaylistItemsAsync(first.Id, [deletedTrack, keptTrack]);
+        await _playlists.AddPlaylistItemsAsync(second.Id, [keptTrack, deletedTrack]);
+
+        var removed = await _playlists.RemovePlaylistItemsByPathAsync([deletedTrack.Path]);
+
+        Assert.Equal(2, removed);
+        Assert.Equal([keptTrack.Path], (await _playlists.GetPlaylistTracksAsync(first)).Select(t => t.Path));
+        Assert.Equal([keptTrack.Path], (await _playlists.GetPlaylistTracksAsync(second)).Select(t => t.Path));
+        var counts = await _playlists.GetPlaylistCountsAsync([first, second]);
+        Assert.Equal(1, counts[first.Id]);
+        Assert.Equal(1, counts[second.Id]);
+    }
+
+    [Fact]
+    public async Task RemovePlaylistItemsByPath_UnknownPathOrEmptyList_ReturnsZero()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var track = MakeTrack("kept.wav", folderId: folder.Id);
+        await _library.UpsertTrackAsync(track);
+        var playlist = await _playlists.CreatePlaylistAsync("List A", PlaylistKind.Normal, null);
+        await _playlists.AddPlaylistItemsAsync(playlist.Id, [track]);
+
+        var unknown = _workspace.Combine("media", "not-in-any-list.wav");
+        Assert.Equal(0, await _playlists.RemovePlaylistItemsByPathAsync([unknown]));
+        Assert.Equal(0, await _playlists.RemovePlaylistItemsByPathAsync([]));
+        Assert.Single(await _playlists.GetPlaylistTracksAsync(playlist));
+    }
+
+    [Fact]
+    public async Task RemovePlaylistItemsByPath_MatchesDifferentPathCaseAndSeparators()
+    {
+        // playlist_items.TrackPath 是 COLLATE NOCASE；这里再覆盖 Windows 分隔符规范化。
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var uppercase = MakeTrack("case.wav", folderId: folder.Id);
+        await _library.UpsertTrackAsync(uppercase);
+        var playlist = await _playlists.CreatePlaylistAsync("List A", PlaylistKind.Normal, null);
+
+        await _playlists.AddPlaylistItemsAsync(playlist.Id, [uppercase]);
+        Assert.Equal(1, await _playlists.RemovePlaylistItemsByPathAsync([uppercase.Path.ToUpperInvariant()]));
+        Assert.Empty(await _playlists.GetPlaylistTracksAsync(playlist));
+
+        var mixedSeparators = MakeTrack("case.wav", folderId: folder.Id);
+        await _playlists.AddPlaylistItemsAsync(playlist.Id, [mixedSeparators]);
+        var forwardSlashes = mixedSeparators.Path.Replace('\\', '/');
+        Assert.Equal(1, await _playlists.RemovePlaylistItemsByPathAsync([forwardSlashes]));
+        Assert.Empty(await _playlists.GetPlaylistTracksAsync(playlist));
+    }
+
     public void Dispose()
     {
         _workspace.Dispose();

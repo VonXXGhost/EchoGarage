@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -47,17 +49,36 @@ public partial class TagPropertiesWindow : ThemedWindow
     }
 
     /// <summary>其他标签的一行编辑状态；<see cref="Value"/> 为空表示删除。</summary>
-    public sealed class AdditionalTagEditor
+    public sealed class AdditionalTagEditor : INotifyPropertyChanged
     {
+        private string _value = string.Empty;
+
         public required string Name { get; init; }
         public required string Kind { get; init; }
         public required string Key { get; init; }
         public string InitialValue { get; init; } = string.Empty;
-        public string Value { get; set; } = string.Empty;
+
+        public string Value
+        {
+            get => _value;
+            set
+            {
+                if (_value == value)
+                {
+                    return;
+                }
+
+                _value = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value)));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
     }
 
     private readonly IReadOnlyList<Track> _tracks;
     private readonly IReadOnlyList<AudioTagData> _tags;
+    private readonly IReadOnlyList<TagNormalizationRule> _normalizationRules;
     private readonly List<FieldEditor> _editors = [];
     private readonly ObservableCollection<AdditionalTagEditor> _additionalTagEditors = [];
     private readonly List<AudioTagChange> _removedAdditionalTags = [];
@@ -69,7 +90,14 @@ public partial class TagPropertiesWindow : ThemedWindow
     /// <summary>True when the selected files do not share the same cover (some have one, some don't, or they differ).</summary>
     private bool _coverMixed;
 
-    public TagPropertiesWindow(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> tags)
+    /// <param name="normalizationRules">
+    /// 设置页配置的标签规范化规则；为 null 时使用内置默认规则（供诊断/截图等两参调用）。
+    /// 快捷规范化只改变当前编辑框里的文本，保存时仍按“只提交被修改字段”的规则处理。
+    /// </param>
+    public TagPropertiesWindow(
+        IReadOnlyList<Track> tracks,
+        IReadOnlyList<AudioTagData> tags,
+        IReadOnlyList<TagNormalizationRule>? normalizationRules = null)
     {
         if (tracks.Count == 0 || tags.Count == 0)
         {
@@ -80,6 +108,9 @@ public partial class TagPropertiesWindow : ThemedWindow
 
         _tracks = tracks;
         _tags = tags;
+
+        // null 交给 Core 归一化为内置默认规则；设置页里被用户删空时是空列表，保持“没有规则”。
+        _normalizationRules = TagNormalization.NormalizeRules(normalizationRules);
 
         Title = tracks.Count > 1 ? $"标签属性 - {tracks.Count} 个文件" : "标签属性";
         SaveButton.Content = tracks.Count > 1 ? $"保存到 {tracks.Count} 个文件" : "保存到文件";
@@ -282,6 +313,149 @@ public partial class TagPropertiesWindow : ThemedWindow
         _removedAdditionalTags.Add(new AudioTagChange(editor.Kind, editor.Key, null));
         _additionalTagEditors.Remove(editor);
         UpdateAdditionalTagsVisibility();
+    }
+
+    /// <summary>
+    /// 「快捷规范化」：弹出设置页里启用的规则，把规则作用到当前编辑框的文本上。
+    /// 只改 TextBox.Text / 其他标签的 Value，不改 InitialText，因此保存时会作为本次修改提交；
+    /// 多值字段（显示 &lt;多值&gt;）不自动改写，只在有匹配时计数提示。
+    /// </summary>
+    private void OnQuickNormalizeClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu
+        {
+            PlacementTarget = QuickNormalizeButton,
+            Placement = PlacementMode.Bottom,
+        };
+
+        foreach (var rule in _normalizationRules.Where(rule => rule.Enabled))
+        {
+            var item = new MenuItem
+            {
+                Header = string.IsNullOrWhiteSpace(rule.Name) ? "未命名规则" : rule.Name,
+                ToolTip = string.IsNullOrWhiteSpace(rule.Pattern) ? null : $"正则：{rule.Pattern}",
+            };
+            item.Click += (_, _) => ApplyQuickNormalization(rule);
+            menu.Items.Add(item);
+        }
+
+        if (menu.Items.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "（没有启用的规则）", IsEnabled = false });
+        }
+
+        menu.IsOpen = true;
+    }
+
+    private void ApplyQuickNormalization(TagNormalizationRule rule)
+    {
+        if (!TagNormalization.IsValidPattern(rule.Pattern, out var error))
+        {
+            ShowQuickNormalizeStatus(error ?? "该规则的正则表达式无效，未应用。");
+            return;
+        }
+
+        var changed = 0;
+        var multiValueSkipped = 0;
+        var numericSkipped = 0;
+        foreach (var editor in _editors)
+        {
+            if (!TagNormalization.IsAnyField(rule.TargetField) &&
+                !string.Equals(editor.Key, rule.TargetField, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var text = editor.TextBox.Text;
+            if (text == MultiValueText)
+            {
+                if (editor.Values.Any(value => TagNormalization.Apply(rule, value) is not null))
+                {
+                    multiValueSkipped++;
+                }
+
+                continue;
+            }
+
+            var normalized = TagNormalization.Apply(rule, text);
+            if (normalized is null)
+            {
+                continue;
+            }
+
+            if (IsNumericField(editor.Key))
+            {
+                if (!TryFormatNumeric(normalized, out var formatted))
+                {
+                    // 与 ADR-025 的数字字段语义一致：结果不是非负整数时保留原值，避免保存时被静默清空。
+                    numericSkipped++;
+                    continue;
+                }
+
+                normalized = formatted;
+            }
+
+            editor.TextBox.Text = normalized;
+            changed++;
+        }
+
+        // 通配规则同时作用于「其他标签」；空替换在额外标签上保留原值（见 ADR-025）。
+        if (TagNormalization.IsAnyField(rule.TargetField))
+        {
+            foreach (var editor in _additionalTagEditors)
+            {
+                var normalized = TagNormalization.Apply(rule, editor.Value);
+                if (normalized is null || string.IsNullOrWhiteSpace(normalized))
+                {
+                    // 额外标签只改不删：空白结果保留原值（与 ADR-025 的批量语义一致）。
+                    continue;
+                }
+
+                editor.Value = normalized;
+                changed++;
+            }
+        }
+
+        var ruleName = string.IsNullOrWhiteSpace(rule.Name) ? "未命名规则" : rule.Name;
+        if (changed == 0 && multiValueSkipped == 0 && numericSkipped == 0)
+        {
+            ShowQuickNormalizeStatus("当前标签没有匹配项");
+            return;
+        }
+
+        var message = $"规则「{ruleName}」：修改 {changed} 个字段";
+        if (multiValueSkipped > 0)
+        {
+            message += $"，已跳过 {multiValueSkipped} 个多值字段";
+        }
+
+        if (numericSkipped > 0)
+        {
+            message += $"，已跳过 {numericSkipped} 个结果不是非负整数的数字字段";
+        }
+
+        ShowQuickNormalizeStatus(message + "。");
+    }
+
+    private static bool IsNumericField(string key) =>
+        key is TagFieldKeys.Year or TagFieldKeys.TrackNumber or TagFieldKeys.DiscNumber;
+
+    private static bool TryFormatNumeric(string text, out string formatted)
+    {
+        if (int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0)
+        {
+            formatted = value.ToString(CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        formatted = string.Empty;
+        return false;
+    }
+
+    private void ShowQuickNormalizeStatus(string message)
+    {
+        QuickNormalizeStatusText.Text = message;
+        QuickNormalizeStatusText.Visibility = Visibility.Visible;
     }
 
     private void RefreshCoverPreview()

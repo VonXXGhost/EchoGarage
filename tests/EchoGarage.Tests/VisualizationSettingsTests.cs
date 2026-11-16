@@ -15,6 +15,8 @@ public sealed class VisualizationSettingsTests : IDisposable
         var settings = VisualizationSettings.Normalize(null);
 
         Assert.Equal(VisualizerKind.Spectrum, settings.Kind);
+        Assert.Equal(VisualizerFrameRate.Unlimited, settings.FrameRateLimit);
+        Assert.Equal(0, settings.FrameRateLimit.ToFps());
         Assert.Equal(32, settings.Spectrum.BandCount);
         Assert.Equal(4096, settings.Spectrum.FftSize);
         Assert.Equal(40, settings.Spectrum.MinFrequency, 6);
@@ -93,16 +95,43 @@ public sealed class VisualizationSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Normalize_UnknownFrameRateFallsBackToUnlimited()
+    {
+        var settings = new VisualizationSettings { FrameRateLimit = (VisualizerFrameRate)42 };
+
+        VisualizationSettings.Normalize(settings);
+
+        Assert.Equal(VisualizerFrameRate.Unlimited, settings.FrameRateLimit);
+        // 未定义的枚举值在绑定层按“不限制”（0）处理，不会变成负节流间隔。
+        Assert.Equal(0, settings.FrameRateLimit.ToFps());
+    }
+
+    [Fact]
+    public void FrameRateLimit_ToFpsMapsEnumValues()
+    {
+        Assert.Equal(0, VisualizerFrameRate.Unlimited.ToFps());
+        Assert.Equal(30, VisualizerFrameRate.Fps30.ToFps());
+        Assert.Equal(60, VisualizerFrameRate.Fps60.ToFps());
+        Assert.Equal(120, VisualizerFrameRate.Fps120.ToFps());
+        Assert.Equal(144, VisualizerFrameRate.Fps144.ToFps());
+        Assert.Equal(180, VisualizerFrameRate.Fps180.ToFps());
+        Assert.Equal(0, ((VisualizerFrameRate)42).ToFps());
+    }
+
+    [Fact]
     public void Clone_IsDeepEnoughForSettingsPage()
     {
-        var settings = new VisualizationSettings();
+        var settings = new VisualizationSettings { FrameRateLimit = VisualizerFrameRate.Fps144 };
         settings.Spectrum.BandCount = 64;
 
         var clone = settings.Clone();
         clone.Spectrum.BandCount = 24;
+        clone.FrameRateLimit = VisualizerFrameRate.Fps60;
 
         Assert.Equal(64, settings.Spectrum.BandCount);
         Assert.Equal(24, clone.Spectrum.BandCount);
+        Assert.Equal(VisualizerFrameRate.Fps144, settings.FrameRateLimit);
+        Assert.Equal(VisualizerFrameRate.Fps60, clone.FrameRateLimit);
     }
 
     [Fact]
@@ -130,6 +159,7 @@ public sealed class VisualizationSettingsTests : IDisposable
         await settings.LoadAsync();
 
         settings.Current.Visualization.Kind = VisualizerKind.Spectrum;
+        settings.Current.Visualization.FrameRateLimit = VisualizerFrameRate.Fps144;
         settings.Current.Visualization.Spectrum.BandCount = 64;
         settings.Current.Visualization.Spectrum.FftSize = 8192;
         settings.Current.Visualization.Spectrum.FloorDb = -60;
@@ -139,6 +169,8 @@ public sealed class VisualizationSettingsTests : IDisposable
         await reloaded.LoadAsync();
 
         Assert.Equal(VisualizerKind.Spectrum, reloaded.Current.Visualization.Kind);
+        Assert.Equal(VisualizerFrameRate.Fps144, reloaded.Current.Visualization.FrameRateLimit);
+        Assert.Equal(144, reloaded.Current.Visualization.FrameRateLimit.ToFps());
         Assert.Equal(64, reloaded.Current.Visualization.Spectrum.BandCount);
         Assert.Equal(8192, reloaded.Current.Visualization.Spectrum.FftSize);
         Assert.Equal(-60, reloaded.Current.Visualization.Spectrum.FloorDb, 6);
@@ -154,6 +186,7 @@ public sealed class VisualizationSettingsTests : IDisposable
               "schemaVersion": 1,
               "visualization": {
                 "kind": "Spectrum",
+                "frameRateLimit": 42,
                 "spectrum": {
                   "bandCount": 500,
                   "fftSize": 1234,
@@ -170,6 +203,7 @@ public sealed class VisualizationSettingsTests : IDisposable
         await settings.LoadAsync();
 
         var spectrum = settings.Current.Visualization.Spectrum;
+        Assert.Equal(VisualizerFrameRate.Unlimited, settings.Current.Visualization.FrameRateLimit);
         Assert.Equal(96, spectrum.BandCount);
         Assert.Equal(4096, spectrum.FftSize);
         Assert.Equal(20, spectrum.MinFrequency, 6);

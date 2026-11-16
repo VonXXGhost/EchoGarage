@@ -218,6 +218,48 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
             new { playlistItemIds });
     }
 
+    public async Task<int> RemovePlaylistItemsByPathAsync(IReadOnlyList<string> paths,
+        CancellationToken cancellationToken = default)
+    {
+        if (paths.Count == 0)
+        {
+            return 0;
+        }
+
+        // 与 UpdateTrackPathAsync 一致：先规范化成完整路径（分隔符 / 相对路径 / 引号），
+        // 单个坏路径不能让整批播放列表清理失败，因此用 TryNormalize 跳过而不是抛异常。
+        var normalized = new List<string>(paths.Count);
+        foreach (var path in paths)
+        {
+            if (PathUtil.TryNormalize(path, out var candidate) &&
+                !normalized.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+            {
+                normalized.Add(candidate);
+            }
+        }
+
+        if (normalized.Count == 0)
+        {
+            return 0;
+        }
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // playlist_items.TrackPath 在建表时就是 COLLATE NOCASE（SqliteDatabase v1），这里显式写出来，
+        // 保证磁盘路径大小写不同也能命中；整个删除放在一个事务里，要么全删要么不动。
+        var removed = await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM playlist_items WHERE TrackPath COLLATE NOCASE IN @paths;",
+            new { paths = normalized }, transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+
+        if (removed > 0)
+        {
+            _logger.Debug($"Removed {removed} playlist item(s) for {normalized.Count} deleted path(s).");
+        }
+
+        return removed;
+    }
+
     public async Task ClearPlaylistAsync(long playlistId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _database.OpenConnectionAsync(cancellationToken);

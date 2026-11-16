@@ -54,6 +54,12 @@ public sealed class AppSettings
     /// <summary>User-configured playback hotkeys (local and optional system-wide).</summary>
     public List<HotkeyBinding> Hotkeys { get; set; } = [];
 
+    /// <summary>
+    /// 用户配置的标签“快捷规范化”正则规则（提案 ADR-025），顺序即叠加应用顺序。
+    /// 默认两条内置规则；用户删空后保存为空列表，不会再次复活默认规则（null 才补默认）。
+    /// </summary>
+    public List<TagNormalizationRule> TagNormalizationRules { get; set; } = TagNormalizationDefaults.Create();
+
     /// <summary>Saved conversion rules (shown in the track context menu and converter settings).</summary>
     public List<ConversionPreset> ConversionPresets { get; set; } = ConversionPresetFactory.CreateBuiltInPresets();
 

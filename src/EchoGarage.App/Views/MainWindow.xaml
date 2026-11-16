@@ -450,6 +450,7 @@
             <MenuItem Header="移除列表" Click="OnRemoveSelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
             <MenuItem Header="Web 搜索标签…" Click="OnWebTagSearchClick" />
+            <MenuItem Header="标签规范化" />
             <MenuItem Header="转换" />
             <MenuItem Header="文件操作" />
             <Separator />
@@ -825,9 +826,14 @@
                         <!-- 只留封面与基础歌曲信息：格式 / 采样率 / 路径等细节在列表与标签面板里已有，
                              面板标题与文件信息行按 owner 要求移除（ADR-023）。 -->
                         <StackPanel Grid.Row="0" Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
-                            <Border CornerRadius="6" Background="{DynamicResource CoverBoxBrush}"
+                            <!-- 双击封面打开大图浏览窗口（CoverViewerWindow）；无封面时由 handler 忽略。 -->
+                            <Border x:Name="NowPlayingCoverBorder" CornerRadius="6"
+                                    Background="{DynamicResource CoverBoxBrush}"
                                     BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
-                                    ClipToBounds="True" Height="300">
+                                    ClipToBounds="True" Height="300"
+                                    Cursor="Hand" ToolTip="双击放大浏览封面"
+                                    AutomationProperties.AutomationId="NowPlayingCover"
+                                    MouseLeftButtonDown="OnNowPlayingCoverMouseLeftButtonDown">
                                 <Grid>
                                     <Image Source="{Binding CurrentCover}" Stretch="Uniform"
                                            RenderOptions.BitmapScalingMode="HighQuality" />
@@ -862,6 +868,7 @@
                                                MinHeight="96"
                                                Source="{Binding Spectrum}"
                                                Options="{Binding SpectrumOptions}"
+                                               FrameRateLimit="{Binding VisualizerFrameRateLimit}"
                                                AutomationProperties.AutomationId="NowPlayingSpectrum"
                                                Visibility="{Binding ShowVisualizer, Converter={StaticResource BoolToVisibility}}" />
                     </Grid>

@@ -51,7 +51,20 @@
             <StackPanel>
                 <TextBlock x:Name="SelectionHint" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
                            TextWrapping="Wrap" Margin="0,0,0,10" Visibility="Collapsed" />
-                <TextBlock Text="标签信息" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="标签信息" Style="{StaticResource SectionLabel}" Margin="0"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" x:Name="QuickNormalizeButton" Content="快捷规范化"
+                            Style="{StaticResource FlatButton}" Padding="10,4" FontSize="11.5"
+                            Click="OnQuickNormalizeClick"
+                            ToolTip="按设置页配置的正则规则快速改写下方标签框里的文本；保存后才写入文件。" />
+                </Grid>
+                <TextBlock x:Name="QuickNormalizeStatusText" Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="11" TextWrapping="Wrap" Margin="0,-4,0,8" Visibility="Collapsed" />
                 <Grid x:Name="FieldsGrid">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

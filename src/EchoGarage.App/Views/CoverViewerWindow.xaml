@@ -1,0 +1,94 @@
+<views:ThemedWindow x:Class="EchoGarage.App.Views.CoverViewerWindow"
+                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="clr-namespace:EchoGarage.App.Views"
+                    Title="封面浏览"
+                    Width="900" Height="720"
+                    MinWidth="480" MinHeight="380"
+                    WindowStartupLocation="CenterOwner"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
+                    FontFamily="{StaticResource UiFont}"
+                    FontSize="12"
+                    ResizeMode="CanResize"
+                    ShowInTaskbar="False"
+                    UseLayoutRounding="True"
+                    SnapsToDevicePixels="True"
+                    PreviewKeyDown="OnWindowPreviewKeyDown">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶部信息栏：当前歌曲信息 + 缩放控制；所有颜色都走主题令牌以支持热切换。 -->
+        <Border Grid.Row="0" Background="{DynamicResource HeaderBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <TextBlock x:Name="TrackTitleText" Text="未在播放" FontSize="13.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="TrackSubtitleText" Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="11.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="适应窗口" Style="{StaticResource FlatButton}" Click="OnFitToWindowClick"
+                            ToolTip="缩放到适应窗口（100%）" Margin="0,0,2,0" />
+                    <Button Content="－" Style="{StaticResource FlatButton}" Click="OnZoomOutClick"
+                            ToolTip="缩小" AutomationProperties.AutomationId="CoverZoomOut" />
+                    <TextBlock x:Name="ZoomText" Text="100%" Width="48" TextAlignment="Center"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"
+                               AutomationProperties.AutomationId="CoverZoomText" />
+                    <Button Content="＋" Style="{StaticResource FlatButton}" Click="OnZoomInClick"
+                            ToolTip="放大" AutomationProperties.AutomationId="CoverZoomIn" />
+                    <Border Width="1" Height="18" Margin="8,0" Background="{DynamicResource BorderBrush}" />
+                    <Button Content="关闭" Style="{StaticResource FlatButton}" Click="OnCloseClick"
+                            ToolTip="关闭（Esc）" AutomationProperties.AutomationId="CoverViewerClose" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 图片视口：滚轮缩放 / 拖拽平移；Image 不参与命中测试，事件统一由视口处理。 -->
+        <Border Grid.Row="1" Margin="12"
+                Background="{DynamicResource CoverBoxBrush}"
+                BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
+                ClipToBounds="True">
+            <Grid x:Name="Viewport" Background="{DynamicResource CoverBoxBrush}" ClipToBounds="True"
+                  SizeChanged="OnViewportSizeChanged"
+                  MouseWheel="OnViewportMouseWheel"
+                  MouseLeftButtonDown="OnViewportMouseLeftButtonDown"
+                  MouseLeftButtonUp="OnViewportMouseLeftButtonUp"
+                  MouseMove="OnViewportMouseMove"
+                  LostMouseCapture="OnViewportLostMouseCapture"
+                  AutomationProperties.AutomationId="CoverViewerViewport">
+                <Image x:Name="CoverImage" Stretch="Uniform" IsHitTestVisible="False"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       RenderTransformOrigin="0.5,0.5">
+                    <Image.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform x:Name="CoverScale" ScaleX="1" ScaleY="1" />
+                            <TranslateTransform x:Name="CoverTranslate" />
+                        </TransformGroup>
+                    </Image.RenderTransform>
+                </Image>
+                <TextBlock x:Name="EmptyHint" Text="当前歌曲没有可显示的封面"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="13"
+                           IsHitTestVisible="False" Visibility="Collapsed" TextAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- 底部操作提示。 -->
+        <Border Grid.Row="2" Background="{DynamicResource HeaderBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="14,6">
+            <TextBlock Text="滚轮缩放 · 拖拽平移 · 双击图片复位 · Esc 关闭"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" />
+        </Border>
+    </Grid>
+</views:ThemedWindow>

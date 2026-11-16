@@ -134,6 +134,7 @@ public sealed class JsonSettingsService : ISettingsService
         settings.ColumnPresets ??= [];
         settings.FileDestinations = FileDestinations.Normalize(settings.FileDestinations);
         settings.Hotkeys = NormalizeHotkeys(settings.Hotkeys);
+        settings.TagNormalizationRules = TagNormalization.NormalizeRules(settings.TagNormalizationRules, _logger);
         settings.ConversionPresets = ConversionPresetFactory.NormalizeAll(settings.ConversionPresets, settings.Hotkeys, _logger);
         settings.Encoders = ConversionPresetFactory.NormalizeEncoders(settings.Encoders);
         settings.Network = NetworkSettings.Normalize(settings.Network);

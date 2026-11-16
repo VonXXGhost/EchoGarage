@@ -179,6 +179,27 @@
                                     <ColumnDefinition Width="90" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="帧率上限" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="VisualizerFrameRateBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                          SelectionChanged="OnVisualizerComboChanged">
+                                    <ComboBoxItem Content="不限制（默认）" Tag="Unlimited" />
+                                    <ComboBoxItem Content="30 FPS" Tag="Fps30" />
+                                    <ComboBoxItem Content="60 FPS" Tag="Fps60" />
+                                    <ComboBoxItem Content="120 FPS" Tag="Fps120" />
+                                    <ComboBoxItem Content="144 FPS" Tag="Fps144" />
+                                    <ComboBoxItem Content="180 FPS" Tag="Fps180" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock Text="帧率上限是绘制频率的天花板，实际帧率还受显示器刷新率限制；上限越低越省电。频谱弹道与释放速度不受影响。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="90,6,0,0" />
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="分段数" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextSecondaryBrush}" />
                                 <ComboBox x:Name="SpectrumBandBox" Grid.Column="1" Width="200" HorizontalAlignment="Left"
@@ -516,6 +537,104 @@
                             <TextBlock Text="转换 AAC 需要 Nero AAC 编码器。其许可不允许随软件分发，请自行下载 neroAacEnc.exe 并在此指定路径。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                        Margin="90,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Tag normalization rules (ADR-025) -->
+                    <TextBlock Text="标签规范化" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="对选中歌曲按正则批量规范化标签；规则保存在 settings.json，只在右键菜单或标签编辑窗口里主动执行时生效。正则表达式非法的规则不会被应用。"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                            <TextBlock Text="示例：内置规则会把专辑「Demo Album A - EP」整理为「Demo Album A」；规则按列表从上到下依次应用。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+                            <TextBlock x:Name="TagNormalizationEmptyHint"
+                                       Text="尚未配置规则。点击下方「恢复默认规则」可以恢复内置的两条规则。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="0,8,0,0" Visibility="Collapsed" />
+                            <ListBox x:Name="TagNormalizationRuleList" Margin="0,8,0,0" Background="Transparent"
+                                     BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,0,0,6" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Focusable" Value="False" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                CornerRadius="4" Padding="8">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Content="启用" VerticalAlignment="Center"
+                                                              IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                                              Click="OnTagNormalizationRuleToggled"
+                                                              ToolTip="停用后该规则不会出现在右键菜单里。" />
+                                                    <TextBox Grid.Column="1" Tag="name" Height="26" Margin="10,0,10,0"
+                                                             Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             TextChanged="OnTagNormalizationRuleTextChanged"
+                                                             ToolTip="规则名称，显示在右键菜单「标签规范化」中。示例：清理专辑后缀" />
+                                                    <ComboBox Grid.Column="2" Width="150" Height="26"
+                                                              ItemsSource="{Binding TargetOptions}"
+                                                              DisplayMemberPath="Label" SelectedValuePath="Key"
+                                                              SelectedValue="{Binding TargetField, Mode=TwoWay}"
+                                                              SelectionChanged="OnTagNormalizationTargetFieldChanged"
+                                                              ToolTip="规则作用的标签字段；选择「全部可文本字段」时对常用文本字段和其他标签都生效。" />
+                                                    <Button Grid.Column="3" Content="删除" Style="{StaticResource FlatButton}"
+                                                            Margin="8,0,0,0" Click="OnRemoveTagNormalizationRule"
+                                                            ToolTip="删除该规则（立即保存到 settings.json）。" />
+                                                </Grid>
+                                                <Grid Margin="0,6,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="170" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="正则" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    <TextBox Grid.Column="1" Tag="pattern" Height="26" Margin="8,0,10,0"
+                                                             FontFamily="{DynamicResource MonoFont}"
+                                                             Text="{Binding Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             TextChanged="OnTagNormalizationRuleTextChanged"
+                                                             ToolTip=".NET 正则表达式，可引用捕获组。示例：\s*-\s*(EP|Single)$" />
+                                                    <TextBlock Grid.Column="2" Text="替换为" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    <TextBox Grid.Column="3" Tag="replacement" Height="26" Margin="8,0,0,0"
+                                                             Text="{Binding Replacement, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             TextChanged="OnTagNormalizationRuleTextChanged"
+                                                             ToolTip="替换文本，可用 $1 引用捕获组；留空表示删除匹配到的内容。" />
+                                                </Grid>
+                                                <TextBlock Text="{Binding ErrorText}" Visibility="{Binding ErrorVisibility}"
+                                                           Foreground="{DynamicResource DangerBrush}" FontSize="11"
+                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <Button x:Name="AddTagNormalizationRuleButton" Content="添加规则"
+                                        Style="{StaticResource FlatButton}" Margin="0,0,8,0"
+                                        Click="OnAddTagNormalizationRule" />
+                                <Button Content="恢复默认规则" Style="{StaticResource FlatButton}"
+                                        Click="OnResetTagNormalizationRules" />
+                            </StackPanel>
+                            <TextBlock x:Name="TagNormalizationRuleStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 

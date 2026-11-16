@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
+using EchoGarage.Infrastructure.Audio;
 using EchoGarage.Infrastructure.Caching;
 
 namespace EchoGarage.Tests;
@@ -52,9 +53,9 @@ public sealed class WaveformCacheTests : IDisposable
         Assert.Equal(4, FileWaveformCache.BytesPerColumn);
         Assert.Equal(72 + 37 * 4, data.Length);
         Assert.Equal("EGWV", Encoding.ASCII.GetString(span[..4]));
-        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(span[4..]));
+        Assert.Equal(FileWaveformCache.FormatVersion, BinaryPrimitives.ReadUInt16LittleEndian(span[4..]));
         Assert.Equal(72, BinaryPrimitives.ReadUInt16LittleEndian(span[6..]));
-        Assert.Equal(1, BinaryPrimitives.ReadInt32LittleEndian(span[8..]));
+        Assert.Equal(WaveformAnalyzer.AnalyzerVersion, BinaryPrimitives.ReadInt32LittleEndian(span[8..]));
         Assert.Equal(peaks.SampleRate, BinaryPrimitives.ReadInt32LittleEndian(span[12..]));
         Assert.Equal(50, BinaryPrimitives.ReadUInt16LittleEndian(span[16..]));
         Assert.Equal(200, BinaryPrimitives.ReadUInt16LittleEndian(span[18..]));
@@ -224,6 +225,45 @@ public sealed class WaveformCacheTests : IDisposable
         var newer = CreateCache(directory, analyzerVersion: 7);
         Assert.Null(await newer.TryLoadAsync(wav));
         Assert.Empty(Directory.GetFiles(directory, "*.wfm"));
+    }
+
+    [Fact]
+    public async Task CacheFromPreviousAnalyzerVersion_IsRejectedAndDeleted()
+    {
+        // ADR-015-A2 把 AnalyzerVersion 从 1 升到 2：旧 .wfm 必须被视为失效并删除，下次请求重新分析。
+        var wav = WriteTestWav("legacy-analyzer.wav");
+        var directory = NewCacheDirectory();
+        var previousVersion = WaveformAnalyzer.AnalyzerVersion - 1;
+        Assert.True(previousVersion >= 1, "测试前提：当前分析器版本至少为 2");
+        await CreateCache(directory, analyzerVersion: previousVersion).SaveAsync(wav, CreatePeaks());
+
+        Assert.Null(await CreateCache(directory).TryLoadAsync(wav));
+        Assert.Empty(Directory.GetFiles(directory, "*.wfm"));
+    }
+
+    [Fact]
+    public async Task CacheFromPreviousAnalyzerVersion_IsRecomputedByService()
+    {
+        // 旧版本缓存被拒绝后，WaveformService 走真实分析，并把新版本结果写回缓存。
+        var wav = _workspace.Combine("legacy-recompute.wav");
+        WaveformTestAudio.WriteSine(wav, seconds: 3.0, frequency: 440);
+        var directory = NewCacheDirectory();
+        await CreateCache(directory, analyzerVersion: WaveformAnalyzer.AnalyzerVersion - 1)
+            .SaveAsync(wav, CreatePeaks());
+
+        var cache = CreateCache(directory);
+        var service = new WaveformService(new WaveformAnalyzer(), cache, _logger);
+        var peaks = await service.GetAsync(wav);
+
+        Assert.NotNull(peaks);
+        Assert.True(peaks.IsComplete);
+        // 恒定电平素材在新窗口下稳定段应显示为高柱（ADR-015-A2 的核心验收点）。
+        Assert.All(peaks.Height.Skip(6), height => Assert.True(height > 200, $"稳定段应有高度，实际 {height}"));
+        // 重新分析的结果已按当前 AnalyzerVersion 写回；再次读取命中缓存。
+        Assert.NotNull(await cache.TryLoadAsync(wav));
+        var cachePath = FindCacheFile(directory);
+        var analyzerVersion = BinaryPrimitives.ReadInt32LittleEndian(File.ReadAllBytes(cachePath).AsSpan(8));
+        Assert.Equal(WaveformAnalyzer.AnalyzerVersion, analyzerVersion);
     }
 
     [Fact]
@@ -416,7 +456,7 @@ public sealed class WaveformCacheTests : IDisposable
 
     private string NewCacheDirectory() => _workspace.Combine("Waveforms");
 
-    private FileWaveformCache CreateCache(string directory, int analyzerVersion = 1) =>
+    private FileWaveformCache CreateCache(string directory, int analyzerVersion = WaveformAnalyzer.AnalyzerVersion) =>
         new(directory, _logger, analyzerVersion);
 
     private string WriteTestWav(string name)

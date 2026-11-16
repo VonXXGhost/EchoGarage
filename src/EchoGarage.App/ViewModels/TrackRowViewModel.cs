@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.Windows;
 using System.Windows.Media.Imaging;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
@@ -29,16 +30,24 @@ public sealed partial class TrackRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
-    private IReadOnlyList<TrackCellViewModel> _cells = [];
+    private GroupedCellLayout _cellLayout = GroupedCellLayout.Empty;
+    private IReadOnlyList<TrackCellViewModel>? _cells;
+    private IReadOnlyList<TrackCellViewModel>? _rightCells;
+    private bool _cellsObserved;
+    private bool _rightCellsObserved;
 
-    /// <summary>Cells rendered by the grouped list; rebuilt when the column layout changes.</summary>
+    /// <summary>
+    /// Cells rendered by the grouped list. They are materialized on first binding access and cached
+    /// afterwards, so only the rows the virtualized list actually displays pay for their cells.
+    /// </summary>
     public IReadOnlyList<TrackCellViewModel> Cells
     {
-        get => _cells;
-        set => SetProperty(ref _cells, value);
+        get
+        {
+            _cellsObserved = true;
+            return _cells ??= _cellLayout.BuildCells(this, right: false);
+        }
     }
-
-    private IReadOnlyList<TrackCellViewModel> _rightCells = [];
 
     /// <summary>
     /// Cells whose columns are pinned to the right edge of the list. They are rendered in a
@@ -46,48 +55,95 @@ public sealed partial class TrackRowViewModel : ObservableObject
     /// </summary>
     public IReadOnlyList<TrackCellViewModel> RightCells
     {
-        get => _rightCells;
-        set => SetProperty(ref _rightCells, value);
+        get
+        {
+            _rightCellsObserved = true;
+            return _rightCells ??= _cellLayout.BuildCells(this, right: true);
+        }
     }
+
+    /// <summary>
+    /// Applies a new grouped-cell layout (visible columns + resolved templates). Rows that are
+    /// already bound rebuild their cells immediately; unbound rows only keep the layout reference
+    /// and build on first access, so a layout change never allocates cells for invisible rows.
+    /// </summary>
+    internal void SetCellLayout(GroupedCellLayout layout)
+    {
+        if (ReferenceEquals(_cellLayout, layout))
+        {
+            return;
+        }
+
+        _cellLayout = layout;
+        if (_cellsObserved)
+        {
+            _cells = null;
+            OnPropertyChanged(nameof(Cells));
+        }
+
+        if (_rightCellsObserved)
+        {
+            _rightCells = null;
+            OnPropertyChanged(nameof(RightCells));
+        }
+    }
+
+    /// <summary>Diagnostics: true once the list actually asked this row for cells.</summary>
+    internal bool HasResolvedCells => _cells is not null || _rightCells is not null;
 
     private static readonly IReadOnlyDictionary<string, string> EmptySecondaryTexts =
         new Dictionary<string, string>();
 
-    private IReadOnlyDictionary<string, string?> _secondaryFormats =
+    internal static readonly IReadOnlyDictionary<string, string?> EmptySecondaryFormats =
         new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-    private IReadOnlyDictionary<string, string> _secondaryTexts = EmptySecondaryTexts;
+    private IReadOnlyDictionary<string, string?> _secondaryFormats = EmptySecondaryFormats;
+
+    private IReadOnlyDictionary<string, string>? _secondaryTexts;
+    private bool _secondaryTextsObserved;
 
     /// <summary>
     /// Optional second-row text keyed by column key. Values are produced from
     /// <see cref="PlaylistColumn.SecondaryFormat"/> templates; missing keys render nothing.
+    /// Built on first binding access and cached, so only displayed rows pay for formatting.
     /// </summary>
     public IReadOnlyDictionary<string, string> SecondaryTexts
     {
-        get => _secondaryTexts;
-        set => SetProperty(ref _secondaryTexts, value);
+        get
+        {
+            _secondaryTextsObserved = true;
+            return _secondaryTexts ??= BuildSecondaryTexts();
+        }
     }
 
     /// <summary>
-    /// Replaces the per-column secondary formats and re-renders the secondary texts from the
-    /// current track. Keys with a blank format are omitted from <paramref name="formats"/>.
+    /// Replaces the per-column secondary formats and invalidates the rendered texts. Keys with a
+    /// blank format are omitted from <paramref name="formats"/>. Formatting itself is deferred
+    /// until a row is displayed; already bound rows refresh via a property changed notification.
     /// </summary>
     public void ApplySecondaryFormats(IReadOnlyDictionary<string, string?> formats)
     {
+        if (ReferenceEquals(_secondaryFormats, formats))
+        {
+            return;
+        }
+
         _secondaryFormats = formats;
-        RebuildSecondaryTexts();
+        _secondaryTexts = null;
+        if (_secondaryTextsObserved)
+        {
+            OnPropertyChanged(nameof(SecondaryTexts));
+        }
     }
 
-    private void RebuildSecondaryTexts()
+    /// <summary>Diagnostics: true once the list actually asked this row for secondary texts.</summary>
+    internal bool HasResolvedSecondaryTexts => _secondaryTexts is not null;
+
+    private IReadOnlyDictionary<string, string> BuildSecondaryTexts()
     {
         if (_secondaryFormats.Count == 0)
         {
-            if (_secondaryTexts.Count > 0)
-            {
-                SecondaryTexts = EmptySecondaryTexts;
-            }
-
-            return;
+            return EmptySecondaryTexts;
         }
 
         var values = BuildTokenValues();
@@ -101,7 +157,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
             }
         }
 
-        SecondaryTexts = texts;
+        return texts;
     }
 
     private Dictionary<string, string?> BuildTokenValues() => new(StringComparer.OrdinalIgnoreCase)
@@ -187,7 +243,8 @@ public sealed partial class TrackRowViewModel : ObservableObject
     {
         Track = track;
         IsMissing = track.IsMissing;
-        RebuildSecondaryTexts();
+        // Drop the cached texts; the empty-name notification re-reads them lazily from the new track.
+        _secondaryTexts = null;
         OnPropertyChanged(string.Empty);
     }
 
@@ -199,5 +256,62 @@ public sealed partial class TrackRowViewModel : ObservableObject
         }
 
         RowNumber = number;
+    }
+}
+
+/// <summary>
+/// Immutable snapshot of the grouped list's row-cell layout: the visible column headers (left flow
+/// and right-pinned block) plus their resolved cell templates. One instance is shared by every row
+/// of a rebuild; a row only creates its own <see cref="TrackCellViewModel"/> list when the
+/// virtualized list displays it, so rows scrolled out of view never allocate cells.
+/// </summary>
+internal sealed class GroupedCellLayout
+{
+    public static GroupedCellLayout Empty { get; } = new([], [], [], []);
+
+    private readonly GroupedColumnHeaderViewModel[] _leftHeaders;
+    private readonly DataTemplate?[] _leftTemplates;
+    private readonly GroupedColumnHeaderViewModel[] _rightHeaders;
+    private readonly DataTemplate?[] _rightTemplates;
+
+    public GroupedCellLayout(
+        IReadOnlyList<GroupedColumnHeaderViewModel> leftHeaders,
+        IReadOnlyList<DataTemplate?> leftTemplates,
+        IReadOnlyList<GroupedColumnHeaderViewModel> rightHeaders,
+        IReadOnlyList<DataTemplate?> rightTemplates)
+    {
+        _leftHeaders = [.. leftHeaders];
+        _leftTemplates = [.. leftTemplates];
+        _rightHeaders = [.. rightHeaders];
+        _rightTemplates = [.. rightTemplates];
+    }
+
+    public int LeftColumnCount => _leftHeaders.Length;
+
+    public int RightColumnCount => _rightHeaders.Length;
+
+    internal IReadOnlyList<TrackCellViewModel> BuildCells(TrackRowViewModel row, bool right)
+    {
+        var headers = right ? _rightHeaders : _leftHeaders;
+        if (headers.Length == 0)
+        {
+            return Array.Empty<TrackCellViewModel>();
+        }
+
+        var templates = right ? _rightTemplates : _leftTemplates;
+        var cells = new TrackCellViewModel[headers.Length];
+        for (var i = 0; i < cells.Length; i++)
+        {
+            var header = headers[i];
+            cells[i] = new TrackCellViewModel
+            {
+                Key = header.Key,
+                HeaderSource = header,
+                Row = row,
+                Template = templates[i]
+            };
+        }
+
+        return cells;
     }
 }

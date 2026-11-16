@@ -205,5 +205,150 @@ public sealed class SettingsTests : IDisposable
         Assert.True(ThemeCatalog.IsDark(ThemeKind.SlateStudio));
     }
 
+    [Fact]
+    public async Task Load_CreatesDefaultTagNormalizationRules()
+    {
+        await _settings.LoadAsync();
+
+        var rules = _settings.Current.TagNormalizationRules;
+        Assert.Equal(2, rules.Count);
+        Assert.Equal(TagNormalizationDefaults.AlbumEpSingleSuffixRuleId, rules[0].Id);
+        Assert.Equal(TagNormalizationDefaults.IsoDateTimeRuleId, rules[1].Id);
+
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+        Assert.True(json.Contains("\"tagNormalizationRules\"", StringComparison.Ordinal));
+        Assert.True(json.Contains(TagNormalizationDefaults.AlbumEpSingleSuffixRuleId, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Save_EmptyTagNormalizationRules_DoesNotResurrectDefaults()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.TagNormalizationRules = [];
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Empty(reloaded.Current.TagNormalizationRules);
+    }
+
+    [Theory]
+    [InlineData("{ \"schemaVersion\": 1 }")]
+    [InlineData("{ \"schemaVersion\": 1, \"tagNormalizationRules\": null }")]
+    public async Task Load_MissingTagNormalizationRules_FillsDefaults(string json)
+    {
+        await _settings.LoadAsync();
+        await File.WriteAllTextAsync(_paths.SettingsFile, json);
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        var rules = reloaded.Current.TagNormalizationRules;
+        Assert.Equal(2, rules.Count);
+        Assert.Contains(rules, rule => rule.Id == TagNormalizationDefaults.AlbumEpSingleSuffixRuleId);
+        Assert.Contains(rules, rule => rule.Id == TagNormalizationDefaults.IsoDateTimeRuleId);
+    }
+
+    [Fact]
+    public async Task Save_NormalizesTagNormalizationRules()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.TagNormalizationRules =
+        [
+            new TagNormalizationRule
+            {
+                Id = "   ",
+                Name = "   ",
+                TargetField = " Album ",
+                Pattern = "  ^Demo$  ",
+                Replacement = null!
+            },
+            new TagNormalizationRule
+            {
+                Id = "dup",
+                Name = "  Dup  ",
+                TargetField = "*",
+                Pattern = "(",
+                Replacement = string.Empty
+            },
+            new TagNormalizationRule
+            {
+                Id = "dup",
+                Name = "Dup Second",
+                TargetField = "comment",
+                Pattern = "x"
+            }
+        ];
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        var rules = reloaded.Current.TagNormalizationRules;
+        Assert.Equal(3, rules.Count);
+        Assert.False(string.IsNullOrWhiteSpace(rules[0].Id));
+        Assert.Equal("规范化规则 1", rules[0].Name);
+        Assert.Equal(TagFieldKeys.Album, rules[0].TargetField);
+        Assert.Equal("^Demo$", rules[0].Pattern);
+        Assert.Equal(string.Empty, rules[0].Replacement);
+        Assert.Equal("dup", rules[1].Id);
+        Assert.Equal("(", rules[1].Pattern); // 非法 pattern 保留给 UI 提示
+        Assert.Equal("Dup Second", rules[2].Name);
+        Assert.NotEqual("dup", rules[2].Id); // 重复 id 被替换
+    }
+
+    [Fact]
+    public async Task ExportAndImport_RoundTripsTagNormalizationRules()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.TagNormalizationRules =
+        [
+            new TagNormalizationRule
+            {
+                Id = "custom-rule",
+                Name = "Demo Rule",
+                TargetField = TagFieldKeys.Comment,
+                Pattern = @"(\d{4})-(\d{2})-(\d{2})",
+                Replacement = "$3/$2/$1",
+                Enabled = false
+            }
+        ];
+        await _settings.SaveAsync();
+
+        var exportPath = _workspace.Combine("export", "settings-tags.json");
+        await _settings.ExportAsync(exportPath);
+
+        _settings.Current.TagNormalizationRules = [];
+        await _settings.SaveAsync();
+
+        await _settings.ImportAsync(exportPath);
+
+        var rule = Assert.Single(_settings.Current.TagNormalizationRules);
+        Assert.Equal("custom-rule", rule.Id);
+        Assert.Equal("Demo Rule", rule.Name);
+        Assert.Equal(TagFieldKeys.Comment, rule.TargetField);
+        Assert.Equal(@"(\d{4})-(\d{2})-(\d{2})", rule.Pattern);
+        Assert.Equal("$3/$2/$1", rule.Replacement);
+        Assert.False(rule.Enabled);
+    }
+
+    [Fact]
+    public void AppSettings_Clone_DeepCopiesTagNormalizationRules()
+    {
+        var settings = new AppSettings();
+        var clone = settings.Clone();
+
+        Assert.NotSame(settings.TagNormalizationRules, clone.TagNormalizationRules);
+        Assert.Equal(2, clone.TagNormalizationRules.Count);
+        Assert.NotSame(settings.TagNormalizationRules[0], clone.TagNormalizationRules[0]);
+
+        clone.TagNormalizationRules[0].Name = "changed";
+        clone.TagNormalizationRules.Add(new TagNormalizationRule { Id = "extra", Pattern = "x" });
+
+        Assert.NotEqual("changed", settings.TagNormalizationRules[0].Name);
+        Assert.Equal(2, settings.TagNormalizationRules.Count);
+    }
+
     public void Dispose() => _workspace.Dispose();
 }

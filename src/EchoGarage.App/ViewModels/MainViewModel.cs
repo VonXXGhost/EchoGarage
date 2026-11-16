@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 using System.Windows.Data;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -40,6 +42,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int _consecutiveFailures;
     private List<TrackRowViewModel>? _shuffleOrder;
 
+    // Bumped whenever Tracks is replaced wholesale. The grouped-rebuild signature includes it so a
+    // source switch always rebuilds the row cells even when the layout itself did not change.
+    private int _tracksVersion;
+
+    /// <summary>Signature of every input <see cref="RebuildGroupedView"/> derives from.</summary>
+    private string? _groupedRebuildSignature;
+
+    /// <summary>Shared secondary-format table; rows keep their texts valid while the reference is stable.</summary>
+    private IReadOnlyDictionary<string, string?> _secondaryFormats = TrackRowViewModel.EmptySecondaryFormats;
+    private string _secondaryFormatsSignature = string.Empty;
+
     /// <summary>
     /// The source whose tracks and layout are currently shown. This is deliberately separate
     /// from <see cref="SelectedSource"/>: the source ListBox uses a TwoWay SelectedItem binding,
@@ -78,7 +91,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _sourcesView = CollectionViewSource.GetDefaultView(Sources);
         _sourcesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SourceNodeViewModel.Section)));
 
-        Tracks = [];
+        Tracks = new BulkObservableCollection<TrackRowViewModel>();
         _tracksView = new ListCollectionView(Tracks);
         TracksView = _tracksView;
 
@@ -122,7 +135,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public AppSettings Settings { get; }
     public ObservableCollection<SourceNodeViewModel> Sources { get; }
     public ICollectionView SourcesView => _sourcesView;
-    public ObservableCollection<TrackRowViewModel> Tracks { get; }
+    public BulkObservableCollection<TrackRowViewModel> Tracks { get; }
     public ICollectionView TracksView { get; }
     public ICollectionView GroupedTracksView { get; }
     /// <summary>Header cells for the left-anchored part of the grouped list.</summary>
@@ -649,6 +662,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>右栏是否显示可视化（设置里关掉时整块隐藏，把空间还给窗口）。</summary>
     public bool ShowVisualizer => Settings.Visualization.Kind != VisualizerKind.None;
 
+    /// <summary>右栏可视化的渲染帧率上限（FPS，0 = 不限制；ADR-023 A1，由设置页即时生效）。</summary>
+    public int VisualizerFrameRateLimit => Settings.Visualization.FrameRateLimit.ToFps();
+
     /// <summary>
     /// 把设置里的可视化参数推给分析引擎，并刷新视图用的快照。
     /// 启动、设置窗改参数、导入配置后调用。
@@ -659,6 +675,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _host.Spectrum.Apply(visualization);
         SpectrumOptions = EchoGarage.Core.Models.SpectrumOptions.From(visualization.Spectrum);
         OnPropertyChanged(nameof(ShowVisualizer));
+        OnPropertyChanged(nameof(VisualizerFrameRateLimit));
     }
 
     // =====================================================================
@@ -916,9 +933,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void ApplyTracks(IReadOnlyList<Track> tracks, SourceNodeViewModel source)
     {
+        var switchStopwatch = Stopwatch.StartNew();
         var playingPath = CurrentRow?.Track.Path;
         _shuffleOrder = null;
-        Tracks.Clear();
+        var rows = new List<TrackRowViewModel>(tracks.Count);
         for (var i = 0; i < tracks.Count; i++)
         {
             var row = new TrackRowViewModel(tracks[i], i + 1);
@@ -932,8 +950,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 BeginNowPlayingCoverLoad(tracks[i], keepExistingCover: true);
             }
 
-            Tracks.Add(row);
+            rows.Add(row);
         }
+
+        var buildRowsMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
+        // One Reset instead of Clear() + N×Add(): every intermediate notification made both
+        // collection views (and the DataGrid) re-run their sorting/filtering/regeneration work.
+        Tracks.ReplaceAll(rows);
+        _tracksVersion++;
+        var replaceAllMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
 
         PlaylistTitle = source.Kind switch
         {
@@ -943,8 +969,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         };
         _basePlaylistSubtitle = BuildSubtitle(source, tracks.Count);
         ApplySortAndGrouping();
+        var sortMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
         ApplyFilter();
+        var filterMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
         LayoutChanged?.Invoke(this, EventArgs.Empty);
+
+        _host.Logger.Info(
+            $"List switch: {source.Kind} '{source.Name}' rows={rows.Count}, " +
+            $"buildRows={buildRowsMilliseconds:F1}ms, " +
+            $"replaceAll={replaceAllMilliseconds - buildRowsMilliseconds:F1}ms, " +
+            $"sortGroup={sortMilliseconds - replaceAllMilliseconds:F1}ms, " +
+            $"filter={filterMilliseconds - sortMilliseconds:F1}ms, " +
+            $"total={switchStopwatch.Elapsed.TotalMilliseconds:F1}ms");
     }
 
     private static string BuildSubtitle(SourceNodeViewModel source, int count)
@@ -1034,30 +1070,52 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void ReapplySort() => ApplySortAndGrouping();
 
     /// <summary>
-    /// Rebuilds the grouped list's column header cells and the per-row cell list. The
+    /// Rebuilds the grouped list's column header cells and the per-row cell layout. The
     /// grouped view draws the album cover in a fixed gutter next to the whole group
     /// (foobar2000 style), so the cover column is not part of the row cells.
     /// </summary>
     private void RebuildGroupedView()
     {
+        var rebuildStopwatch = Stopwatch.StartNew();
+        var grouped = IsGroupedViewActive;
+        var signature = BuildGroupedRebuildSignature(grouped);
+        if (string.Equals(signature, _groupedRebuildSignature, StringComparison.Ordinal))
+        {
+            // Layout writes call this twice (CurrentLayout setter + ApplySortAndGrouping) and width
+            // drags persist repeatedly. Nothing the rebuild derives from changed, so keep the
+            // current headers and row-cell layout instead of rebuilding them again.
+            return;
+        }
+
+        _groupedRebuildSignature = signature;
+
+        var formats = ResolveSecondaryFormats();
         GroupedLeftColumns.Clear();
         GroupedRightColumns.Clear();
-        ApplySecondaryTexts();
-        if (!IsGroupedViewActive)
+        var secondaryStopwatch = Stopwatch.StartNew();
+        ApplySecondaryTexts(formats);
+        var secondaryMilliseconds = secondaryStopwatch.Elapsed.TotalMilliseconds;
+
+        if (!grouped)
         {
             foreach (var row in Tracks)
             {
-                row.Cells = [];
-                row.RightCells = [];
+                row.SetCellLayout(GroupedCellLayout.Empty);
             }
 
             GroupedColumnsRebuilt?.Invoke(this, EventArgs.Empty);
+            _host.Logger.Debug(
+                $"RebuildGroupedView: flat rows={Tracks.Count}, secondary={secondaryMilliseconds:F1}ms, " +
+                $"elapsed={rebuildStopwatch.Elapsed.TotalMilliseconds:F1}ms");
             return;
         }
 
         var sortColumn = CurrentLayout.SortColumn;
         var descending = CurrentLayout.SortDescending;
-        var templates = new Dictionary<string, System.Windows.DataTemplate?>(StringComparer.OrdinalIgnoreCase);
+        var leftHeaders = new List<GroupedColumnHeaderViewModel>();
+        var leftTemplates = new List<System.Windows.DataTemplate?>();
+        var rightHeaders = new List<GroupedColumnHeaderViewModel>();
+        var rightTemplates = new List<System.Windows.DataTemplate?>();
         foreach (var column in CurrentLayout.Columns.Where(c => c.Visible))
         {
             if (string.Equals(column.Key, "cover", StringComparison.OrdinalIgnoreCase))
@@ -1082,7 +1140,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                         string.Equals(sortColumn, sortProperty, StringComparison.Ordinal)
                 ? descending ? "▼" : "▲"
                 : string.Empty;
-            templates[descriptor.Key] = template;
             var header = new GroupedColumnHeaderViewModel
             {
                 Key = column.Key,
@@ -1096,15 +1153,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (column.Pin == ColumnPin.Right)
             {
                 GroupedRightColumns.Add(header);
+                rightHeaders.Add(header);
+                rightTemplates.Add(template);
             }
             else
             {
                 GroupedLeftColumns.Add(header);
+                leftHeaders.Add(header);
+                leftTemplates.Add(template);
             }
         }
 
-        var leftHeaders = GroupedLeftColumns.ToList();
-        var rightHeaders = GroupedRightColumns.ToList();
         if (rightHeaders.Count > 0)
         {
             // The trailing pinned column's right edge is the list border; its gripper would
@@ -1119,33 +1178,58 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
         }
 
+        // The layout is immutable and shared by every row: only rows the virtualized list actually
+        // displays materialize their own TrackCellViewModel list, invisible rows just hold the ref.
+        var cellLayout = new GroupedCellLayout(leftHeaders, leftTemplates, rightHeaders, rightTemplates);
+        var boundRows = 0;
         foreach (var row in Tracks)
         {
-            row.Cells = leftHeaders.Select(h => new TrackCellViewModel
+            row.SetCellLayout(cellLayout);
+            if (row.HasResolvedCells)
             {
-                Key = h.Key,
-                HeaderSource = h,
-                Row = row,
-                Template = templates[h.Key]
-            }).ToList();
-            row.RightCells = rightHeaders.Select(h => new TrackCellViewModel
-            {
-                Key = h.Key,
-                HeaderSource = h,
-                Row = row,
-                Template = templates[h.Key]
-            }).ToList();
+                boundRows++;
+            }
         }
 
         GroupedColumnsRebuilt?.Invoke(this, EventArgs.Empty);
+        _host.Logger.Debug(
+            $"RebuildGroupedView: grouped rows={Tracks.Count}, cols={leftHeaders.Count}+{rightHeaders.Count}, " +
+            $"boundRows={boundRows}, secondary={secondaryMilliseconds:F1}ms, " +
+            $"elapsed={rebuildStopwatch.Elapsed.TotalMilliseconds:F1}ms");
     }
 
     /// <summary>
-    /// Recomputes the optional second row line for every track row from the current layout.
-    /// Only visible columns with a non-blank secondary format contribute; when the feature
-    /// toggle is off all rows fall back to a single line.
+    /// Signature of every input the grouped-view rebuild derives headers or row cells from:
+    /// the track set, flat/grouped mode, sort and each column's visibility/pin/width and
+    /// secondary format. An unchanged signature makes the rebuild a no-op.
     /// </summary>
-    private void ApplySecondaryTexts()
+    private string BuildGroupedRebuildSignature(bool grouped)
+    {
+        var builder = new StringBuilder(256);
+        builder.Append(_tracksVersion)
+            .Append('|').Append(grouped ? 'G' : 'F')
+            .Append('|').Append(CurrentLayout.ShowSecondaryInfo ? 'S' : 's')
+            .Append('|').Append(CurrentLayout.SortColumn ?? string.Empty)
+            .Append('|').Append(CurrentLayout.SortDescending ? 'D' : 'A')
+            .Append('|').Append(CurrentLayout.GroupSortByDiscTrack ? 'T' : 't');
+        foreach (var column in CurrentLayout.Columns)
+        {
+            builder.Append('|').Append(column.Key)
+                .Append(':').Append(column.Visible ? '1' : '0')
+                .Append(':').Append((int)column.Pin)
+                .Append(':').Append(column.Width.ToString(CultureInfo.InvariantCulture))
+                .Append(':').Append(column.SecondaryFormat ?? string.Empty);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Resolves the current secondary-text formats and reuses the previous table when the result
+    /// is unchanged. Rows invalidate their cached texts only when the shared instance differs, so
+    /// an unrelated sort/layout refresh no longer invalidates every row.
+    /// </summary>
+    private IReadOnlyDictionary<string, string?> ResolveSecondaryFormats()
     {
         var formats = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         if (CurrentLayout.ShowSecondaryInfo)
@@ -1157,6 +1241,25 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
         }
 
+        var signature = formats.Count == 0
+            ? string.Empty
+            : string.Join('\u001e', formats.Select(pair => $"{pair.Key}\u001f{pair.Value}"));
+        if (string.Equals(signature, _secondaryFormatsSignature, StringComparison.Ordinal))
+        {
+            return _secondaryFormats;
+        }
+
+        _secondaryFormats = formats;
+        _secondaryFormatsSignature = signature;
+        return formats;
+    }
+
+    /// <summary>
+    /// Hands the shared secondary-format table to all rows. Formatting itself is deferred to the
+    /// rows: this pass only swaps references and lets already displayed rows refresh their binding.
+    /// </summary>
+    private void ApplySecondaryTexts(IReadOnlyDictionary<string, string?> formats)
+    {
         foreach (var row in Tracks)
         {
             row.ApplySecondaryFormats(formats);
@@ -2819,10 +2922,134 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// 标签规范化（ADR-025）：按设置页配置的正则规则批量改写选中歌曲的标签。
+    /// ruleId 为 null 时应用全部启用规则；读取标签与规则匹配在后台完成，
+    /// 写入复用 <see cref="ApplyTagEditsAsync"/> 的完整标签闭环（写文件、重新索引、刷新封面与列表）。
+    /// </summary>
+    public async Task ApplyTagNormalizationAsync(string? ruleId)
+    {
+        var rows = Tracks.Where(IsRowSelected).ToList();
+        if (rows.Count == 0 && SelectedRow is not null)
+        {
+            rows.Add(SelectedRow);
+        }
+
+        if (rows.Count == 0)
+        {
+            SetStatus("请先选择要规范化的歌曲");
+            return;
+        }
+
+        var configured = Settings.TagNormalizationRules;
+        List<TagNormalizationRule> rules;
+        string ruleLabel;
+        if (ruleId is null)
+        {
+            rules = configured.Where(rule => rule.Enabled).Select(rule => rule.Clone()).ToList();
+            ruleLabel = "全部启用规则";
+        }
+        else
+        {
+            var rule = configured.FirstOrDefault(item => string.Equals(item.Id, ruleId, StringComparison.Ordinal));
+            if (rule is null)
+            {
+                SetStatus("找不到该规范化规则，可能已在设置页删除");
+                return;
+            }
+
+            if (!rule.Enabled)
+            {
+                SetStatus($"规则「{rule.Name}」已停用");
+                return;
+            }
+
+            rules = [rule.Clone()];
+            ruleLabel = $"{rule.Id} / {rule.Name}";
+        }
+
+        // 非法正则的规则在 Core 里本来也会被跳过；这里提前过滤，
+        // 避免整批歌曲都因“无变化”被跳过却没有任何提示。
+        rules = rules.Where(rule => TagNormalization.IsValidPattern(rule.Pattern, out _)).ToList();
+        if (rules.Count == 0)
+        {
+            SetStatus(ruleId is null ? "没有可用的规范化规则，请先在设置页检查" : "该规则的正则表达式无效，未应用");
+            return;
+        }
+
+        SetStatus("正在检查标签…");
+        try
+        {
+            var plan = await Task.Run(() =>
+            {
+                var targets = new List<TrackRowViewModel>();
+                var sourceTags = new List<AudioTagData>();
+                var edits = new List<TagBatchEdit>();
+                var skipped = 0;
+                var changes = 0;
+                foreach (var row in rows)
+                {
+                    AudioTagData tag;
+                    try
+                    {
+                        tag = _host.TagService.Read(row.Track.Path);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 单个文件读标签失败不影响其余文件：记录后计入跳过数。
+                        _host.Logger.Warn($"Tag normalization skipped (read failed) {row.Track.Path}: {ex.Message}");
+                        skipped++;
+                        continue;
+                    }
+
+                    var result = TagNormalization.ApplyToTag(rules, tag);
+                    if (result is null || !result.HasChanges)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var edit = new TagBatchEdit();
+                    result.ApplyTo(edit);
+                    targets.Add(row);
+                    sourceTags.Add(tag);
+                    edits.Add(edit);
+                    changes += result.Count;
+                }
+
+                return (Targets: targets, Tags: sourceTags, Edits: edits, Skipped: skipped, Changes: changes);
+            });
+
+            _host.Logger.Info(
+                $"Tag normalization planned: rule={ruleLabel}, " +
+                $"rules={string.Join(", ", rules.Select(r => $"{r.Id}/{r.Name}"))}, " +
+                $"files={plan.Targets.Count}, changes={plan.Changes}, skipped={plan.Skipped}");
+
+            if (plan.Targets.Count == 0)
+            {
+                SetStatus(plan.Skipped > 0
+                    ? $"没有需要规范化的标签（检查了 {plan.Skipped} 首歌曲）"
+                    : "没有需要规范化的标签");
+                return;
+            }
+
+            var saved = await ApplyTagEditsAsync(plan.Targets, plan.Tags, plan.Edits, "标签规范化");
+            if (saved == plan.Targets.Count)
+            {
+                SetStatus($"已规范化 {saved} 首歌曲的标签（{plan.Changes} 处修改）");
+            }
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error("Tag normalization failed", ex);
+            _dialogs.Error($"标签规范化失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// 标签写入闭环：以每个文件当前标签为底稿合并编辑，写入后重新索引、失效封面缓存并刷新列表。
     /// 标签编辑与 Web 搜索共用，避免复制第二份写文件代码。
     /// </summary>
-    private async Task ApplyTagEditsAsync(
+    private async Task<int> ApplyTagEditsAsync(
         IReadOnlyList<TrackRowViewModel> rows,
         IReadOnlyList<AudioTagData> tags,
         IReadOnlyList<TagBatchEdit> edits,
@@ -2875,6 +3102,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             _host.Logger.Info($"{operation} saved: {saved} file(s)");
             SetStatus(saved > 1 ? $"已保存 {saved} 个文件的{operation}" : $"{operation}已保存");
         }
+
+        return saved;
     }
 
     // =====================================================================
@@ -2944,9 +3173,29 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             var result = await _host.Files.DeleteToRecycleBinAsync(paths);
             var deleted = result.Items.Where(i => i.Succeeded).Select(i => i.SourcePath).ToList();
+            var playlistRemoved = 0;
             if (deleted.Count > 0)
             {
                 await _host.LibraryRepository.MarkTracksMissingAsync(deleted);
+                try
+                {
+                    // ADR-021-A1：删除到回收站是用户确认过的删除，播放列表里的条目也一并移除，
+                    // 避免列表里留下永远无法播放的缺失行。
+                    playlistRemoved = await _host.PlaylistRepository.RemovePlaylistItemsByPathAsync(deleted);
+                }
+                catch (Exception ex)
+                {
+                    // 播放列表清理失败不阻断“已删除文件”状态：文件已经进回收站、曲目行已标记缺失，
+                    // 这里只降级为 WARN，界面刷新与部分失败提示保持原行为。
+                    _host.Logger.Warn($"Removing deleted files from playlists failed: {ex.Message}");
+                }
+
+                if (playlistRemoved > 0)
+                {
+                    // INFO 日志独立于“是否整体成功”分支记录移除数，部分失败时也能追溯。
+                    _host.Logger.Info($"Playlist items removed for deleted files: {playlistRemoved} item(s)");
+                }
+
                 foreach (var path in deleted)
                 {
                     _host.Waveforms.Invalidate(path);
@@ -2960,7 +3209,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (result.Failed == 0)
             {
                 _host.Logger.Info($"Files moved to recycle bin: {deleted.Count} file(s)");
-                SetStatus($"已把 {deleted.Count} 个文件移到回收站");
+                SetStatus(playlistRemoved > 0
+                    ? $"已把 {deleted.Count} 个文件移到回收站，并从播放列表移除 {playlistRemoved} 项"
+                    : $"已把 {deleted.Count} 个文件移到回收站");
             }
             else
             {

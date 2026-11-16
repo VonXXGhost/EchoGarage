@@ -597,10 +597,10 @@ public partial class MainWindow : Window
     // =====================================================================
     /// <summary>
     /// The track context menu is shared by the grid and the grouped list, and its submenus
-    /// (conversion presets, file operations) are rebuilt from current state. Rebuild them in
-    /// <see cref="FrameworkElement.ContextMenuOpening"/> — i.e. before the menu is shown —
-    /// because a MenuItem without children never opens its submenu, while touching the items
-    /// of an already displayed menu (Opened / SubmenuOpened) makes WPF recreate the visual
+    /// (conversion presets, file operations, tag normalization) are rebuilt from current state.
+    /// Rebuild them in <see cref="FrameworkElement.ContextMenuOpening"/> — i.e. before the menu
+    /// is shown — because a MenuItem without children never opens its submenu, while touching the
+    /// items of an already displayed menu (Opened / SubmenuOpened) makes WPF recreate the visual
     /// containers and the whole menu chain collapses as soon as the pointer enters a submenu.
     /// </summary>
     private void OnTrackMenuOpening(object sender, ContextMenuEventArgs e)
@@ -629,6 +629,13 @@ public partial class MainWindow : Window
         {
             fileOperations.IsEnabled = _vm.GetFileOperationTargets().Count > 0;
             RebuildFileOperationMenu(fileOperations);
+        }
+
+        var tagNormalization = items.FirstOrDefault(item => item.Header as string == "标签规范化");
+        if (tagNormalization is not null)
+        {
+            tagNormalization.IsEnabled = _vm.SelectedRows.Count > 0 || _vm.SelectedRow is not null;
+            RebuildTagNormalizationMenu(tagNormalization);
         }
     }
 
@@ -717,6 +724,43 @@ public partial class MainWindow : Window
         var settings = new MenuItem { Header = "转换器设置…" };
         settings.Click += (_, _) => _ = _conversion.OpenSettingsAsync();
         menu.Items.Add(settings);
+    }
+
+    /// <summary>
+    /// 「标签规范化」二级菜单（ADR-025）：列出设置页里启用的规则，外加“应用全部启用规则”。
+    /// 与转换 / 文件操作子菜单一样在菜单显示前构建；没有启用规则时显示禁用的占位项。
+    /// </summary>
+    private void RebuildTagNormalizationMenu(MenuItem menu)
+    {
+        menu.Items.Clear();
+        var rules = _vm.Settings.TagNormalizationRules.Where(rule => rule.Enabled).ToList();
+        foreach (var rule in rules)
+        {
+            var item = new MenuItem
+            {
+                Header = string.IsNullOrWhiteSpace(rule.Name) ? "未命名规则" : rule.Name,
+                Tag = rule.Id,
+                ToolTip = string.IsNullOrWhiteSpace(rule.Pattern) ? null : $"正则：{rule.Pattern}",
+            };
+            item.Click += (_, _) =>
+            {
+                if (item.Tag is string ruleId)
+                {
+                    _ = _vm.ApplyTagNormalizationAsync(ruleId);
+                }
+            };
+            menu.Items.Add(item);
+        }
+
+        if (rules.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "（没有启用的规则）", IsEnabled = false });
+        }
+
+        menu.Items.Add(new Separator());
+        var applyAll = new MenuItem { Header = "应用全部启用规则", IsEnabled = rules.Count > 0 };
+        applyAll.Click += (_, _) => _ = _vm.ApplyTagNormalizationAsync(ruleId: null);
+        menu.Items.Add(applyAll);
     }
 
     private void OnConversionSettingsClick(object sender, RoutedEventArgs e) => _ = _conversion.OpenSettingsAsync();

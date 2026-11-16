@@ -42,7 +42,11 @@ public sealed class DialogService : IDialogService
 
     public TagBatchEdit? EditTags(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> currentTags)
     {
-        var window = new TagPropertiesWindow(tracks, currentTags) { Owner = _owner };
+        // 标签属性窗口的「快捷规范化」使用设置页最新的规则列表（ADR-025 / KB-018）。
+        var window = new TagPropertiesWindow(tracks, currentTags, _host.Settings.Current.TagNormalizationRules)
+        {
+            Owner = _owner,
+        };
         return window.ShowDialog() == true ? window.Result : null;
     }
 

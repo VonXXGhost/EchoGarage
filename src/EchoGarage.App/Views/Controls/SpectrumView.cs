@@ -72,7 +72,14 @@ public sealed class SpectrumView : FrameworkElement
         nameof(Options),
         typeof(SpectrumOptions),
         typeof(SpectrumView),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticLayerInvalidated));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnOptionsChanged));
+
+    /// <summary>渲染帧率上限（FPS，0 = 不限制；ADR-023 A1）。只节流分析 / 重绘频率，不改分析窗口与弹道。</summary>
+    public static readonly DependencyProperty FrameRateLimitProperty = DependencyProperty.Register(
+        nameof(FrameRateLimit),
+        typeof(int),
+        typeof(SpectrumView),
+        new FrameworkPropertyMetadata(0, OnFrameRateLimitChanged));
 
     private const double MinimumWidthForDbLabels = 200;
 
@@ -84,6 +91,13 @@ public sealed class SpectrumView : FrameworkElement
 
     /// <summary>相邻频率标签之间至少留出的空隙（DIP）。</summary>
     private const double LabelGap = 5;
+
+    /// <summary>
+    /// 节流判定容差（ADR-023 A1）：距上次分析帧不足 <c>0.95 / limit</c> 秒才跳过本 tick。
+    /// 留 5% 余量吸收「上限 = 显示器刷新率」时的帧时间抖动，避免每帧都差一点点而被吞成一半帧率；
+    /// 代价是实际帧率最多可比上限高 5%（仍低于显示器刷新率）。
+    /// </summary>
+    private const double FrameRateTolerance = 0.95;
 
     /// <summary>绘图区顶部留白：0 dB 刻度线与峰值线不贴边。</summary>
     private const double PlotTopInset = 3;
@@ -168,6 +182,13 @@ public sealed class SpectrumView : FrameworkElement
     {
         get => (SpectrumOptions?)GetValue(OptionsProperty);
         set => SetValue(OptionsProperty, value);
+    }
+
+    /// <summary>渲染帧率上限（FPS，0 = 不限制）。见 ADR-023 A1。</summary>
+    public int FrameRateLimit
+    {
+        get => (int)GetValue(FrameRateLimitProperty);
+        set => SetValue(FrameRateLimitProperty, value);
     }
 
     /// <summary>已绘制的帧数（诊断用：配合经过时间算实际 FPS）。</summary>
@@ -600,6 +621,27 @@ public sealed class SpectrumView : FrameworkElement
         }
     }
 
+    private static void OnOptionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is SpectrumView view)
+        {
+            // 分析参数整体替换：清掉旧帧并重置计时，下一个渲染 tick 立即按新参数出帧，
+            // 不让节流（尤其高上限）把旧参数的帧留在屏幕上。
+            view.ResetFrameTiming();
+            view._frame = null;
+            view.InvalidateStaticLayer();
+        }
+    }
+
+    private static void OnFrameRateLimitChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is SpectrumView view)
+        {
+            // 切换上限后下一次 Rendering 立即出帧（不受旧上限的节流窗口约束）。
+            view.ResetFrameTiming();
+        }
+    }
+
     private static void OnSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not SpectrumView view)
@@ -607,10 +649,16 @@ public sealed class SpectrumView : FrameworkElement
             return;
         }
 
-        view._lastRenderingTime = TimeSpan.Zero;
-        view._firstRenderingTime = TimeSpan.Zero;
+        view.ResetFrameTiming();
         view._frame = null;
         view.InvalidateVisual();
+    }
+
+    /// <summary>重置帧计时：下一个渲染 tick 不参与节流，且 dt 从 1/60 重新起算（换源 / 换参数 / 换上限后）。</summary>
+    private void ResetFrameTiming()
+    {
+        _lastRenderingTime = TimeSpan.Zero;
+        _firstRenderingTime = TimeSpan.Zero;
     }
 
     private void OnRendering(object? sender, EventArgs e)
@@ -637,6 +685,17 @@ public sealed class SpectrumView : FrameworkElement
             _firstRenderingTime = rendering.RenderingTime;
         }
 
+        // 帧率上限节流（ADR-023 A1）：未到「1 / 上限」就跳过本 tick —— 不分析、不重绘，
+        // 也不推进 _lastRenderingTime，保证下一个真实分析帧的 dt 是真实经过时间。
+        // 弹道按「dB/s × dt」推进，如果把 dt 改小 / 固定成 1/limit，释放速度会变慢，所以只能整帧跳过。
+        // 0.95 容差见 FrameRateTolerance 的说明。
+        var frameRateLimit = FrameRateLimit;
+        if (frameRateLimit > 0 && _lastRenderingTime != TimeSpan.Zero &&
+            (rendering.RenderingTime - _lastRenderingTime).TotalSeconds < FrameRateTolerance / frameRateLimit)
+        {
+            return;
+        }
+
         var dt = _lastRenderingTime == TimeSpan.Zero
             ? 1.0 / 60.0
             : (rendering.RenderingTime - _lastRenderingTime).TotalSeconds;
@@ -654,8 +713,7 @@ public sealed class SpectrumView : FrameworkElement
         }
 
         _hooked = true;
-        _lastRenderingTime = TimeSpan.Zero;
-        _firstRenderingTime = TimeSpan.Zero;
+        ResetFrameTiming();
         CompositionTarget.Rendering += OnRendering;
     }
 
@@ -672,7 +730,7 @@ public sealed class SpectrumView : FrameworkElement
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        _lastRenderingTime = TimeSpan.Zero;
+        ResetFrameTiming();
         Hook();
     }
 

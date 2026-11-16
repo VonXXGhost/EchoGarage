@@ -10,6 +10,39 @@ public enum VisualizerKind
     Spectrum
 }
 
+/// <summary>
+/// 播放可视化渲染的帧率上限（ADR-023 A1）。数值即节流后的目标 FPS，<see cref="Unlimited"/> 为 0。
+/// 上限只是天花板：实际帧率还受显示器刷新率与 WPF 渲染 tick 的取整限制。
+/// </summary>
+public enum VisualizerFrameRate
+{
+    /// <summary>不限制：每个 WPF 渲染 tick 都分析并绘制（ADR-023 原有行为，默认）。</summary>
+    Unlimited = 0,
+
+    /// <summary>30 FPS。</summary>
+    Fps30 = 30,
+
+    /// <summary>60 FPS。</summary>
+    Fps60 = 60,
+
+    /// <summary>120 FPS。</summary>
+    Fps120 = 120,
+
+    /// <summary>144 FPS。</summary>
+    Fps144 = 144,
+
+    /// <summary>180 FPS。</summary>
+    Fps180 = 180
+}
+
+/// <summary><see cref="VisualizerFrameRate"/> 与绑定层使用的整数帧率上限之间的换算。</summary>
+public static class VisualizerFrameRateExtensions
+{
+    /// <summary>帧率上限值（FPS）；0 表示不限制。未定义的枚举值按不限制处理。</summary>
+    public static int ToFps(this VisualizerFrameRate frameRate) =>
+        Enum.IsDefined(frameRate) ? (int)frameRate : 0;
+}
+
 /// <summary>频段内多个 FFT bin 的聚合方式（ADR-023 §6.4）。</summary>
 public enum SpectrumSummation
 {
@@ -112,22 +145,35 @@ public sealed class VisualizationSettings
     /// <summary>当前可视化形态；<see cref="VisualizerKind.None"/> 时面板下方留空。</summary>
     public VisualizerKind Kind { get; set; } = VisualizerKind.Spectrum;
 
+    /// <summary>
+    /// 渲染帧率上限（ADR-023 A1）。默认不限制，保持加入该选项前的行为；
+    /// 挂在可视化级别而不是 <see cref="SpectrumSettings"/> 上，因为限制的是渲染循环而不是频谱分析参数，
+    /// 后续其它可视化形态可以复用同一个上限。
+    /// </summary>
+    public VisualizerFrameRate FrameRateLimit { get; set; } = VisualizerFrameRate.Unlimited;
+
     /// <summary>分段频谱图参数（切换形态时保留，切回来不丢）。</summary>
     public SpectrumSettings Spectrum { get; set; } = new();
 
     public VisualizationSettings Clone() => new()
     {
         Kind = Kind,
+        FrameRateLimit = FrameRateLimit,
         Spectrum = Spectrum.Clone()
     };
 
-    /// <summary>校验并规范化；未知形态回退为频谱图，频谱参数交给 <see cref="SpectrumSettings.Normalize"/>。</summary>
+    /// <summary>校验并规范化；未知形态回退为频谱图，未知帧率上限回退为不限制，频谱参数交给 <see cref="SpectrumSettings.Normalize"/>。</summary>
     public static VisualizationSettings Normalize(VisualizationSettings? settings)
     {
         var result = settings ?? new VisualizationSettings();
         if (!Enum.IsDefined(result.Kind))
         {
             result.Kind = VisualizerKind.Spectrum;
+        }
+
+        if (!Enum.IsDefined(result.FrameRateLimit))
+        {
+            result.FrameRateLimit = VisualizerFrameRate.Unlimited;
         }
 
         result.Spectrum = SpectrumSettings.Normalize(result.Spectrum);

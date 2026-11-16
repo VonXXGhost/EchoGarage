@@ -5,7 +5,7 @@ using EchoGarage.Infrastructure.Audio;
 namespace EchoGarage.Tests;
 
 /// <summary>
-/// ADR-015 §6 / §6.10 波形分析器：频段份额、静音、渐进发布、分块一致性、取消。
+/// ADR-015 §6 / §6.10、ADR-015-A2 波形分析器：频段份额、静音、渐进发布、分块一致性、取消。
 /// 分析器是纯计算（不 Task.Run），测试里直接 await。
 /// </summary>
 public sealed class WaveformAnalyzerTests : IDisposable
@@ -39,6 +39,32 @@ public sealed class WaveformAnalyzerTests : IDisposable
             _ => MeanShare(peaks.High),
         };
         Assert.True(average > 0.9, $"{frequency} Hz 应主要落在 {band} 频段，实际份额均值 {average:F1}");
+    }
+
+    [Fact]
+    public async Task Analyze_ConstantLevelSine_FinalSnapshotStaysVisible()
+    {
+        // ADR-015-A2：恒定电平 / 窄动态素材 p5 ≈ p99.5，旧窗口会把所有列压到 0 高度（空图）。
+        // 新窗口把下界向下扩展到 MinimumStretchDb，稳定段必须接近满高。
+        var wav = _workspace.Combine("constant-level.wav");
+        WaveformTestAudio.WriteSine(wav, seconds: 3.0, frequency: 440);
+        var progress = new SyncProgress<WaveformPeaks>();
+        var analyzer = new WaveformAnalyzer(publishChunkColumns: 100);
+
+        var peaks = await analyzer.AnalyzeAsync(wav, progress);
+
+        Assert.True(peaks.IsComplete);
+        Assert.True(peaks.ColumnCount > 0);
+        Assert.Equal(WaveformMath.MinimumStretchDb, peaks.CeilingDb - peaks.FloorDb, 6);
+        Assert.True(peaks.FloorDb >= WaveformMath.SilenceDb);
+        // 只有开头包络从 0 爬升的少数列可能偏低；稳定段应显示为高柱。
+        Assert.All(peaks.Height.Skip(6), height => Assert.True(height > 200, $"恒定电平素材稳定段应有高度，实际 {height}"));
+        // 渐进快照仍使用固定 −48…0 dB 窗口（ADR-015 §6.10 行为不变）。
+        Assert.All(progress.Items.Where(item => !item.IsComplete), snapshot =>
+        {
+            Assert.Equal(WaveformMath.StreamingWindowFloorDb, snapshot.FloorDb);
+            Assert.Equal(WaveformMath.StreamingWindowCeilingDb, snapshot.CeilingDb);
+        });
     }
 
     [Fact]

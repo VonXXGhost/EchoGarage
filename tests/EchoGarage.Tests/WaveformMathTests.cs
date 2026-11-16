@@ -3,19 +3,23 @@ using EchoGarage.Core.Services;
 namespace EchoGarage.Tests;
 
 /// <summary>
-/// ADR-015 §6 的纯函数测试：分位拉伸、静音、包络、份额量化、设备像素列聚合。
+/// ADR-015 §6 / ADR-015-A2 的纯函数测试：分位拉伸、静音、包络、份额量化、设备像素列聚合。
 /// </summary>
 public sealed class WaveformMathTests
 {
-    // ---- 分位拉伸 / 高度（§6.6）----
+    // ---- 分位拉伸 / 高度（§6.6、ADR-015-A2）----
 
     [Fact]
-    public void StretchWindow_ConstantSignal_EnforcesMinimumEightDecibelRange()
+    public void StretchWindow_ConstantSignal_ExtendsFloorToMinimumRange()
     {
+        // 恒定电平素材：p5 == p99.5。窗口必须向下扩展（而不是抬高上限），否则高度全为 0。
         var (floor, ceiling) = WaveformMath.StretchWindow([-70.0, -70.0, -70.0]);
 
-        Assert.Equal(-70.0, floor, 6);
+        Assert.Equal(-70.0, ceiling, 6);
         Assert.Equal(WaveformMath.MinimumStretchDb, ceiling - floor, 6);
+        Assert.Equal(WaveformMath.SilenceDb, floor, 6);
+        // 所有列落在窗口上限 → 满高，波形可见（旧实现为 0）。
+        Assert.Equal(255, WaveformMath.StretchHeight(RmsForDecibel(-70.0), floor, ceiling));
     }
 
     [Fact]
@@ -37,9 +41,53 @@ public sealed class WaveformMathTests
 
         var (floor, ceiling) = WaveformMath.StretchWindow(decibels);
 
-        Assert.True(floor > -31.0, $"p5 不应被单个极轻列拉到 {floor}");
         Assert.True(ceiling < -3.0, $"p99.5 不应取到单个最响列 {ceiling}");
-        Assert.True(ceiling - floor >= WaveformMath.MinimumStretchDb);
+        // 实测 p5 = -30、p99.5 ≈ -16.365（范围 13.6 dB < 30）→ 下界向下扩展到 ceiling - 30。
+        Assert.True(floor < -31.0, $"窄动态素材的下界应向下扩展，实际 {floor}");
+        Assert.Equal(WaveformMath.MinimumStretchDb, ceiling - floor, 6);
+    }
+
+    [Fact]
+    public void StretchWindow_NarrowDynamicRange_ProducesVisibleHeights()
+    {
+        // 窄动态素材（±0.5 dB）：旧实现归一化后高度≈0；新窗口下应接近满高且仍保留层次。
+        var decibels = Enumerable.Range(0, 100)
+            .Select(index => -70.0 + (index % 2 == 0 ? 0.0 : 0.5))
+            .ToArray();
+
+        var (floor, ceiling) = WaveformMath.StretchWindow(decibels);
+        var heights = WaveformMath.BuildHeights(
+            [RmsForDecibel(-70.0), RmsForDecibel(-69.5)], floor, ceiling);
+
+        Assert.Equal(WaveformMath.MinimumStretchDb, ceiling - floor, 6);
+        Assert.All(heights, height => Assert.True(height > 200, $"窄动态素材应显示为高柱，实际 {height}"));
+        Assert.True(heights[0] < heights[1], "窄动态素材内部仍应保留可见的高度差");
+    }
+
+    [Fact]
+    public void StretchWindow_WideDynamicRange_KeepsPercentileWindow()
+    {
+        // 101 列，−95…−5 dB 线性分布：p5 = −90.5、p99.5 = −5.45，范围 85.05 dB ≥ 30 dB，
+        // 窗口必须与旧实现一致（不被放宽调整）。
+        var decibels = Enumerable.Range(0, 101).Select(index => -95.0 + 0.9 * index).ToArray();
+
+        var (floor, ceiling) = WaveformMath.StretchWindow(decibels);
+
+        Assert.Equal(-90.5, floor, 6);
+        Assert.Equal(-5.45, ceiling, 6);
+        Assert.Equal(85.05, ceiling - floor, 6);
+    }
+
+    [Fact]
+    public void StretchWindow_VeryQuietNarrowSignal_ClampsFloorToSilenceDb()
+    {
+        // 极端安静且窄动态：理论下界 −129 dB 会被钳制到 SilenceDb，窗口仍非退化且可见。
+        var (floor, ceiling) = WaveformMath.StretchWindow([-99.0, -99.0, -99.0]);
+
+        Assert.Equal(WaveformMath.SilenceDb, floor, 6);
+        Assert.Equal(-99.0, ceiling, 6);
+        Assert.True(ceiling > floor);
+        Assert.Equal(255, WaveformMath.StretchHeight(RmsForDecibel(-99.0), floor, ceiling));
     }
 
     [Fact]
@@ -74,7 +122,8 @@ public sealed class WaveformMathTests
         // dB 只比下限高 0.01 dB → 归一化后四舍五入为 0，但不应丢掉这一列（ADR-015 §6.6）。
         var rms = Math.Pow(10.0, (WaveformMath.SilenceDb + 0.01) / 20.0);
 
-        var height = WaveformMath.StretchHeight(rms, WaveformMath.SilenceDb, WaveformMath.SilenceDb + 8.0);
+        var height = WaveformMath.StretchHeight(
+            rms, WaveformMath.SilenceDb, WaveformMath.SilenceDb + WaveformMath.MinimumStretchDb);
 
         Assert.Equal(1, height);
     }
@@ -383,4 +432,7 @@ public sealed class WaveformMathTests
         var meanSquare = window.Sum(value => value * value) / window.Length;
         Assert.Equal(WaveformMath.HannMeanSquare, meanSquare, 6);
     }
+
+    /// <summary>把 dB 值换算回线性 RMS，便于直接验证 StretchHeight 的映射。</summary>
+    private static double RmsForDecibel(double decibels) => Math.Pow(10.0, decibels / 20.0);
 }

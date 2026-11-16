@@ -20,6 +20,9 @@ public partial class MainWindow
 
     private bool _centerCurrentRowPending;
 
+    /// <summary>已打开的封面浏览窗口（非模态、由主窗口拥有）；同一时间只保留一个实例。</summary>
+    private CoverViewerWindow? _coverViewer;
+
     /// <summary>
     /// Schedules centering of the currently playing row. Deferred to the next dispatcher
     /// turn because the row container does not exist before the list has laid out (playback
@@ -346,5 +349,52 @@ public partial class MainWindow
         // Same path as the automatic centering after a track change: deferred to the next
         // dispatcher turn and postponed while the user is dragging a scrollbar.
         ScheduleCenterCurrentRow();
+    }
+
+    /// <summary>
+    /// 双击右栏“正在播放”封面打开大图浏览窗口（owner request）。没有封面时保持静默，
+    /// 避免弹出空窗口；窗口已打开时只激活，不重复创建（可重复打开/关闭）。
+    /// </summary>
+    private void OnNowPlayingCoverMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount < 2)
+        {
+            return;
+        }
+
+        e.Handled = true;
+
+        if (_vm.CurrentCover is null)
+        {
+            _host.Logger.Debug("Cover viewer: double-click ignored because there is no current cover.");
+            return;
+        }
+
+        if (_coverViewer is { IsLoaded: true })
+        {
+            if (_coverViewer.WindowState == WindowState.Minimized)
+            {
+                _coverViewer.WindowState = WindowState.Normal;
+            }
+
+            _coverViewer.Activate();
+            return;
+        }
+
+        var viewer = new CoverViewerWindow(_vm, _host.Covers, _host.Logger) { Owner = this };
+        viewer.Closed += OnCoverViewerClosed;
+        _coverViewer = viewer;
+        _host.Logger.Debug($"Cover viewer opened for '{_vm.CurrentRow?.Track.Path ?? "unknown"}'.");
+        viewer.Show();
+    }
+
+    private void OnCoverViewerClosed(object? sender, EventArgs e)
+    {
+        if (sender is CoverViewerWindow viewer)
+        {
+            viewer.Closed -= OnCoverViewerClosed;
+        }
+
+        _coverViewer = null;
     }
 }

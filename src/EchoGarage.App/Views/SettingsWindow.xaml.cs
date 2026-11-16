@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.Threading;
 using System.Windows;
@@ -27,7 +29,9 @@ public partial class SettingsWindow : ThemedWindow
     private readonly AppHost _host;
     private readonly MainViewModel _vm;
     private readonly List<HotkeyEditRow> _hotkeyRows = [];
+    private readonly ObservableCollection<TagNormalizationEditRow> _tagNormalizationRows = [];
     private bool _loadingHotkeys;
+    private bool _loadingTagNormalizationRules;
     private bool _loadingCache;
     private bool _loadingWebSettings;
     private bool _loadingVisualizer;
@@ -66,6 +70,7 @@ public partial class SettingsWindow : ThemedWindow
         UpdateAssociationStatus();
         PopulateWebTagSettings();
         PopulateVisualizer();
+        PopulateTagNormalizationRules();
         SelectDefaultSettingsPage();
     }
 
@@ -337,6 +342,279 @@ public partial class SettingsWindow : ThemedWindow
         (values[index], values[target]) = (values[target], values[index]);
         ApplyFileDestinations(values, "顺序已更新，右键菜单会按新顺序显示。");
         FileDestinationList.SelectedItem = directory;
+    }
+
+    // =====================================================================
+    // Tag normalization rules (ADR-025)
+    // =====================================================================
+
+    /// <summary>目标字段下拉框的选项；顺序与界面展示一致。</summary>
+    private static readonly TagNormalizationTargetOption[] TagNormalizationTargetOptionList =
+    [
+        new(TagNormalization.AnyField, "全部可文本字段"),
+        new(TagFieldKeys.Title, "标题"),
+        new(TagFieldKeys.Artist, "艺术家"),
+        new(TagFieldKeys.Album, "专辑"),
+        new(TagFieldKeys.AlbumArtist, "专辑艺术家"),
+        new(TagFieldKeys.Composer, "作曲家"),
+        new(TagFieldKeys.Genre, "流派"),
+        new(TagFieldKeys.Year, "年份"),
+        new(TagFieldKeys.TrackNumber, "音轨号"),
+        new(TagFieldKeys.DiscNumber, "碟片号"),
+        new(TagFieldKeys.Comment, "备注"),
+    ];
+
+    private void PopulateTagNormalizationRules()
+    {
+        _loadingTagNormalizationRules = true;
+        try
+        {
+            _tagNormalizationRows.Clear();
+            foreach (var rule in _host.Settings.Current.TagNormalizationRules)
+            {
+                _tagNormalizationRows.Add(CreateTagNormalizationRow(rule));
+            }
+
+            TagNormalizationRuleList.ItemsSource = _tagNormalizationRows;
+            UpdateTagNormalizationRuleState();
+        }
+        finally
+        {
+            _loadingTagNormalizationRules = false;
+        }
+    }
+
+    private static TagNormalizationEditRow CreateTagNormalizationRow(TagNormalizationRule rule) => new()
+    {
+        Id = rule.Id,
+        Name = rule.Name,
+        // 手改 settings.json 可能留下未知 / 空的目标字段：下拉框回退到“专辑”，避免显示空白项。
+        TargetField = TagNormalization.IsKnownField(rule.TargetField) || TagNormalization.IsAnyField(rule.TargetField)
+            ? TagNormalization.CanonicalizeTargetField(rule.TargetField)
+            : TagFieldKeys.Album,
+        Pattern = rule.Pattern,
+        Replacement = rule.Replacement,
+        Enabled = rule.Enabled,
+    };
+
+    /// <summary>
+    /// 把列表行写回设置并保存。正则非法的行保留在列表里便于修正，
+    /// Core 应用规则时会跳过它们，界面同时给出行内错误提示。
+    /// </summary>
+    private void ApplyTagNormalizationRules()
+    {
+        if (_loadingTagNormalizationRules)
+        {
+            return;
+        }
+
+        var rules = _tagNormalizationRows
+            .Select(row => new TagNormalizationRule
+            {
+                Id = row.Id,
+                Name = row.Name,
+                TargetField = row.TargetField,
+                Pattern = row.Pattern,
+                Replacement = row.Replacement,
+                Enabled = row.Enabled,
+            })
+            .ToList();
+
+        // NormalizeRules 在这里不传 logger：输入过程中正则常常处于半截状态，
+        // 逐键记录 WARN 只会污染日志；真正的异常配置在加载设置时已经记录过。
+        _host.Settings.Current.TagNormalizationRules = TagNormalization.NormalizeRules(rules);
+        SaveSettings();
+        UpdateTagNormalizationRuleState();
+    }
+
+    /// <summary>刷新行内正则错误提示、空状态、规则数上限与底部状态文案。</summary>
+    private void UpdateTagNormalizationRuleState()
+    {
+        var invalid = 0;
+        foreach (var row in _tagNormalizationRows)
+        {
+            if (TagNormalization.IsValidPattern(row.Pattern, out var error))
+            {
+                row.SetError(null);
+            }
+            else
+            {
+                row.SetError(error);
+                invalid++;
+            }
+        }
+
+        var enabled = _tagNormalizationRows.Count(row => row.Enabled);
+        var limitReached = _tagNormalizationRows.Count >= TagNormalization.MaxRuleCount;
+        var status = $"共 {_tagNormalizationRows.Count} 条规则，已启用 {enabled} 条。";
+        status += limitReached
+            ? $"已达上限 {TagNormalization.MaxRuleCount} 条，无法再添加。"
+            : $"最多 {TagNormalization.MaxRuleCount} 条规则。";
+        if (invalid > 0)
+        {
+            status += $"有 {invalid} 条规则的正则表达式无效，不会被应用。";
+        }
+
+        TagNormalizationEmptyHint.Visibility = _tagNormalizationRows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        AddTagNormalizationRuleButton.IsEnabled = !limitReached;
+        AddTagNormalizationRuleButton.ToolTip = limitReached
+            ? $"最多 {TagNormalization.MaxRuleCount} 条规则，请先删除不再需要的规则。"
+            : null;
+        TagNormalizationRuleStatusText.Text = status;
+    }
+
+    private void OnAddTagNormalizationRule(object sender, RoutedEventArgs e)
+    {
+        if (_tagNormalizationRows.Count >= TagNormalization.MaxRuleCount)
+        {
+            UpdateTagNormalizationRuleState();
+            return;
+        }
+
+        _tagNormalizationRows.Add(new TagNormalizationEditRow
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = string.Empty,
+            TargetField = TagFieldKeys.Album,
+            Pattern = string.Empty,
+            Replacement = string.Empty,
+            Enabled = true,
+        });
+        ApplyTagNormalizationRules();
+    }
+
+    private void OnRemoveTagNormalizationRule(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: TagNormalizationEditRow row })
+        {
+            return;
+        }
+
+        _tagNormalizationRows.Remove(row);
+        ApplyTagNormalizationRules();
+    }
+
+    private void OnResetTagNormalizationRules(object sender, RoutedEventArgs e)
+    {
+        _loadingTagNormalizationRules = true;
+        try
+        {
+            _tagNormalizationRows.Clear();
+            foreach (var rule in TagNormalizationDefaults.Create())
+            {
+                _tagNormalizationRows.Add(CreateTagNormalizationRow(rule));
+            }
+        }
+        finally
+        {
+            _loadingTagNormalizationRules = false;
+        }
+
+        ApplyTagNormalizationRules();
+    }
+
+    private void OnTagNormalizationRuleToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingTagNormalizationRules || sender is not CheckBox { DataContext: TagNormalizationEditRow row } checkBox)
+        {
+            return;
+        }
+
+        row.Enabled = checkBox.IsChecked == true;
+        ApplyTagNormalizationRules();
+    }
+
+    private void OnTagNormalizationTargetFieldChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingTagNormalizationRules || sender is not ComboBox { DataContext: TagNormalizationEditRow row } comboBox)
+        {
+            return;
+        }
+
+        if (comboBox.SelectedValue is string targetField && row.TargetField != targetField)
+        {
+            row.TargetField = targetField;
+            ApplyTagNormalizationRules();
+        }
+    }
+
+    private void OnTagNormalizationRuleTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loadingTagNormalizationRules || sender is not TextBox { DataContext: TagNormalizationEditRow row } textBox)
+        {
+            return;
+        }
+
+        switch (textBox.Tag as string)
+        {
+            case "name":
+                if (row.Name == textBox.Text)
+                {
+                    return;
+                }
+
+                row.Name = textBox.Text;
+                break;
+            case "pattern":
+                if (row.Pattern == textBox.Text)
+                {
+                    return;
+                }
+
+                row.Pattern = textBox.Text;
+                break;
+            case "replacement":
+                if (row.Replacement == textBox.Text)
+                {
+                    return;
+                }
+
+                row.Replacement = textBox.Text;
+                break;
+            default:
+                return;
+        }
+
+        ApplyTagNormalizationRules();
+    }
+
+    private sealed class TagNormalizationTargetOption(string key, string label)
+    {
+        public string Key { get; } = key;
+        public string Label { get; } = label;
+    }
+
+    private sealed class TagNormalizationEditRow : INotifyPropertyChanged
+    {
+        public IReadOnlyList<TagNormalizationTargetOption> TargetOptions => TagNormalizationTargetOptionList;
+
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string TargetField { get; set; } = TagFieldKeys.Album;
+        public string Pattern { get; set; } = string.Empty;
+        public string Replacement { get; set; } = string.Empty;
+        public bool Enabled { get; set; } = true;
+
+        private string _errorText = string.Empty;
+
+        public string ErrorText => _errorText;
+
+        public Visibility ErrorVisibility => _errorText.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public void SetError(string? error)
+        {
+            var text = string.IsNullOrWhiteSpace(error) ? string.Empty : error;
+            if (text == _errorText)
+            {
+                return;
+            }
+
+            _errorText = text;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ErrorText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ErrorVisibility)));
+        }
     }
 
     private void OnBrowseCache(object sender, RoutedEventArgs e)
@@ -765,6 +1043,7 @@ public partial class SettingsWindow : ThemedWindow
         try
         {
             SelectComboTag(VisualizerKindBox, visualization.Kind.ToString());
+            SelectComboTag(VisualizerFrameRateBox, visualization.FrameRateLimit.ToString());
             SelectComboNearest(SpectrumBandBox, spectrum.BandCount);
             SelectComboNearest(SpectrumFftBox, spectrum.FftSize);
             SelectComboNearest(SpectrumMinFreqBox, spectrum.MinFrequency);
@@ -800,6 +1079,7 @@ public partial class SettingsWindow : ThemedWindow
         var spectrum = visualization.Spectrum;
 
         visualization.Kind = ReadEnumTag(VisualizerKindBox, VisualizerKind.Spectrum);
+        visualization.FrameRateLimit = ReadEnumTag(VisualizerFrameRateBox, VisualizerFrameRate.Unlimited);
         spectrum.BandCount = ReadIntTag(SpectrumBandBox, spectrum.BandCount);
         spectrum.FftSize = ReadIntTag(SpectrumFftBox, spectrum.FftSize);
         spectrum.MinFrequency = ReadDoubleTag(SpectrumMinFreqBox, spectrum.MinFrequency);
