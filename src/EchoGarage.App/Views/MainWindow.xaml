@@ -478,12 +478,12 @@
             <MenuItem Header="新建播放列表…" Tag="NewPlaylist" Command="{Binding NewPlaylistCommand}" />
             <MenuItem Header="新建智能播放列表…" Tag="NewSmartPlaylist" Command="{Binding NewSmartPlaylistCommand}" />
             <Separator />
-            <MenuItem Header="编辑智能条件…" Tag="EditSmartRules" Command="{Binding EditSmartRulesCommand}"
-                      IsEnabled="False" />
-            <MenuItem Header="重命名播放列表…" Tag="RenamePlaylist" Command="{Binding RenamePlaylistCommand}"
-                      IsEnabled="False" />
-            <MenuItem Header="删除播放列表…" Tag="DeletePlaylist" Command="{Binding DeletePlaylistCommand}"
-                      IsEnabled="False" />
+            <MenuItem Header="编辑智能条件…" Tag="EditSmartRules"
+                      Click="OnSourceMenuEditSmartRulesClick" IsEnabled="False" />
+            <MenuItem Header="重命名播放列表…" Tag="RenamePlaylist"
+                      Click="OnSourceMenuRenamePlaylistClick" IsEnabled="False" />
+            <MenuItem Header="删除播放列表…" Tag="DeletePlaylist"
+                      Click="OnSourceMenuDeletePlaylistClick" IsEnabled="False" />
             <Separator />
             <MenuItem Header="从播放列表移除所选歌曲" Tag="RemoveSelected" Command="{Binding RemoveSelectedCommand}"
                       InputGestureText="Delete" IsEnabled="False" />
@@ -842,6 +842,87 @@
                             BorderBrush="{DynamicResource AccentBrush}"
                             BorderThickness="1" Opacity="0.7" />
                 </Canvas>
+
+                <!-- Playlist switch overlay: painted as soon as a switch starts so a slow switch
+                     never looks frozen. A short 60 ms fade delay keeps switches that finish almost
+                     immediately from flashing the overlay. Spinner only, no text (owner feedback). -->
+                <Grid Grid.Row="1" Panel.ZIndex="50" Opacity="0">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="IsHitTestVisible" Value="False" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                    <Setter Property="IsHitTestVisible" Value="True" />
+                                    <DataTrigger.EnterActions>
+                                        <!-- Restart from the hidden state: stop the previous fade-out and
+                                             the still-held fade-in before beginning a new one. -->
+                                        <StopStoryboard BeginStoryboardName="ListLoadingFadeOut" />
+                                        <StopStoryboard BeginStoryboardName="ListLoadingFadeIn" />
+                                        <BeginStoryboard x:Name="ListLoadingFadeIn">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1"
+                                                                 BeginTime="0:0:0.06" Duration="0:0:0.16">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                    <DataTrigger.ExitActions>
+                                        <!-- The fade-in is deliberately not stopped here: WPF composes a
+                                             newly started animation on top of the active ones, so this
+                                             fade-out starts from whatever opacity the fade-in currently
+                                             shows and early-finished switches still fade out smoothly. -->
+                                        <BeginStoryboard x:Name="ListLoadingFadeOut">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0"
+                                                                 Duration="0:0:0.18">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.ExitActions>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <Border Background="{DynamicResource MainBackgroundBrush}" Opacity="0.82" />
+                    <Grid Width="40" Height="40" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <RotateTransform />
+                        </Grid.RenderTransform>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                        <DataTrigger.EnterActions>
+                                            <BeginStoryboard x:Name="ListLoadingSpinnerSpin">
+                                                <Storyboard RepeatBehavior="Forever">
+                                                    <DoubleAnimation
+                                                        Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                        From="0" To="360" Duration="0:0:0.9" />
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </DataTrigger.EnterActions>
+                                        <DataTrigger.ExitActions>
+                                            <StopStoryboard BeginStoryboardName="ListLoadingSpinnerSpin" />
+                                        </DataTrigger.ExitActions>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <!-- Faint full ring plus a 90° accent arc that spins. -->
+                        <Ellipse Width="40" Height="40" Stroke="{DynamicResource CoverNoteBrush}"
+                                 StrokeThickness="2.5" Opacity="0.3" />
+                        <Path Stroke="{DynamicResource AccentBrush}" StrokeThickness="3"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Data="M 20,5 A 15,15 0 0 1 35,20" />
+                    </Grid>
+                </Grid>
             </Grid>
 
             <!-- Album panel -->

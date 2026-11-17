@@ -305,6 +305,52 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
+    public void ApplyPreset_EnablesSecondaryInfoWhenPresetHasVisibleFormats()
+    {
+        var current = ViewLayoutFactory.CreateDefault();
+        current.GroupCoverSize = 220;
+        current.GroupSortByDiscTrack = false;
+
+        var source = ViewLayoutFactory.CreateDefault();
+        source.Columns.Single(c => c.Key == "title").SecondaryFormat = "{genre}";
+        source.SortColumn = "AlbumArtist";
+        var preset = ColumnPreset.FromLayout("简洁分组", source);
+
+        var applied = ViewLayoutFactory.ApplyPreset(current, preset);
+
+        Assert.True(applied.ShowSecondaryInfo);
+        Assert.Equal("{genre}", applied.Columns.Single(c => c.Key == "title").SecondaryFormat);
+        Assert.Equal(220, applied.GroupCoverSize, 3);
+        Assert.False(applied.GroupSortByDiscTrack);
+        Assert.Equal("AlbumArtist", applied.SortColumn);
+    }
+
+    [Fact]
+    public void ApplyPreset_DoesNotEnableSecondaryInfoForFormatlessOrHiddenFormats()
+    {
+        var current = ViewLayoutFactory.CreateDefault();
+        var formatless = ColumnPreset.FromLayout("标准", ViewLayoutFactory.CreateDefault());
+        Assert.False(ViewLayoutFactory.ApplyPreset(current, formatless).ShowSecondaryInfo);
+
+        var source = ViewLayoutFactory.CreateDefault();
+        var hidden = source.Columns.Single(c => c.Key == "genre");
+        hidden.Visible = false;
+        hidden.SecondaryFormat = "{composer}";
+        var preset = ColumnPreset.FromLayout("隐藏列格式", source);
+        Assert.False(ViewLayoutFactory.ApplyPreset(current, preset).ShowSecondaryInfo);
+    }
+
+    [Fact]
+    public void ApplyPreset_KeepsSecondaryInfoWhenCurrentLayoutAlreadyShowsIt()
+    {
+        var current = ViewLayoutFactory.CreateDefault();
+        current.ShowSecondaryInfo = true;
+        var preset = ColumnPreset.FromLayout("标准", ViewLayoutFactory.CreateDefault());
+
+        Assert.True(ViewLayoutFactory.ApplyPreset(current, preset).ShowSecondaryInfo);
+    }
+
+    [Fact]
     public void DefaultLayout_HasSecondaryInfoDisabled()
     {
         var layout = ViewLayoutFactory.CreateDefault();

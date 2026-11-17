@@ -189,6 +189,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
         Track = track;
         _rowNumber = rowNumber;
         _isMissing = track.IsMissing;
+        _albumGroupKey = BuildAlbumGroupKey(track);
     }
 
     public Track Track { get; private set; }
@@ -232,9 +233,18 @@ public sealed partial class TrackRowViewModel : ObservableObject
     public DateTime ModifiedSort => Track.ModifiedAtUtc;
     public long FileSizeSort => Track.FileSize;
 
-    public string AlbumGroupKey => string.IsNullOrWhiteSpace(Track.Album)
+    private string _albumGroupKey = string.Empty;
+
+    public string AlbumGroupKey => _albumGroupKey;
+
+    /// <summary>
+    /// Builds the precomputed album grouping key: sorting and grouping read it once per
+    /// comparison, so interpolating the string on every read would allocate heavily on large
+    /// libraries.
+    /// </summary>
+    private static string BuildAlbumGroupKey(Track track) => string.IsNullOrWhiteSpace(track.Album)
         ? "未知专辑"
-        : $"{Track.AlbumArtist}\u001f{Track.Album}";
+        : $"{track.AlbumArtist}\u001f{track.Album}";
 
     public string AlbumGroupTitle => string.IsNullOrWhiteSpace(Track.Album) ? "未知专辑" : Track.Album;
     public string AlbumGroupArtist => string.IsNullOrWhiteSpace(Track.AlbumArtist) ? Track.Artist : Track.AlbumArtist;
@@ -246,6 +256,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
     {
         Track = track;
         IsMissing = track.IsMissing;
+        _albumGroupKey = BuildAlbumGroupKey(track);
         // Drop the cached texts; the empty-name notification re-reads them lazily from the new track.
         _secondaryTexts = null;
         OnPropertyChanged(string.Empty);

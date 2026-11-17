@@ -42,6 +42,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int _consecutiveFailures;
     private List<TrackRowViewModel>? _shuffleOrder;
 
+    /// <summary>
+    /// True while <see cref="Tracks"/> itself is in the requested display order because a source
+    /// switch pre-sorted the rows on a background thread. The views must not sort again in that
+    /// case (see <see cref="TrackRowSorter"/>).
+    /// </summary>
+    private bool _viewUsesCollectionOrder;
+
     // Bumped whenever Tracks is replaced wholesale. The grouped-rebuild signature includes it so a
     // source switch always rebuilds the row cells even when the layout itself did not change.
     private int _tracksVersion;
@@ -245,6 +252,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isBusy;
+
+    /// <summary>
+    /// True while a source switch is loading (source query, row build, view rebuild). Drives the
+    /// loading overlay; it is reference-counted so queued switches keep the overlay up instead of
+    /// hiding and re-showing it (which would flash on fast consecutive selections).
+    /// </summary>
+    [ObservableProperty]
+    private bool _isLoading;
 
     [ObservableProperty]
     private double _positionSeconds;
@@ -894,6 +909,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _ = SelectSourceAsync(value);
     }
 
+    /// <summary>
+    /// Number of source switches currently loading. Reference-counted so a queued switch (the
+    /// selection gate serializes them) keeps the overlay up while the previous one finishes.
+    /// </summary>
+    private int _loadingRequestCount;
+
+    private void BeginLoading()
+    {
+        _loadingRequestCount++;
+        IsLoading = true;
+    }
+
+    private void EndLoading()
+    {
+        if (_loadingRequestCount > 0)
+        {
+            _loadingRequestCount--;
+        }
+
+        if (_loadingRequestCount == 0)
+        {
+            IsLoading = false;
+        }
+    }
+
     public async Task SelectSourceAsync(SourceNodeViewModel? source)
     {
         if (source is null || _isDisposed)
@@ -901,37 +941,77 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await _selectionGate.WaitAsync();
+        BeginLoading();
+        var switchStopwatch = Stopwatch.StartNew();
+        double gateMilliseconds = 0;
+        double databaseMilliseconds = 0;
         try
         {
-            // On the very first selection there is no previous source/grid layout to persist;
-            // doing it anyway would overwrite the saved library layout with the default one
-            // (the window has not built its columns yet, so CaptureLayoutFromGrid returns null).
-            // Always persist to the source that is still on screen: the TwoWay SelectedItem
-            // binding has already replaced SelectedSource with the requested source, and using
-            // it here wrote the previous layout into the new source (which made grouping vanish
-            // when switching back to the library).
-            if (_activeSource is not null)
+            // Paint the overlay before any of the blocking stages start: its fade-in has to
+            // animate on screen while the database query and the row rebuild run. Idle priority
+            // flushes the pending render (including the overlay's first animation frame) before
+            // the dispatcher continues with this method.
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (_isDisposed)
             {
-                PersistCurrentLayout(null, destination: _activeSource);
+                return;
             }
 
-            SetSelectedSourceSilently(source);
-
-            var tracks = await LoadTracksForSourceAsync(source);
-            CurrentLayout = source.Kind == SourceKind.Playlist && source.Playlist is not null
-                ? ViewLayoutFactory.Deserialize(source.Playlist.ViewLayoutJson)
-                : ViewLayoutFactory.Normalize(Settings.LibraryLayout.Clone());
-
-            ApplyTracks(tracks, source);
-            _activeSource = source;
-            if (source.Kind == SourceKind.Playlist && source.Playlist is not null)
+            await _selectionGate.WaitAsync();
+            try
             {
-                Settings.LastPlaylistId = source.Playlist.Id;
-            }
+                if (_isDisposed)
+                {
+                    return;
+                }
 
-            QueueSettingsSave();
-            _ = RefreshStaleTracksAsync(force: true);
+                gateMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
+                // On the very first selection there is no previous source/grid layout to persist;
+                // doing it anyway would overwrite the saved library layout with the default one
+                // (the window has not built its columns yet, so CaptureLayoutFromGrid returns null).
+                // Always persist to the source that is still on screen: the TwoWay SelectedItem
+                // binding has already replaced SelectedSource with the requested source, and using
+                // it here wrote the previous layout into the new source (which made grouping vanish
+                // when switching back to the library).
+                if (_activeSource is not null)
+                {
+                    PersistCurrentLayout(null, destination: _activeSource);
+                }
+
+                SetSelectedSourceSilently(source);
+
+                var loadStopwatch = Stopwatch.StartNew();
+                // Microsoft.Data.Sqlite's async API actually completes synchronously, so awaiting
+                // the query on the dispatcher would freeze the overlay animation for the whole
+                // read. Run it on the pool instead; SQLite/Dapper connections are not
+                // thread-affine and every query opens its own connection.
+                var tracks = await Task.Run(() => LoadTracksForSourceAsync(source));
+                databaseMilliseconds = loadStopwatch.Elapsed.TotalMilliseconds;
+
+                // Give the overlay a frame after the database read; row construction and the view
+                // rebuild that follow are the expensive stages of the switch.
+                await Dispatcher.Yield(DispatcherPriority.Render);
+
+                var newLayout = source.Kind == SourceKind.Playlist && source.Playlist is not null
+                    ? ViewLayoutFactory.Deserialize(source.Playlist.ViewLayoutJson)
+                    : ViewLayoutFactory.Normalize(Settings.LibraryLayout.Clone());
+
+                await ApplyTracksAsync(tracks, source, newLayout, databaseMilliseconds);
+
+                _activeSource = source;
+                if (source.Kind == SourceKind.Playlist && source.Playlist is not null)
+                {
+                    Settings.LastPlaylistId = source.Playlist.Id;
+                }
+
+                QueueSettingsSave();
+                _ = RefreshStaleTracksAsync(force: true);
+            }
+            finally
+            {
+                _selectionGate.Release();
+            }
         }
         catch (Exception ex)
         {
@@ -940,7 +1020,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            _selectionGate.Release();
+            EndLoading();
+            _host.Logger.Info(
+                $"List switch overlay: '{source.Name}' visible={switchStopwatch.Elapsed.TotalMilliseconds:F1}ms, " +
+                $"gateWait={gateMilliseconds:F1}ms, dbLoad={databaseMilliseconds:F1}ms");
         }
     }
 
@@ -956,55 +1039,166 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         };
     }
 
-    private void ApplyTracks(IReadOnlyList<Track> tracks, SourceNodeViewModel source)
+    /// <summary>
+    /// Builds the row view models off the UI thread. <see cref="TrackRowViewModel"/> is plain
+    /// managed state (no DependencyObject / dispatcher affinity), so constructing thousands of
+    /// rows does not need the UI thread; the caller applies the playing-row state afterwards.
+    /// </summary>
+    private static List<TrackRowViewModel> BuildTrackRows(IReadOnlyList<Track> tracks)
+    {
+        var rows = new List<TrackRowViewModel>(tracks.Count);
+        for (var i = 0; i < tracks.Count; i++)
+        {
+            rows.Add(new TrackRowViewModel(tracks[i], i + 1));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Replaces the visible tracks and rebuilds both collection views for a source switch. The work
+    /// is staged (row build → collection swap → layout → sort/filter refresh → window column
+    /// rebuild) and the dispatcher is allowed to render the loading overlay between the stages, so
+    /// a slow switch never looks frozen.
+    /// </summary>
+    private async Task ApplyTracksAsync(
+        IReadOnlyList<Track> tracks,
+        SourceNodeViewModel source,
+        PlaylistViewLayout? newLayout = null,
+        double databaseMilliseconds = 0)
     {
         var switchStopwatch = Stopwatch.StartNew();
         var playingPath = CurrentRow?.Track.Path;
         _shuffleOrder = null;
-        var rows = new List<TrackRowViewModel>(tracks.Count);
-        for (var i = 0; i < tracks.Count; i++)
-        {
-            var row = new TrackRowViewModel(tracks[i], i + 1);
-            if (playingPath is not null && string.Equals(tracks[i].Path, playingPath, StringComparison.OrdinalIgnoreCase))
-            {
-                row.IsPlaying = true;
-                CurrentRow = row;
-                // The row was rebuilt (for example after a metadata repair scan), so refresh
-                // the now-playing panel from the new track data instead of the stale row.
-                UpdateNowPlayingMetadata(row);
-                BeginNowPlayingCoverLoad(tracks[i], keepExistingCover: true);
-            }
 
-            rows.Add(row);
+        // Resolve the requested order before going to the background: the sorted row list is
+        // handed to the collection views as-is (see ApplyViewGrouping), so the views never have to
+        // sort on the dispatcher. That sort used to be the dominant cost of a switch and blocked
+        // the loading overlay for hundreds of milliseconds.
+        var sortLayout = newLayout ?? CurrentLayout;
+        var groupedView = IsGroupedViewActive;
+        var primarySort = BuildPrimarySort(sortLayout);
+        var sortDescriptions = groupedView ? BuildGroupedSort(primarySort, sortLayout) : primarySort;
+
+        var (rows, playingIndex, buildRowsMilliseconds, sortRowsMilliseconds) = await Task.Run(() =>
+        {
+            var buildStopwatch = Stopwatch.StartNew();
+            var built = BuildTrackRows(tracks);
+            var buildMilliseconds = buildStopwatch.Elapsed.TotalMilliseconds;
+
+            var sortStopwatch = Stopwatch.StartNew();
+            var sorted = TrackRowSorter.Sort(built, sortDescriptions);
+            var sortMilliseconds = sortStopwatch.Elapsed.TotalMilliseconds;
+
+            var index = playingPath is null
+                ? -1
+                : sorted.FindIndex(row =>
+                    string.Equals(row.Track.Path, playingPath, StringComparison.OrdinalIgnoreCase));
+            return (sorted, index, buildMilliseconds, sortMilliseconds);
+        });
+        var backgroundMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
+        if (playingIndex >= 0)
+        {
+            var row = rows[playingIndex];
+            row.IsPlaying = true;
+            CurrentRow = row;
+            // The row was rebuilt (for example after a metadata repair scan), so refresh
+            // the now-playing panel from the new track data instead of the stale row.
+            UpdateNowPlayingMetadata(row);
+            BeginNowPlayingCoverLoad(tracks[playingIndex], keepExistingCover: true);
         }
 
-        var buildRowsMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+        // Let the overlay render after the background row build.
+        await Dispatcher.Yield(DispatcherPriority.Render);
 
-        // One Reset instead of Clear() + N×Add(): every intermediate notification made both
-        // collection views (and the DataGrid) re-run their sorting/filtering/regeneration work.
-        Tracks.ReplaceAll(rows);
-        _tracksVersion++;
-        var replaceAllMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+        double replaceAllMilliseconds;
+        double layoutMilliseconds;
+        double sortMilliseconds;
+        double filterMilliseconds;
+        double groupedRefreshMilliseconds;
+        double tracksRefreshMilliseconds;
+        double viewRefreshMilliseconds;
 
-        PlaylistTitle = source.Kind switch
+        // Both views stay deferred across the swap and the descriptor/filter updates: the Reset
+        // produced by ReplaceAll and every SortDescriptions/GroupDescriptions/Filter change would
+        // otherwise each trigger a full re-sort/re-group of the list (the dominant cost). The two
+        // scopes are disposed explicitly so the log can attribute the refresh cost to each view.
+        var groupedViewDefer = _groupedTracksView.DeferRefresh();
+        var tracksViewDefer = _tracksView.DeferRefresh();
+        try
         {
-            SourceKind.Library => "媒体库",
-            SourceKind.Folder => source.Folder?.DisplayName ?? source.Name,
-            _ => source.Name
-        };
-        _basePlaylistSubtitle = BuildSubtitle(source, tracks.Count);
-        ApplySortAndGrouping();
-        var sortMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
-        ApplyFilter();
-        var filterMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+            // One Reset instead of Clear() + N×Add(): every intermediate notification made both
+            // collection views (and the DataGrid) re-run their sorting/filtering/regeneration work.
+            Tracks.ReplaceAll(rows);
+            _tracksVersion++;
+            replaceAllMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
+            // Apply the new layout only after the swap: OnCurrentLayoutChanged rebuilds the grouped
+            // row cells, and doing that on the old rows would waste the rebuild on rows that are
+            // about to be replaced.
+            if (newLayout is not null)
+            {
+                CurrentLayout = newLayout;
+            }
+
+            PlaylistTitle = source.Kind switch
+            {
+                SourceKind.Library => "媒体库",
+                SourceKind.Folder => source.Folder?.DisplayName ?? source.Name,
+                _ => source.Name
+            };
+            _basePlaylistSubtitle = BuildSubtitle(source, tracks.Count);
+            layoutMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
+            // The rows are already ordered: switch the views to "collection order" mode and only
+            // (re)apply the grouping. Letting ApplySortAndGrouping run here would re-sort the whole
+            // list on the dispatcher and make the optimization pointless.
+            _viewUsesCollectionOrder = true;
+            ApplyViewGrouping();
+
+            // The swapped rows are brand-new view models with an empty cell layout. When the
+            // layout object itself did not change (for example the scan-triggered refresh that
+            // reuses the current layout), nothing else rebuilds the grouped cells, leaving the
+            // album list's rows blank until the next layout change. Rebuild them here: the
+            // signature includes _tracksVersion, so this always runs after a swap.
+            RebuildGroupedView();
+            sortMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+            ApplyFilter();
+            filterMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+        }
+        finally
+        {
+            // Refresh the album list first (it is the visible view when grouping is active), then
+            // the hidden flat DataGrid.
+            groupedViewDefer.Dispose();
+            groupedRefreshMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+            tracksViewDefer.Dispose();
+            tracksRefreshMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+        }
+
+        // Disposing the defer scopes above refreshes each view exactly once with the final state.
+        viewRefreshMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
         LayoutChanged?.Invoke(this, EventArgs.Empty);
+        var layoutChangedMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+
+        // Render the rebuilt list once before the overlay fades out in the caller.
+        await Dispatcher.Yield(DispatcherPriority.Render);
 
         _host.Logger.Info(
             $"List switch: {source.Kind} '{source.Name}' rows={rows.Count}, " +
+            $"dbLoad={databaseMilliseconds:F1}ms, " +
             $"buildRows={buildRowsMilliseconds:F1}ms, " +
-            $"replaceAll={replaceAllMilliseconds - buildRowsMilliseconds:F1}ms, " +
-            $"sortGroup={sortMilliseconds - replaceAllMilliseconds:F1}ms, " +
+            $"sortRows={sortRowsMilliseconds:F1}ms, " +
+            $"replaceAll={replaceAllMilliseconds - backgroundMilliseconds:F1}ms, " +
+            $"layout={layoutMilliseconds - replaceAllMilliseconds:F1}ms, " +
+            $"sortGroup={sortMilliseconds - layoutMilliseconds:F1}ms, " +
             $"filter={filterMilliseconds - sortMilliseconds:F1}ms, " +
+            $"groupedRefresh={groupedRefreshMilliseconds - filterMilliseconds:F1}ms, " +
+            $"tracksRefresh={tracksRefreshMilliseconds - groupedRefreshMilliseconds:F1}ms, " +
+            $"viewRefresh={viewRefreshMilliseconds - filterMilliseconds:F1}ms, " +
+            $"columns={layoutChangedMilliseconds - viewRefreshMilliseconds:F1}ms, " +
             $"total={switchStopwatch.Elapsed.TotalMilliseconds:F1}ms");
     }
 
@@ -1022,37 +1216,70 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void ApplySortAndGrouping()
     {
+        // Interactive sort/grouping changes go through descriptor sorting again: the collection
+        // order is stale after that until the next source switch pre-sorts the rows.
+        _viewUsesCollectionOrder = false;
+
         var primarySort = BuildPrimarySort();
         var grouped = IsGroupedViewActive;
 
-        // Flat DataGrid view: always the user's chosen order, never grouped.
-        _tracksView.GroupDescriptions.Clear();
-        ApplySortDescriptions(_tracksView, primarySort);
-
-        // Album list: group only for album-oriented sorts. For any other sort the
-        // ListView mirrors the flat order so playback and display stay consistent.
-        _groupedTracksView.GroupDescriptions.Clear();
-        if (grouped)
+        // Every descriptor mutation normally makes ListCollectionView.RefreshOrDefer() re-sort and
+        // re-group the whole list. Deferring both views coalesces the changes into a single refresh
+        // per view (the explicit Refresh() calls this used to do were a second full refresh).
+        using (_tracksView.DeferRefresh())
+        using (_groupedTracksView.DeferRefresh())
         {
-            _groupedTracksView.GroupDescriptions.Add(
-                new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
-            ApplySortDescriptions(_groupedTracksView, BuildGroupedSort(primarySort));
-        }
-        else
-        {
-            ApplySortDescriptions(_groupedTracksView, primarySort);
+            // Flat DataGrid view: always the user's chosen order, never grouped.
+            _tracksView.GroupDescriptions.Clear();
+            ApplySortDescriptions(_tracksView, primarySort);
+
+            // Album list: group only for album-oriented sorts. For any other sort the
+            // ListView mirrors the flat order so playback and display stay consistent.
+            _groupedTracksView.GroupDescriptions.Clear();
+            if (grouped)
+            {
+                _groupedTracksView.GroupDescriptions.Add(
+                    new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
+                ApplySortDescriptions(_groupedTracksView, BuildGroupedSort(primarySort));
+            }
+            else
+            {
+                ApplySortDescriptions(_groupedTracksView, primarySort);
+            }
         }
 
-        _tracksView.Refresh();
-        _groupedTracksView.Refresh();
         RebuildGroupedView();
     }
 
-    private IReadOnlyList<SortDescription> BuildPrimarySort()
+    /// <summary>
+    /// Applies the album grouping without touching the row order. Used after a source switch,
+    /// where <see cref="TrackRowSorter"/> already ordered the rows on a background thread; the
+    /// views stay free of sort descriptors so their single refresh never re-sorts the list.
+    /// </summary>
+    private void ApplyViewGrouping()
     {
-        var hasSort = !string.IsNullOrWhiteSpace(CurrentLayout.SortColumn);
-        var sortColumn = hasSort ? CurrentLayout.SortColumn! : PlaylistSortPolicy.DefaultOrder;
-        var direction = hasSort && CurrentLayout.SortDescending
+        var grouped = IsGroupedViewActive;
+        _tracksView.SortDescriptions.Clear();
+        _tracksView.GroupDescriptions.Clear();
+        _groupedTracksView.SortDescriptions.Clear();
+        _groupedTracksView.GroupDescriptions.Clear();
+        if (grouped)
+        {
+            // The rows were sorted so that one album's tracks are contiguous; ListCollectionView
+            // creates the groups in first-appearance order, exactly like the descriptor-based sort
+            // produced before.
+            _groupedTracksView.GroupDescriptions.Add(
+                new PropertyGroupDescription(nameof(TrackRowViewModel.AlbumGroupKey)));
+        }
+    }
+
+    private IReadOnlyList<SortDescription> BuildPrimarySort() => BuildPrimarySort(CurrentLayout);
+
+    private static IReadOnlyList<SortDescription> BuildPrimarySort(PlaylistViewLayout layout)
+    {
+        var hasSort = !string.IsNullOrWhiteSpace(layout.SortColumn);
+        var sortColumn = hasSort ? layout.SortColumn! : PlaylistSortPolicy.DefaultOrder;
+        var direction = hasSort && layout.SortDescending
             ? ListSortDirection.Descending
             : ListSortDirection.Ascending;
         return [new SortDescription(sortColumn, direction)];
@@ -1063,12 +1290,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// album group key so one album's tracks always stay contiguous, and finally the
     /// disc/track order inside each group (foobar2000-style disc → track ascending).
     /// </summary>
-    private List<SortDescription> BuildGroupedSort(IReadOnlyList<SortDescription> primary)
+    private List<SortDescription> BuildGroupedSort(IReadOnlyList<SortDescription> primary) =>
+        BuildGroupedSort(primary, CurrentLayout);
+
+    private static List<SortDescription> BuildGroupedSort(
+        IReadOnlyList<SortDescription> primary,
+        PlaylistViewLayout layout)
     {
         var sort = primary.ToList();
         var direction = primary[0].Direction;
         sort.Add(new SortDescription(nameof(TrackRowViewModel.AlbumGroupKey), direction));
-        if (CurrentLayout.GroupSortByDiscTrack)
+        if (layout.GroupSortByDiscTrack)
         {
             sort.Add(new SortDescription(nameof(TrackRowViewModel.DiscNumberSort), ListSortDirection.Ascending));
             sort.Add(new SortDescription(nameof(TrackRowViewModel.TrackNumberSort), ListSortDirection.Ascending));
@@ -1088,11 +1320,34 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Re-applies the current sort to both views. The DataGrid drops the ItemsSource view's
-    /// SortDescriptions when its ItemsSource is rebound during a column rebuild, so the window
-    /// calls this right after rebuilding. Also used when only the sort order changed.
+    /// Restores descriptor sorting after the DataGrid rebuilds its columns, but only when the
+    /// collection itself is not already in the requested order. Source switches pre-sort the rows
+    /// (<see cref="TrackRowSorter"/>), so there is nothing to restore for them — re-adding the
+    /// descriptors would re-sort the whole list on the dispatcher for no reason.
     /// </summary>
-    public void ReapplySort() => ApplySortAndGrouping();
+    public void ReapplySort()
+    {
+        if (_viewUsesCollectionOrder)
+        {
+            // Rebinding the grid's ItemsSource dropped any stale descriptors; the collection order
+            // is authoritative now. The grouped ListView keeps its own descriptors untouched.
+            using (_tracksView.DeferRefresh())
+            using (_groupedTracksView.DeferRefresh())
+            {
+                _tracksView.SortDescriptions.Clear();
+                _groupedTracksView.SortDescriptions.Clear();
+            }
+        }
+        else if (!IsGroupedViewActive)
+        {
+            using (_tracksView.DeferRefresh())
+            {
+                ApplySortDescriptions(_tracksView, BuildPrimarySort());
+            }
+        }
+
+        RebuildGroupedView();
+    }
 
     /// <summary>
     /// Rebuilds the grouped list's column header cells and the per-row cell layout. The
@@ -1473,13 +1728,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void ApplyPreset(ColumnPreset preset)
     {
-        // Presets describe columns only; keep the user's current grouped-cover size, the
-        // per-group disc/track ordering preference and the second-line display switch.
-        var applied = preset.ToLayout();
-        applied.GroupCoverSize = CurrentLayout.GroupCoverSize;
-        applied.GroupSortByDiscTrack = CurrentLayout.GroupSortByDiscTrack;
-        applied.ShowSecondaryInfo = CurrentLayout.ShowSecondaryInfo;
-        CurrentLayout = ViewLayoutFactory.Normalize(applied);
+        // Presets describe columns only; the layout factory keeps the user's current
+        // grouped-cover size and per-group disc/track ordering preference, and turns the
+        // second line on when the preset defines visible secondary formats.
+        CurrentLayout = ViewLayoutFactory.ApplyPreset(CurrentLayout, preset);
         ApplySortAndGrouping();
         PersistCurrentLayout(null, captureFromView: false);
         LayoutChanged?.Invoke(this, EventArgs.Empty);
@@ -2418,8 +2670,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ? Tracks.Where(t => IsRowSelected(t)).Select(t => t.Track.Path).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : null;
         var source = SelectedSource;
+        var loadStopwatch = Stopwatch.StartNew();
         var tracks = await LoadTracksForSourceAsync(source);
-        ApplyTracks(tracks, source);
+        var databaseMilliseconds = loadStopwatch.Elapsed.TotalMilliseconds;
+
+        // The user may have switched to another source while the rows were loading; applying the
+        // old rows now would overwrite the newly selected list.
+        if (!IsSameSource(source, SelectedSource))
+        {
+            return;
+        }
+
+        await ApplyTracksAsync(tracks, source, databaseMilliseconds: databaseMilliseconds);
         if (selectedPaths is { Count: > 0 })
         {
             foreach (var row in Tracks.Where(r => selectedPaths.Contains(r.Track.Path)))
@@ -2729,13 +2991,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task EditSmartRulesAsync()
+    private Task EditSmartRulesAsync() => EditSmartRulesCoreAsync(SelectedSource);
+
+    /// <summary>
+    /// 左侧来源列表右键菜单：明确作用于右键命中的播放列表。
+    /// 右键不再切换 <see cref="SelectedSource"/>（切换会同步重建数千行，阻塞菜单弹出）。
+    /// </summary>
+    public Task EditSmartRulesFromMenuAsync(SourceNodeViewModel? node) => EditSmartRulesCoreAsync(node);
+
+    private async Task EditSmartRulesCoreAsync(SourceNodeViewModel? source)
     {
-        if (SelectedSource?.Playlist is not { IsSmart: true } playlist)
+        if (source?.Playlist is not { IsSmart: true } playlist)
         {
             return;
         }
 
+        var wasActive = ReferenceEquals(source, SelectedSource);
         var definition = _dialogs.EditSmartPlaylist(playlist.Name, playlist.GetSmartDefinition());
         if (definition is null)
         {
@@ -2744,53 +3015,77 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         await _host.PlaylistRepository.UpdatePlaylistRulesAsync(playlist.Id, definition);
         await ReloadSourcesAsync();
-        await RefreshCurrentSourceAsync(preserveSelection: true);
+
+        // 只有正在浏览这个智能播放列表时才需要刷新右侧歌曲列表；
+        // 编辑其它来源的规则不应让当前列表重载。
+        if (wasActive)
+        {
+            await RefreshCurrentSourceAsync(preserveSelection: true);
+        }
+
         SetStatus("智能播放列表条件已更新");
     }
 
     [RelayCommand]
-    private async Task RenamePlaylistAsync()
+    private Task RenamePlaylistAsync() => RenamePlaylistCoreAsync(SelectedSource);
+
+    /// <summary>左侧来源列表右键菜单：作用于右键命中的播放列表，不要求它当前被选中。</summary>
+    public Task RenamePlaylistFromMenuAsync(SourceNodeViewModel? node) => RenamePlaylistCoreAsync(node);
+
+    private async Task RenamePlaylistCoreAsync(SourceNodeViewModel? source)
     {
-        if (SelectedSource?.IsRemovablePlaylist != true || SelectedSource.Playlist is null)
+        if (source?.IsRemovablePlaylist != true || source.Playlist is null)
         {
             SetStatus("默认播放列表或媒体库不能重命名");
             return;
         }
 
-        var name = _dialogs.AskText("重命名播放列表", "名称", SelectedSource.Playlist.Name);
-        if (string.IsNullOrWhiteSpace(name) || name == SelectedSource.Playlist.Name)
+        var name = _dialogs.AskText("重命名播放列表", "名称", source.Playlist.Name);
+        if (string.IsNullOrWhiteSpace(name) || name == source.Playlist.Name)
         {
             return;
         }
 
-        if (PlaylistNameExists(name, SelectedSource.Playlist.Id))
+        if (PlaylistNameExists(name, source.Playlist.Id))
         {
             _dialogs.Info($"已经存在名为“{name}”的播放列表，请换一个名称。");
             return;
         }
 
-        await _host.PlaylistRepository.RenamePlaylistAsync(SelectedSource.Playlist.Id, name);
+        await _host.PlaylistRepository.RenamePlaylistAsync(source.Playlist.Id, name);
         await ReloadSourcesAsync();
         SetStatus("播放列表已重命名");
     }
 
     [RelayCommand]
-    private async Task DeletePlaylistAsync()
+    private Task DeletePlaylistAsync() => DeletePlaylistCoreAsync(SelectedSource);
+
+    /// <summary>左侧来源列表右键菜单：作用于右键命中的播放列表，不要求它当前被选中。</summary>
+    public Task DeletePlaylistFromMenuAsync(SourceNodeViewModel? node) => DeletePlaylistCoreAsync(node);
+
+    private async Task DeletePlaylistCoreAsync(SourceNodeViewModel? source)
     {
-        if (SelectedSource?.IsRemovablePlaylist != true || SelectedSource.Playlist is null)
+        if (source?.IsRemovablePlaylist != true || source.Playlist is null)
         {
             SetStatus("默认播放列表不能删除");
             return;
         }
 
-        if (!_dialogs.Confirm($"确定删除播放列表“{SelectedSource.Playlist.Name}”吗？文件不会被删除。"))
+        var wasActive = ReferenceEquals(source, SelectedSource);
+        if (!_dialogs.Confirm($"确定删除播放列表“{source.Playlist.Name}”吗？文件不会被删除。"))
         {
             return;
         }
 
-        await _host.PlaylistRepository.DeletePlaylistAsync(SelectedSource.Playlist.Id);
+        await _host.PlaylistRepository.DeletePlaylistAsync(source.Playlist.Id);
         await ReloadSourcesAsync();
-        await SelectSourceAsync(Sources.FirstOrDefault());
+
+        // 删除的是当前正在浏览的播放列表时才回退到媒体库；删除其它播放列表不应打断当前列表。
+        if (wasActive)
+        {
+            await SelectSourceAsync(Sources.FirstOrDefault());
+        }
+
         SetStatus("播放列表已删除");
     }
 

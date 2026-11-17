@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Dapper;
 using EchoGarage.Core.Abstractions;
+using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Configuration;
 using Microsoft.Data.Sqlite;
 
@@ -11,6 +14,12 @@ public sealed class SqliteDatabase
 {
     private readonly string _connectionString;
     private readonly IAppLogger _logger;
+
+    /// <summary>
+    /// 已编译的智能列表正则（key 为原始模式，null 表示模式非法）。查询时 SQLite 会对
+    /// 每一行回调 regexp()，缓存避免每行重复编译；模式数量与用户配置的条件数同阶。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Regex?> _regexCache = new(StringComparer.Ordinal);
 
     static SqliteDatabase()
     {
@@ -164,7 +173,105 @@ public sealed class SqliteDatabase
     {
         var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        // 连接池里每次 Open 都是一次新的 SQLite 连接，用户函数属于连接级状态，
+        // 必须在 Open 之后重新注册（否则智能列表的 dirname/regexp 会报 no such function）。
+        RegisterQueryFunctions(connection);
         return connection;
+    }
+
+    /// <summary>
+    /// 注册智能播放列表查询用到的标量函数：
+    /// <list type="bullet">
+    /// <item><c>dirname(path)</c>：文件父目录，末尾不带分隔符；null / 空 / 根路径返回空串。</item>
+    /// <item><c>regexp(pattern, input)</c>：SQLite 的 <c>X REGEXP Y</c> 语法会转成
+    /// <c>regexp(Y, X)</c>，即模式在右操作数；忽略大小写、250ms 超时，非法模式与超时
+    /// 都返回 false，绝不向 SQLite 抛异常中断整条查询。</item>
+    /// </list>
+    /// </summary>
+    private void RegisterQueryFunctions(SqliteConnection connection)
+    {
+        connection.CreateFunction<string?, string?>("dirname", GetDirectoryName, isDeterministic: true);
+        connection.CreateFunction<string?, string?, bool>("regexp", IsRegexMatch, isDeterministic: true);
+    }
+
+    private string GetDirectoryName(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory))
+            {
+                return string.Empty;
+            }
+
+            // 文件直接位于盘符根目录（如 D:\song.wav）时父目录是根路径：按规格返回空串。
+            var root = Path.GetPathRoot(directory);
+            if (!string.IsNullOrEmpty(root) &&
+                string.Equals(directory, root, StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (ArgumentException)
+        {
+            _logger.Debug($"Smart playlist dirname: ignored invalid path \"{path}\".");
+            return string.Empty;
+        }
+    }
+
+    private bool IsRegexMatch(string? pattern, string? input)
+    {
+        var regex = ResolveRegex(pattern);
+        if (regex is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return regex.IsMatch(input ?? string.Empty);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // 模式本身合法但灾难性回溯超过上限：这一行视为不匹配，查询继续。
+            _logger.Debug(
+                $"Smart playlist regexp timed out after {SmartRegex.MatchTimeout.TotalMilliseconds:0} ms: \"{pattern}\".");
+            return false;
+        }
+    }
+
+    private Regex? ResolveRegex(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return null;
+        }
+
+        if (_regexCache.TryGetValue(pattern, out var cached))
+        {
+            return cached;
+        }
+
+        Regex? compiled = null;
+        if (SmartRegex.TryCompile(pattern, out var regex))
+        {
+            compiled = regex;
+        }
+        else
+        {
+            // 正常路径下 BuildRule 已经跳过非法模式；这里兜底（旧配置 / 手工改过的 JSON）。
+            _logger.Warn($"Smart playlist regexp ignored invalid pattern: \"{pattern}\".");
+        }
+
+        _regexCache.TryAdd(pattern, compiled);
+        return compiled;
     }
 
     private sealed class DateTimeTypeHandler : SqlMapper.TypeHandler<DateTime>

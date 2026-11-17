@@ -357,6 +357,123 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task SmartPlaylist_DirectoryField_MatchesParentDirectoryOnly()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var inDir1 = MakeTrack(Path.Combine("DemoFolder", "one.wav"), folderId: folder.Id);
+        var inDir2 = MakeTrack(Path.Combine("DemoFolder", "two.wav"), folderId: folder.Id);
+        var onlyNameMatches = MakeTrack(Path.Combine("OtherFolder", "DemoFolder.wav"), folderId: folder.Id);
+        var outside = MakeTrack("plain.wav", folderId: folder.Id);
+        await _library.UpsertTracksAsync([inDir1, inDir2, onlyNameMatches, outside]);
+
+        var smart = await _playlists.CreatePlaylistAsync("Dir", PlaylistKind.Smart, new SmartPlaylistDefinition
+        {
+            MatchMode = SmartMatchMode.All,
+            Rules = [new SmartRule { Field = "directory", Operator = "contains", Value = "DemoFolder" }]
+        });
+
+        var tracks = await _playlists.GetPlaylistTracksAsync(smart);
+        // directory 是 dirname(t.Path)：只有目录部分包含关键字才算命中，文件名包含关键字不算。
+        Assert.Equal(2, tracks.Count());
+        Assert.DoesNotContain(tracks, t => t.Path == onlyNameMatches.Path);
+        Assert.DoesNotContain(tracks, t => t.Path == outside.Path);
+
+        var expectedDirectory = Path.GetDirectoryName(inDir1.Path)!;
+        await _playlists.UpdatePlaylistRulesAsync(smart.Id, new SmartPlaylistDefinition
+        {
+            MatchMode = SmartMatchMode.All,
+            Rules = [new SmartRule { Field = "directory", Operator = "equals", Value = expectedDirectory }]
+        });
+        var updated = (await _playlists.GetPlaylistsAsync()).Single(p => p.Id == smart.Id);
+        var byDirectory = await _playlists.GetPlaylistTracksAsync(updated);
+        Assert.Equal(2, byDirectory.Count());
+        Assert.Contains(byDirectory, t => t.Path == inDir1.Path);
+        Assert.Contains(byDirectory, t => t.Path == inDir2.Path);
+    }
+
+    [Fact]
+    public async Task SmartPlaylist_RegexRules_ExecuteAgainstLibrary()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var demo1 = MakeTrack("Demo Track 01.wav", folderId: folder.Id);
+        var demo2 = MakeTrack("Demo Track 02.wav", folderId: folder.Id);
+        var live = MakeTrack("Live At Somewhere.wav", folderId: folder.Id);
+        await _library.UpsertTracksAsync([demo1, demo2, live]);
+
+        var smart = await _playlists.CreatePlaylistAsync("Regex", PlaylistKind.Smart, new SmartPlaylistDefinition
+        {
+            MatchMode = SmartMatchMode.All,
+            Rules = [new SmartRule { Field = "title", Operator = "regex", Value = @"^demo track \d{2}$" }]
+        });
+
+        var tracks = await _playlists.GetPlaylistTracksAsync(smart);
+        // 注册的 regexp 忽略大小写，小写模式应命中 Demo Track 曲目。
+        Assert.Equal([demo1.Path, demo2.Path], tracks.Select(t => t.Path));
+
+        await _playlists.UpdatePlaylistRulesAsync(smart.Id, new SmartPlaylistDefinition
+        {
+            MatchMode = SmartMatchMode.All,
+            Rules = [new SmartRule { Field = "title", Operator = "notRegex", Value = @"^demo track" }]
+        });
+        var updated = (await _playlists.GetPlaylistsAsync()).Single(p => p.Id == smart.Id);
+        var remaining = await _playlists.GetPlaylistTracksAsync(updated);
+        var only = Assert.Single(remaining);
+        Assert.Equal(live.Path, only.Path);
+    }
+
+    [Fact]
+    public async Task SmartPlaylist_InvalidRegexRule_DoesNotCrashQuery()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var first = MakeTrack("first.wav", folderId: folder.Id);
+        var second = MakeTrack("second.wav", folderId: folder.Id);
+        await _library.UpsertTracksAsync([first, second]);
+
+        var smart = await _playlists.CreatePlaylistAsync("Broken", PlaylistKind.Smart, new SmartPlaylistDefinition
+        {
+            MatchMode = SmartMatchMode.All,
+            Rules = [new SmartRule { Field = "title", Operator = "regex", Value = "(" }]
+        });
+
+        // 无法编译的正则被 BuildRule 跳过，查询退化为“无额外条件”，不能抛异常。
+        var tracks = await _playlists.GetPlaylistTracksAsync(smart);
+        Assert.Equal(2, tracks.Count());
+    }
+
+    [Fact]
+    public async Task SqliteConnection_RegistersSmartQueryFunctions()
+    {
+        await using var connection = await _database.OpenConnectionAsync();
+
+        async Task<object?> ScalarAsync(string sql, string name, object value)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+            return await command.ExecuteScalarAsync();
+        }
+
+        Assert.Equal(@"D:\Demo\Album", Convert.ToString(await ScalarAsync(
+            "SELECT dirname(@path);", "@path", @"D:\Demo\Album\Track.flac")));
+        // 文件直接位于盘符根时没有目录部分。
+        Assert.Equal(string.Empty, Convert.ToString(await ScalarAsync(
+            "SELECT dirname(@path);", "@path", @"D:\Track.flac")));
+        Assert.Equal(string.Empty, Convert.ToString(await ScalarAsync(
+            "SELECT dirname(@path);", "@path", string.Empty)));
+
+        Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(
+            "SELECT 'Demo Track' REGEXP @pattern;", "@pattern", "^demo")));
+        Assert.Equal(0L, Convert.ToInt64(await ScalarAsync(
+            "SELECT 'Demo Track' REGEXP @pattern;", "@pattern", "live")));
+        // 非法正则在 SQL 函数层也要返回 false，不能让整条查询抛异常。
+        Assert.Equal(0L, Convert.ToInt64(await ScalarAsync(
+            "SELECT 'Demo Track' REGEXP @pattern;", "@pattern", "(")));
+    }
+
+    [Fact]
     public async Task LayoutAndRules_PersistPerPlaylist()
     {
         var playlist = await _playlists.CreatePlaylistAsync("Persisted", PlaylistKind.Normal, null);

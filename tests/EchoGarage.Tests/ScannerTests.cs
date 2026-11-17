@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using EchoGarage.Core.Models;
 using EchoGarage.Infrastructure.Configuration;
 using EchoGarage.Infrastructure.Data;
@@ -162,10 +163,18 @@ public sealed class ScannerTests : IDisposable
         }
 
         var folder = await _library.AddFolderAsync(folderPath);
-        var reports = new List<ScanProgress>();
-        var progress = new Progress<ScanProgress>(reports.Add);
+        var reports = new ConcurrentQueue<ScanProgress>();
+        var progress = new Progress<ScanProgress>(reports.Enqueue);
 
         await _scanner.ScanFolderAsync(folder, progress);
+
+        // Progress<T> 是异步投递的：排除并行测试争抢线程池时，扫描返回后最后一条
+        // 进度回调可能尚未执行。这里等待回调落地，避免断言与回调互相竞争。
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!reports.Any(r => r.Percent is > 0 and <= 100) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
 
         Assert.NotEmpty(reports);
         Assert.Contains(reports, r => r.Percent is > 0 and <= 100);

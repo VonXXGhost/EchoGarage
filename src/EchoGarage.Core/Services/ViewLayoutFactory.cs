@@ -104,6 +104,30 @@ public static class ViewLayoutFactory
         return normalized;
     }
 
+    /// <summary>
+    /// Builds the layout produced by applying a display preset to the current layout.
+    /// Presets describe columns only: the grouped album-cover size and the per-group disc/track
+    /// ordering preference are kept from <paramref name="current"/>.
+    /// Like the column editor (ADR-013: 填了次行格式即自动启用次行显示), a preset that carries
+    /// visible secondary-line formats must also turn the second line on — otherwise applying a
+    /// "with secondary info" preset to a source that had the switch off silently hides it.
+    /// </summary>
+    public static PlaylistViewLayout ApplyPreset(PlaylistViewLayout current, ColumnPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(preset);
+
+        var applied = preset.ToLayout();
+        applied.GroupCoverSize = current.GroupCoverSize;
+        applied.GroupSortByDiscTrack = current.GroupSortByDiscTrack;
+        applied.ShowSecondaryInfo = current.ShowSecondaryInfo;
+
+        applied = Normalize(applied);
+        applied.ShowSecondaryInfo |= applied.Columns.Any(column =>
+            column.Visible && !string.IsNullOrWhiteSpace(column.SecondaryFormat));
+        return applied;
+    }
+
     public static string Serialize(PlaylistViewLayout layout) =>
         JsonSerializer.Serialize(Normalize(layout), JsonDefaults.Options);
 
