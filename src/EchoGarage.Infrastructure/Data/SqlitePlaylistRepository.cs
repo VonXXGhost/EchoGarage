@@ -107,6 +107,37 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
         };
     }
 
+    public async Task UpdatePlaylistOrderAsync(IReadOnlyList<long> orderedPlaylistIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (orderedPlaylistIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        // 一条 UPDATE 只影响一行，循环放在同一个事务里：中途失败会整体回滚，不会留下半套顺序。
+        // 默认播放列表固定排最前（GetPlaylistsAsync 的 IsDefault DESC），它的 SortOrder 保持 0 不变，
+        // 因此序号只在真正更新了非默认行时递增，保证非默认列表的 SortOrder 始终是连续的 1..N。
+        var sortOrder = 1;
+        foreach (var playlistId in orderedPlaylistIds)
+        {
+            var affected = await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE playlists SET SortOrder = @sortOrder, UpdatedAtUtc = @now WHERE Id = @playlistId AND IsDefault = 0;",
+                new { playlistId, sortOrder, now },
+                transaction, cancellationToken: cancellationToken));
+            if (affected > 0)
+            {
+                sortOrder++;
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        _logger.Debug($"Playlist order updated: {orderedPlaylistIds.Count} id(s).");
+    }
+
     public async Task RenamePlaylistAsync(long playlistId, string name, CancellationToken cancellationToken = default)
     {
         await using var connection = await _database.OpenConnectionAsync(cancellationToken);

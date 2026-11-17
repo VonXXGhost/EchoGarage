@@ -38,6 +38,7 @@ public sealed class AppHost : IAsyncDisposable
         Settings = new JsonSettingsService(Paths, Logger);
         Database = new SqliteDatabase(Paths, Logger);
         LibraryRepository = new SqliteLibraryRepository(Database, Logger);
+        TagSuggestions = new TagSuggestionService(LibraryRepository, Logger);
         PlaylistRepository = new SqlitePlaylistRepository(Database, Logger);
         TagService = new TagLibTagService(Logger);
         Converter = new AudioConverter(TagService, Logger, Paths);
@@ -61,6 +62,8 @@ public sealed class AppHost : IAsyncDisposable
     public ISettingsService Settings { get; }
     public SqliteDatabase Database { get; }
     public ILibraryRepository LibraryRepository { get; }
+    /// <summary>标签编辑候选项（艺术家/专辑艺术家/作曲家/流派）的缓存入口，媒体库变化后需 Invalidate。</summary>
+    public ITagSuggestionService TagSuggestions { get; }
     public IPlaylistRepository PlaylistRepository { get; }
     public ITagService TagService { get; }
     public IAudioConverter Converter { get; }

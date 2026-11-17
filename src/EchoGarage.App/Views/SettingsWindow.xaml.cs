@@ -5,6 +5,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using EchoGarage.App.Controls;
 using EchoGarage.App.Services;
 using EchoGarage.App.ViewModels;
 using EchoGarage.Core.Models;
@@ -23,12 +24,31 @@ public partial class SettingsWindow : ThemedWindow
         (HotkeyAction.Next, "下一首"),
         (HotkeyAction.Stop, "停止"),
         (HotkeyAction.Mute, "静音切换"),
-        (HotkeyAction.OpenSearch, "打开高级搜索")
+        (HotkeyAction.OpenSearch, "打开高级搜索"),
+        (HotkeyAction.OpenTagProperties, "打开标签属性")
+    ];
+
+    /// <summary>Built-in shortcuts that are always active; shown read-only on the hotkey page.</summary>
+    private static readonly BuiltInHotkeyRow[] BuiltInHotkeys =
+    [
+        new("媒体键：播放/暂停", "MediaPlayPause"),
+        new("媒体键：上一首", "MediaPreviousTrack"),
+        new("媒体键：下一首", "MediaNextTrack"),
+        new("媒体键：停止", "MediaStop"),
+        new("播放/暂停", "Space"),
+        new("播放选中项", "Enter"),
+        new("打开标签属性", "Alt+Enter"),
+        new("从媒体库移除", "Delete"),
+        new("添加文件", "Ctrl+O"),
+        new("重新扫描媒体库", "F5"),
+        new("静音切换", "Ctrl+M"),
+        new("打开高级搜索", "Ctrl+F")
     ];
 
     private readonly AppHost _host;
     private readonly MainViewModel _vm;
     private readonly List<HotkeyEditRow> _hotkeyRows = [];
+    private readonly List<PresetHotkeyRow> _presetHotkeyRows = [];
     private readonly ObservableCollection<TagNormalizationEditRow> _tagNormalizationRows = [];
     private bool _loadingHotkeys;
     private bool _loadingTagNormalizationRules;
@@ -123,7 +143,21 @@ public partial class SettingsWindow : ThemedWindow
                 _hotkeyRows.Add(new HotkeyEditRow(action, label, binding?.Gesture ?? string.Empty, binding?.Global == true));
             }
 
+            _presetHotkeyRows.Clear();
+            foreach (var preset in _host.Settings.Current.ConversionPresets)
+            {
+                if (string.IsNullOrWhiteSpace(preset.Hotkey) && preset.HotkeyGlobal)
+                {
+                    // A global flag without a gesture is meaningless; normalize it on display.
+                    preset.HotkeyGlobal = false;
+                }
+
+                _presetHotkeyRows.Add(new PresetHotkeyRow(preset));
+            }
+
             HotkeyList.ItemsSource = _hotkeyRows;
+            PresetHotkeyList.ItemsSource = _presetHotkeyRows;
+            BuiltInHotkeyList.ItemsSource = BuiltInHotkeys;
             UpdateHotkeyStatus();
         }
         finally
@@ -132,15 +166,20 @@ public partial class SettingsWindow : ThemedWindow
         }
     }
 
-    private void OnHotkeyGestureChanged(object sender, TextChangedEventArgs e)
+    private void OnHotkeyGestureCommitted(object sender, HotkeyGestureCommittedEventArgs e)
     {
-        if (_loadingHotkeys || sender is not TextBox { DataContext: HotkeyEditRow row } textBox)
+        if (_loadingHotkeys || sender is not HotkeyCaptureButton { DataContext: HotkeyEditRow row } button)
         {
             return;
         }
 
-        row.Gesture = textBox.Text;
-        SaveHotkeys();
+        row.Gesture = e.Gesture;
+        if (!SaveHotkeys())
+        {
+            // Keep the UI and the stored rows consistent with the last accepted value.
+            button.Gesture = e.PreviousGesture;
+            row.Gesture = e.PreviousGesture;
+        }
     }
 
     private void OnHotkeyGlobalChanged(object sender, RoutedEventArgs e)
@@ -150,14 +189,61 @@ public partial class SettingsWindow : ThemedWindow
             return;
         }
 
+        if (checkBox.IsChecked == true && string.IsNullOrWhiteSpace(row.Gesture))
+        {
+            checkBox.IsChecked = false;
+            HotkeyStatusText.Text = "请先为该动作绑定快捷键，再勾选“全局”。";
+            return;
+        }
+
         row.Global = checkBox.IsChecked == true;
         SaveHotkeys();
     }
 
-    private void SaveHotkeys()
+    private void OnPresetHotkeyGestureCommitted(object sender, HotkeyGestureCommittedEventArgs e)
+    {
+        if (_loadingHotkeys || sender is not HotkeyCaptureButton { DataContext: PresetHotkeyRow row } button)
+        {
+            return;
+        }
+
+        row.Hotkey = e.Gesture;
+        if (!SaveHotkeys())
+        {
+            button.Gesture = e.PreviousGesture;
+            row.Hotkey = e.PreviousGesture;
+        }
+    }
+
+    private void OnPresetHotkeyGlobalChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingHotkeys || sender is not CheckBox { DataContext: PresetHotkeyRow row } checkBox)
+        {
+            return;
+        }
+
+        if (checkBox.IsChecked == true && string.IsNullOrWhiteSpace(row.Hotkey))
+        {
+            checkBox.IsChecked = false;
+            row.Global = false;
+            PresetHotkeyStatusText.Text = "请先为该转换预设绑定快捷键，再勾选“全局”。";
+            return;
+        }
+
+        row.Global = checkBox.IsChecked == true;
+        SaveHotkeys();
+    }
+
+    /// <summary>
+    /// Persists the action rows and the conversion preset shortcuts. Returns false (leaving the
+    /// settings untouched) when an entry is malformed or duplicated, so callers can roll the
+    /// capture button back to its previous value.
+    /// </summary>
+    private bool SaveHotkeys()
     {
         var bindings = new List<HotkeyBinding>();
-        var gestures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var gestures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var row in _hotkeyRows)
         {
             var text = row.Gesture.Trim();
@@ -169,23 +255,62 @@ public partial class SettingsWindow : ThemedWindow
             if (!HotkeyGesture.TryParse(text, out var gesture) || gesture is null)
             {
                 HotkeyStatusText.Text = $"“{text}”不是有效的快捷键格式。示例：Ctrl+Alt+Space、MediaPlayPause。";
-                return;
+                return false;
             }
 
             var canonical = gesture.ToString();
-            if (!gestures.Add(canonical))
+            if (gestures.TryGetValue(canonical, out var other))
             {
-                HotkeyStatusText.Text = $"快捷键“{canonical}”重复了。";
-                return;
+                HotkeyStatusText.Text = $"快捷键“{canonical}”与“{other}”重复了。";
+                return false;
             }
 
+            gestures[canonical] = row.ActionLabel;
             bindings.Add(new HotkeyBinding { Action = row.Action, Gesture = canonical, Global = row.Global });
+        }
+
+        // Validate every preset before writing anything, so a conflict never leaves half-edited rows.
+        var presetPlans = new List<(PresetHotkeyRow Row, string Canonical)>();
+        foreach (var row in _presetHotkeyRows)
+        {
+            var text = row.Hotkey.Trim();
+            if (text.Length == 0)
+            {
+                presetPlans.Add((row, string.Empty));
+                continue;
+            }
+
+            if (!HotkeyGesture.TryParse(text, out var gesture) || gesture is null)
+            {
+                HotkeyStatusText.Text = $"转换预设“{row.Name}”的快捷键“{text}”格式无效。";
+                return false;
+            }
+
+            var canonical = gesture.ToString();
+            if (gestures.TryGetValue(canonical, out var other))
+            {
+                HotkeyStatusText.Text = $"快捷键“{canonical}”与“{other}”重复了。";
+                return false;
+            }
+
+            gestures[canonical] = row.Name;
+            presetPlans.Add((row, canonical));
+        }
+
+        foreach (var (row, canonical) in presetPlans)
+        {
+            row.Hotkey = canonical;
+            if (canonical.Length == 0)
+            {
+                row.Global = false;
+            }
         }
 
         _host.Settings.Current.Hotkeys = bindings;
         SaveSettings();
         _vm.NotifyHotkeysChanged();
         UpdateHotkeyStatus();
+        return true;
     }
 
     private void UpdateHotkeyStatus()
@@ -195,6 +320,12 @@ public partial class SettingsWindow : ThemedWindow
         HotkeyStatusText.Text = configured == 0
             ? "尚未设置快捷键。"
             : $"已设置 {configured} 个快捷键，其中 {global} 个为全局快捷键。";
+
+        var presetConfigured = _presetHotkeyRows.Count(r => !string.IsNullOrWhiteSpace(r.Hotkey));
+        var presetGlobal = _presetHotkeyRows.Count(r => r.Global && !string.IsNullOrWhiteSpace(r.Hotkey));
+        PresetHotkeyStatusText.Text = presetConfigured == 0
+            ? "尚未为转换预设设置快捷键。"
+            : $"已为 {presetConfigured} 个转换预设设置快捷键，其中 {presetGlobal} 个为全局快捷键。";
     }
 
     private sealed class HotkeyEditRow(HotkeyAction action, string actionLabel, string gesture, bool global)
@@ -204,6 +335,26 @@ public partial class SettingsWindow : ThemedWindow
         public string Gesture { get; set; } = gesture;
         public bool Global { get; set; } = global;
     }
+
+    /// <summary>Row model for a conversion preset shortcut; writes straight through to the preset.</summary>
+    private sealed class PresetHotkeyRow(ConversionPreset preset)
+    {
+        public ConversionPreset Preset { get; } = preset;
+        public string Name => string.IsNullOrWhiteSpace(Preset.Name) ? "(未命名预设)" : Preset.Name;
+        public string Hotkey
+        {
+            get => Preset.Hotkey ?? string.Empty;
+            set => Preset.Hotkey = value ?? string.Empty;
+        }
+
+        public bool Global
+        {
+            get => Preset.HotkeyGlobal;
+            set => Preset.HotkeyGlobal = value;
+        }
+    }
+
+    private sealed record BuiltInHotkeyRow(string Label, string Gesture);
 
     private void UpdateAssociationStatus()
     {

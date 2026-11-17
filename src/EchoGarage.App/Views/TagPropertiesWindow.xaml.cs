@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using EchoGarage.App.Services;
+using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
 using Track = EchoGarage.Core.Models.Track;
@@ -17,6 +18,15 @@ namespace EchoGarage.App.Views;
 public partial class TagPropertiesWindow : ThemedWindow
 {
     private const string MultiValueText = "<多值>";
+
+    /// <summary>支持从媒体库候选值补全的字段（ADR-027）；其余字段保持纯手动输入。</summary>
+    private static readonly string[] SuggestionFieldKeys =
+    [
+        TagFieldKeys.Artist,
+        TagFieldKeys.AlbumArtist,
+        TagFieldKeys.Composer,
+        TagFieldKeys.Genre
+    ];
 
     private static readonly (string Key, string Label)[] FieldDefinitions =
     [
@@ -79,9 +89,20 @@ public partial class TagPropertiesWindow : ThemedWindow
     private readonly IReadOnlyList<Track> _tracks;
     private readonly IReadOnlyList<AudioTagData> _tags;
     private readonly IReadOnlyList<TagNormalizationRule> _normalizationRules;
+    private readonly ITagSuggestionService? _suggestions;
     private readonly List<FieldEditor> _editors = [];
     private readonly ObservableCollection<AdditionalTagEditor> _additionalTagEditors = [];
     private readonly List<AudioTagChange> _removedAdditionalTags = [];
+
+    /// <summary>字段键 → 媒体库里的同字段候选值；补全浮层打开时按当前输入过滤。</summary>
+    private readonly Dictionary<string, IReadOnlyList<string>> _suggestionValues =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>当前候选浮层的数据源；与 SuggestionList 绑定，避免每敲一个键重建控件。</summary>
+    private readonly ObservableCollection<string> _suggestionMatches = [];
+
+    private FieldEditor? _suggestionEditor;
+    private bool _suppressSuggestionPopup;
 
     private byte[]? _coverBytes;
     private string? _coverMime;
@@ -94,10 +115,14 @@ public partial class TagPropertiesWindow : ThemedWindow
     /// 设置页配置的标签规范化规则；为 null 时使用内置默认规则（供诊断/截图等两参调用）。
     /// 快捷规范化只改变当前编辑框里的文本，保存时仍按“只提交被修改字段”的规则处理。
     /// </param>
+    /// <param name="tagSuggestions">
+    /// 媒体库标签候选值服务（ADR-027）；为 null 时不提供自动补全（诊断/截图与单元测试无需数据库）。
+    /// </param>
     public TagPropertiesWindow(
         IReadOnlyList<Track> tracks,
         IReadOnlyList<AudioTagData> tags,
-        IReadOnlyList<TagNormalizationRule>? normalizationRules = null)
+        IReadOnlyList<TagNormalizationRule>? normalizationRules = null,
+        ITagSuggestionService? tagSuggestions = null)
     {
         if (tracks.Count == 0 || tags.Count == 0)
         {
@@ -108,12 +133,28 @@ public partial class TagPropertiesWindow : ThemedWindow
 
         _tracks = tracks;
         _tags = tags;
+        _suggestions = tagSuggestions;
 
         // null 交给 Core 归一化为内置默认规则；设置页里被用户删空时是空列表，保持“没有规则”。
         _normalizationRules = TagNormalization.NormalizeRules(normalizationRules);
 
+        SuggestionList.ItemsSource = _suggestionMatches;
+        SuggestionPopup.Closed += (_, _) =>
+        {
+            _suggestionEditor = null;
+            _suggestionMatches.Clear();
+        };
+        PreviewMouseDown += OnWindowPreviewMouseDown;
+
+        // 候选项异步加载，不阻塞窗口打开；加载失败时服务会返回空快照。
+        if (_suggestions is not null)
+        {
+            Loaded += OnSuggestionsLoaded;
+        }
+
         Title = tracks.Count > 1 ? $"标签属性 - {tracks.Count} 个文件" : "标签属性";
         SaveButton.Content = tracks.Count > 1 ? $"保存到 {tracks.Count} 个文件" : "保存到文件";
+        UpdateFilePathDisplay();
 
         BuildFieldEditors();
         PopulateFieldValues();
@@ -154,20 +195,76 @@ public partial class TagPropertiesWindow : ThemedWindow
 
     public TagBatchEdit? Result { get; private set; }
 
+    /// <summary>
+    /// 显示正在编辑的文件路径。单文件显示完整路径；多文件显示数量与公共目录
+    /// （各文件不在同一目录时显示首个文件路径）。路径框是只读 TextBox，
+    /// 可选中复制，长路径会自动换行，不会把窗口撑宽。
+    /// </summary>
+    private void UpdateFilePathDisplay()
+    {
+        var firstPath = _tracks[0].Path;
+        if (_tracks.Count == 1)
+        {
+            FilePathBox.Text = firstPath;
+            FilePathBox.ToolTip = string.IsNullOrWhiteSpace(firstPath)
+                ? "该文件没有可显示的路径。"
+                : "可选中路径后按 Ctrl+C 复制。";
+            return;
+        }
+
+        var commonDirectory = GetCommonDirectory();
+        FilePathBox.Text = commonDirectory is not null
+            ? $"共 {_tracks.Count} 个文件 · 公共目录：{commonDirectory}"
+            : $"共 {_tracks.Count} 个文件 · 首个文件：{firstPath}";
+        FilePathBox.ToolTip = $"首个文件：{firstPath}\n可选中路径后按 Ctrl+C 复制。";
+    }
+
+    /// <summary>所有文件位于同一目录时返回该目录，否则返回 null。</summary>
+    private string? GetCommonDirectory()
+    {
+        string? common = null;
+        foreach (var track in _tracks)
+        {
+            if (string.IsNullOrWhiteSpace(track.Path))
+            {
+                return null;
+            }
+
+            var directory = Path.GetDirectoryName(track.Path);
+            if (string.IsNullOrEmpty(directory))
+            {
+                return null;
+            }
+
+            if (common is null)
+            {
+                common = directory;
+            }
+            else if (!string.Equals(common, directory, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+        }
+
+        return common;
+    }
+
     private void BuildFieldEditors()
     {
         for (var i = 0; i < FieldDefinitions.Length; i++)
         {
             var definition = FieldDefinitions[i];
             var cell = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-            cell.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 76 });
+            // 名称列收紧到最长标签（“专辑艺术家”约 60px）+ 8px 间距，值输入框从 68px 处开始，
+            // 与上方“文件路径”行对齐，整体更接近 foobar2000 的紧凑名称/值排版。
+            cell.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 68 });
             cell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var label = new TextBlock
             {
                 Text = definition.Label,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 10, 0)
+                Margin = new Thickness(0, 0, 8, 0)
             };
             label.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
             cell.Children.Add(label);
@@ -212,6 +309,14 @@ public partial class TagPropertiesWindow : ThemedWindow
             };
             textBox.TextChanged += (_, _) => UpdateEditorForeground(editor);
             picker.Click += (_, _) => OpenValuePicker(editor);
+            if (IsSuggestionField(definition.Key))
+            {
+                textBox.ToolTip = "输入时会列出媒体库中其它歌曲使用过的同字段值；↓/↑ 选择，Enter 采用，Esc 关闭。";
+                textBox.PreviewKeyDown += OnSuggestionPreviewKeyDown;
+                textBox.LostKeyboardFocus += OnSuggestionTextBoxLostKeyboardFocus;
+                textBox.TextChanged += (_, _) => UpdateSuggestionPopup(editor);
+            }
+
             _editors.Add(editor);
         }
     }
@@ -221,7 +326,7 @@ public partial class TagPropertiesWindow : ThemedWindow
         var valuesByKey = FieldDefinitions.ToDictionary(
             definition => definition.Key,
             definition => _tags
-                .Select(tag => TagBatchEditor.GetFieldValues(tag)[definition.Key])
+                .Select(tag => GetDisplayValue(tag, definition.Key))
                 .Distinct(StringComparer.Ordinal)
                 .ToList());
 
@@ -252,6 +357,21 @@ public partial class TagPropertiesWindow : ThemedWindow
         }
     }
 
+    /// <summary>
+    /// 属性面板显示的字段值。年份字段优先显示文件里的原始年份/日期文本
+    /// （如 "2025.06.04"、"2023-05-12"），以便编辑其它字段时保留详细日期；
+    /// 原始文本缺失时退回 4 位年份。多值去重与“保持不变”逻辑仍按字符串比较。
+    /// </summary>
+    private static string GetDisplayValue(AudioTagData tag, string key)
+    {
+        if (key == TagFieldKeys.Year && !string.IsNullOrWhiteSpace(tag.YearText))
+        {
+            return tag.YearText.Trim();
+        }
+
+        return TagBatchEditor.GetFieldValues(tag)[key];
+    }
+
     private void UpdateEditorForeground(FieldEditor editor)
     {
         if (editor.TextBox.Text == MultiValueText)
@@ -274,6 +394,252 @@ public partial class TagPropertiesWindow : ThemedWindow
         menu.PlacementTarget = editor.Picker;
         menu.Placement = PlacementMode.Bottom;
         menu.IsOpen = true;
+    }
+
+    // =====================================================================
+    // 标签补全候选（ADR-027）：只对艺术家 / 专辑艺术家 / 作曲家 / 流派生效。
+    // 候选值来自媒体库缓存，异步加载一次；之后在内存里按输入前缀/包含匹配。
+    // =====================================================================
+
+    private static bool IsSuggestionField(string key) =>
+        key is TagFieldKeys.Artist or TagFieldKeys.AlbumArtist or TagFieldKeys.Composer or TagFieldKeys.Genre;
+
+    private async void OnSuggestionsLoaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= OnSuggestionsLoaded;
+        if (_suggestions is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var values = await _suggestions.GetAsync();
+            foreach (var key in SuggestionFieldKeys)
+            {
+                _suggestionValues[key] = values.Get(key);
+            }
+
+            // 候选项加载完成时用户可能已经开始输入：对当前聚焦的输入框补弹一次。
+            foreach (var editor in _editors)
+            {
+                if (IsSuggestionField(editor.Key) && editor.TextBox.IsKeyboardFocusWithin)
+                {
+                    UpdateSuggestionPopup(editor);
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 窗口已关闭 / 加载被取消：没有候选项也不影响标签编辑。
+        }
+    }
+
+    private void UpdateSuggestionPopup(FieldEditor editor)
+    {
+        if (_suppressSuggestionPopup || _suggestions is null || !IsSuggestionField(editor.Key))
+        {
+            return;
+        }
+
+        if (!editor.TextBox.IsKeyboardFocusWithin)
+        {
+            if (ReferenceEquals(_suggestionEditor, editor))
+            {
+                CloseSuggestionPopup();
+            }
+
+            return;
+        }
+
+        if (!_suggestionValues.TryGetValue(editor.Key, out var candidates) || candidates.Count == 0)
+        {
+            if (ReferenceEquals(_suggestionEditor, editor))
+            {
+                CloseSuggestionPopup();
+            }
+
+            return;
+        }
+
+        var matches = TagSuggestionMatcher.Match(candidates, editor.TextBox.Text);
+        if (matches.Count == 0)
+        {
+            if (ReferenceEquals(_suggestionEditor, editor))
+            {
+                CloseSuggestionPopup();
+            }
+
+            return;
+        }
+
+        ShowSuggestionPopup(editor, matches);
+    }
+
+    private void ShowSuggestionPopup(FieldEditor editor, IReadOnlyList<string> matches)
+    {
+        var targetChanged = !ReferenceEquals(_suggestionEditor, editor);
+        _suggestionEditor = editor;
+        _suggestionMatches.Clear();
+        foreach (var match in matches)
+        {
+            _suggestionMatches.Add(match);
+        }
+
+        SuggestionList.SelectedIndex = -1;
+        SuggestionPopup.PlacementTarget = editor.TextBox;
+        SuggestionPopup.Width = Math.Max(editor.TextBox.ActualWidth, 180);
+        if (targetChanged || !SuggestionPopup.IsOpen)
+        {
+            SuggestionPopup.IsOpen = true;
+        }
+    }
+
+    private void CloseSuggestionPopup()
+    {
+        if (SuggestionPopup.IsOpen)
+        {
+            SuggestionPopup.IsOpen = false;
+        }
+
+        _suggestionEditor = null;
+        _suggestionMatches.Clear();
+    }
+
+    private void ApplySuggestion(string value)
+    {
+        if (_suggestionEditor is not { } editor)
+        {
+            return;
+        }
+
+        _suppressSuggestionPopup = true;
+        try
+        {
+            editor.TextBox.Text = value;
+            editor.TextBox.CaretIndex = value.Length;
+        }
+        finally
+        {
+            _suppressSuggestionPopup = false;
+        }
+
+        editor.TextBox.Focus();
+        CloseSuggestionPopup();
+    }
+
+    private void OnSuggestionPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!SuggestionPopup.IsOpen || _suggestionEditor?.TextBox != sender)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Down when _suggestionMatches.Count > 0:
+                SuggestionList.SelectedIndex = Math.Min(
+                    SuggestionList.SelectedIndex + 1,
+                    _suggestionMatches.Count - 1);
+                SuggestionList.ScrollIntoView(SuggestionList.SelectedItem);
+                e.Handled = true;
+                break;
+            case Key.Up when _suggestionMatches.Count > 0:
+                SuggestionList.SelectedIndex = Math.Max(SuggestionList.SelectedIndex - 1, -1);
+                e.Handled = true;
+                break;
+            case Key.Enter when SuggestionList.SelectedIndex >= 0:
+                ApplySuggestion(_suggestionMatches[SuggestionList.SelectedIndex]);
+                e.Handled = true;
+                break;
+            case Key.Tab when SuggestionList.SelectedIndex >= 0:
+                // 采用候选项后继续走默认的 Tab 焦点切换。
+                ApplySuggestion(_suggestionMatches[SuggestionList.SelectedIndex]);
+                break;
+            case Key.Escape:
+                CloseSuggestionPopup();
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void OnSuggestionItemPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem { DataContext: string value })
+        {
+            ApplySuggestion(value);
+            e.Handled = true;
+        }
+    }
+
+    private void OnSuggestionTextBoxLostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, _suggestionEditor?.TextBox))
+        {
+            return;
+        }
+
+        // 候选列表不接收键盘焦点，且点击候选项时焦点会短暂离开输入框。
+        // 延迟到输入事件处理完之后再判断，否则鼠标还没点到候选项浮层就被关掉，
+        // 表现为“鼠标点击候选没有反应”。
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (SuggestionPopup.IsOpen && _suggestionEditor?.TextBox.IsKeyboardFocusWithin != true)
+            {
+                CloseSuggestionPopup();
+            }
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private void OnWindowPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!SuggestionPopup.IsOpen || _suggestionEditor?.TextBox.IsMouseOver == true)
+        {
+            return;
+        }
+
+        // 候选浮层里的鼠标事件也会出现在窗口的预览路由上；点击落在浮层内部时
+        // 必须放行，否则浮层先被关掉，候选项的点击事件就拿不到数据了。
+        if (SuggestionPopup.Child is { } popupRoot &&
+            IsWithinElement(popupRoot, e.OriginalSource as DependencyObject))
+        {
+            return;
+        }
+
+        // 点击窗口其它区域（包括另一个输入框）时关闭候选浮层，随后正常处理点击。
+        CloseSuggestionPopup();
+    }
+
+    private static bool IsWithinElement(DependencyObject root, DependencyObject? candidate)
+    {
+        for (var node = candidate; node is not null; node = GetLogicalOrVisualParent(node))
+        {
+            if (ReferenceEquals(node, root))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static DependencyObject? GetLogicalOrVisualParent(DependencyObject node) =>
+        node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+
+    protected override void OnDeactivated(EventArgs e)
+    {
+        base.OnDeactivated(e);
+
+        // 点击候选浮层会让独立的 Popup 窗口短暂接管激活状态；这里同样延迟关闭，
+        // 保证候选项的鼠标点击事件先被处理。
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (SuggestionPopup.IsOpen && !IsActive)
+            {
+                CloseSuggestionPopup();
+            }
+        }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void PopulateAdditionalTags(IReadOnlyList<AudioTagEntry> tags)

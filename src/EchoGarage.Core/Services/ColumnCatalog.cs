@@ -45,15 +45,19 @@ public static class ColumnCatalog
         new("trackNumber", "音轨", 54, 44, ColumnKind.Text, SortProperty: "TrackNumberSort"),
         new("discNumber", "碟号", 50, 42, ColumnKind.Text, SortProperty: "DiscNumberSort"),
         new("year", "年份", 56, 48, ColumnKind.Text, SortProperty: "YearSort"),
-        new("genre", "流派", 110, 60, ColumnKind.Text, SortProperty: "Genre"),
+        // Genre / comment are display-only columns: they stay in the catalog (and can be shown),
+        // but they are no longer offered as sort methods, so they intentionally have no
+        // SortProperty and are not header-sortable.
+        new("genre", "流派", 110, 60, ColumnKind.Text, Sortable: false),
         new("duration", "时间", 62, 54, ColumnKind.Duration, SortProperty: "DurationSort"),
         new("bitrate", "比特率", 72, 60, ColumnKind.Text, SortProperty: "BitrateSort"),
         new("sampleRate", "采样率", 72, 60, ColumnKind.Text, SortProperty: "SampleRateSort"),
         new("codec", "格式", 62, 48, ColumnKind.Text, SortProperty: "Codec"),
         new("addedAt", "添加时间", 100, 80, ColumnKind.Date, SortProperty: "AddedSort"),
+        new("modifiedAt", "文件修改时间", 112, 84, ColumnKind.Date, SortProperty: "ModifiedSort"),
         new("fileSize", "大小", 72, 60, ColumnKind.FileSize, SortProperty: "FileSizeSort"),
         new("path", "文件路径", 320, 120, ColumnKind.Text, SortProperty: "PathText"),
-        new("comment", "备注", 160, 80, ColumnKind.Text, SortProperty: "Comment")
+        new("comment", "备注", 160, 80, ColumnKind.Text, Sortable: false)
     ];
 
     private static readonly Dictionary<string, ColumnDescriptor> ByKey =
@@ -73,6 +77,28 @@ public static class ColumnCatalog
             : null;
 
     public static string HeaderFor(string key) => Find(key)?.Header ?? key;
+
+    /// <summary>One entry of the "sort by" picker. <see cref="Property"/> is null for the default row order.</summary>
+    public sealed record SortOption(string Label, string? Property)
+    {
+        // UIA / screen readers surface the item's ToString as its name; the label is the
+        // user-visible text and is what the picker reads out.
+        public override string ToString() => Label;
+    }
+
+    /// <summary>
+    /// Sort choices offered by the column/layout dialog: the default order followed by every
+    /// sortable column in catalog order. Columns marked <see cref="ColumnDescriptor.Sortable"/>
+    /// false (for example genre and comment) or without a sort property never appear here.
+    /// </summary>
+    public static IReadOnlyList<SortOption> SortOptions { get; } = BuildSortOptions();
+
+    private static SortOption[] BuildSortOptions() =>
+    [
+        new("（默认顺序）", null),
+        .. All.Where(c => c is { Sortable: true, SortProperty: not null })
+            .Select(c => new SortOption(c.Header, c.SortProperty))
+    ];
 
     public static PlaylistViewLayout CreateDefault() => CreateLayout("标准",
     [

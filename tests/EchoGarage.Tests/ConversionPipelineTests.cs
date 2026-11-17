@@ -14,64 +14,10 @@ namespace EchoGarage.Tests;
 /// </summary>
 public sealed class ConversionPipelineTests
 {
-    private static string ToolsDirectory =>
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tools"));
-
-    private static readonly object ToolCopyLock = new();
-    private static readonly Dictionary<string, string?> ToolCopies = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Returns a runnable copy of a bundled tool. Some restricted environments (for example
-    /// sandboxed agent sessions) let child processes create files only when the executable
-    /// itself lives outside the workspace, so the tools are copied to the user temp folder
-    /// before running. Returns <c>null</c> when the tool is not bundled (source-only checkout).
-    /// </summary>
-    private static string? ResolveTool(string name)
-    {
-        lock (ToolCopyLock)
-        {
-            if (ToolCopies.TryGetValue(name, out var cached))
-            {
-                return cached;
-            }
-
-            var source = Path.Combine(ToolsDirectory, name);
-            if (!File.Exists(source))
-            {
-                ToolCopies[name] = null;
-                return null;
-            }
-
-            try
-            {
-                var directory = Path.Combine(Path.GetTempPath(), "EchoGarage.Tests", "tools");
-                Directory.CreateDirectory(directory);
-                var target = Path.Combine(directory, name);
-                if (!File.Exists(target) || new FileInfo(target).Length != new FileInfo(source).Length)
-                {
-                    File.Copy(source, target, overwrite: true);
-                }
-
-                ToolCopies[name] = target;
-                return target;
-            }
-            catch (IOException)
-            {
-                ToolCopies[name] = source;
-                return source;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                ToolCopies[name] = source;
-                return source;
-            }
-        }
-    }
-
     [Fact]
     public async Task Convert_WavToFlac_CopiesTagsAndProducesFlacFile()
     {
-        var flacPath = ResolveTool("flac.exe");
+        var flacPath = TestTools.ResolveTool("flac.exe");
         if (flacPath is null)
         {
             Assert.Skip("tools\\flac.exe is not available.");
@@ -110,7 +56,7 @@ public sealed class ConversionPipelineTests
     [Fact]
     public async Task Convert_WavToMp3_UsesLameAndCopiesTags()
     {
-        var lamePath = ResolveTool("lame.exe");
+        var lamePath = TestTools.ResolveTool("lame.exe");
         if (lamePath is null)
         {
             Assert.Skip("tools\\lame.exe is not available.");
@@ -148,7 +94,7 @@ public sealed class ConversionPipelineTests
     [Fact]
     public async Task Convert_WavToWav_ResamplesWithSsrc()
     {
-        var ssrcPath = ResolveTool("ssrc.exe");
+        var ssrcPath = TestTools.ResolveTool("ssrc.exe");
         if (ssrcPath is null)
         {
             Assert.Skip("tools\\ssrc.exe is not available.");
@@ -184,7 +130,7 @@ public sealed class ConversionPipelineTests
     [Fact]
     public async Task Convert_FlacToWav_DecodesMediaFoundationSource()
     {
-        var flacPath = ResolveTool("flac.exe");
+        var flacPath = TestTools.ResolveTool("flac.exe");
         if (flacPath is null)
         {
             Assert.Skip("tools\\flac.exe is not available.");
@@ -196,7 +142,7 @@ public sealed class ConversionPipelineTests
         var logger = new FileLogger(paths);
         var sourceWav = TestAudio.CreateWav(workspace.Combine("source.wav"), seconds: 1);
         var flacSource = workspace.Combine("source.flac");
-        var flacResult = await new ExternalRunnerProbe().RunAsync(
+        var flacResult = await TestTools.RunAsync(
             flacPath,
             ["-5", "-o", flacSource, sourceWav]);
         Assert.True(flacResult, "flac.exe failed to create the test source.");
@@ -255,34 +201,6 @@ public sealed class ConversionPipelineTests
             TrackNumber = 3,
             DiscNumber = 1
         });
-    }
-
-    private sealed class ExternalRunnerProbe
-    {
-        public async Task<bool> RunAsync(string executable, IReadOnlyList<string> arguments)
-        {
-            var startInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = executable,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true
-            };
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            using var process = System.Diagnostics.Process.Start(startInfo);
-            if (process is null)
-            {
-                return false;
-            }
-
-            await process.WaitForExitAsync();
-            return process.ExitCode == 0;
-        }
     }
 }
 

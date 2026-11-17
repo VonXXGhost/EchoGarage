@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
@@ -56,7 +57,8 @@ public sealed class TagLibTagService : ITagService
             picture?.Data.Data,
             picture?.MimeType)
         {
-            AdditionalTags = ReadAdditionalTags(file)
+            AdditionalTags = ReadAdditionalTags(file),
+            YearText = ReadYearText(file)
         };
     }
 
@@ -151,7 +153,17 @@ public sealed class TagLibTagService : ITagService
         tag.Composers = Split(edit.Composer);
         tag.Genres = Split(edit.Genre);
         tag.Comment = edit.Comment;
-        tag.Year = (uint)Math.Max(0, edit.Year);
+
+        // 只有用户真正修改了年份字段才写入，否则保留文件里原始的年份/日期文本
+        // （如 m4a 的 ©day="2025.06.04"、ID3 的 TDRC="2023-05-12"），
+        // 避免编辑标题等其它字段时把详细日期覆盖成纯年份。
+        if (edit.YearChanged)
+        {
+            var yearNumber = ResolveYearNumber(edit);
+            tag.Year = yearNumber;
+            WriteRawYearText(file, path, ResolveYearText(edit, yearNumber));
+        }
+
         tag.Track = (uint)Math.Max(0, edit.TrackNumber);
         tag.Disc = (uint)Math.Max(0, edit.DiscNumber);
 
@@ -174,6 +186,190 @@ public sealed class TagLibTagService : ITagService
 
         ApplyAdditionalTagChanges(file, edit.AdditionalTagChanges);
         file.Save();
+    }
+
+    /// <summary>
+    /// 读取文件中的原始年份/日期文本（保留月份/日期等细节），供属性面板“年份”字段显示。
+    /// 优先级与常见的年份写入位置一致：
+    /// Apple ©day → ID3v2 TDRC（其次 TYER）→ Xiph DATE（其次 YEAR）→ ASF WM/Year。
+    /// 都取不到时退回 <c>tag.Year</c> 的 4 位年份字符串。
+    /// </summary>
+    private string? ReadYearText(TagLib.File file)
+    {
+        try
+        {
+            if (file.GetTag(TagLib.TagTypes.Apple) is TagLib.Mpeg4.AppleTag apple)
+            {
+                var day = FirstNonEmpty(apple.GetText(
+                    TagLib.ByteVector.FromString("©day", TagLib.StringType.Latin1)));
+                if (day.Length > 0)
+                {
+                    return day;
+                }
+            }
+
+            if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2)
+            {
+                var recordingTime = FirstNonEmpty(id3v2.GetTextAsString(
+                    TagLib.ByteVector.FromString("TDRC", TagLib.StringType.Latin1)));
+                if (recordingTime.Length > 0)
+                {
+                    return recordingTime;
+                }
+
+                var year = FirstNonEmpty(id3v2.GetTextAsString(
+                    TagLib.ByteVector.FromString("TYER", TagLib.StringType.Latin1)));
+                if (year.Length > 0)
+                {
+                    return year;
+                }
+            }
+
+            if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+            {
+                var date = FirstNonEmpty(xiph.GetField("DATE"));
+                if (date.Length == 0)
+                {
+                    date = FirstNonEmpty(xiph.GetField("YEAR"));
+                }
+
+                if (date.Length > 0)
+                {
+                    return date;
+                }
+            }
+
+            if (file.GetTag(TagLib.TagTypes.Asf) is TagLib.Asf.Tag asf)
+            {
+                var year = FirstNonEmpty(asf.GetDescriptorString("WM/Year"));
+                if (year.Length > 0)
+                {
+                    return year;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Reading raw year text failed: {ex.Message}");
+        }
+
+        return file.Tag?.Year is { } fallback && fallback > 0
+            ? fallback.ToString(CultureInfo.InvariantCulture)
+            : null;
+    }
+
+    /// <summary>
+    /// 用户编辑年份时写入 <c>Tag.Year</c> 的数字值：优先用解析出的整数，
+    /// 若用户输入的是 "2023-05-12" 这类详细日期（<see cref="TagEditModel.Year"/> 解析失败为 0），
+    /// 取前 4 位数字，避免把 ID3v1 等只支持纯年份的标签清空。
+    /// </summary>
+    private static uint ResolveYearNumber(TagEditModel edit)
+    {
+        if (edit.Year > 0)
+        {
+            return (uint)edit.Year;
+        }
+
+        var text = edit.YearText?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length < 4)
+        {
+            return 0;
+        }
+
+        return uint.TryParse(text.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var year) &&
+               year > 0
+            ? year
+            : 0;
+    }
+
+    /// <summary>
+    /// 决定写回文件原始字段（©day / TDRC / DATE / WM/Year）的年份文本。
+    /// <see cref="TagEditModel.YearText"/> 非空时保留原文（如 "2023-05-12"）；
+    /// 为空但仍有可解析年份时回退为 4 位年份，避免只设置 <see cref="TagEditModel.Year"/>
+    /// 的调用方（如转换时复制标签）把年份整体清空；两者都为空才返回 null 表示清除。
+    /// </summary>
+    private static string? ResolveYearText(TagEditModel edit, uint yearNumber)
+    {
+        var text = edit.YearText?.Trim();
+        if (!string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        return yearNumber > 0
+            ? yearNumber.ToString(CultureInfo.InvariantCulture)
+            : null;
+    }
+
+    /// <summary>
+    /// 按文件扩展名的默认标签类型写回原始年份/日期文本（保留 "2023-05-12" 等细节）。
+    /// 文本为空表示调用方确认年份被清空：删除对应的原始字段，而不是只写 4 位年份。
+    /// 调用方应先用 <see cref="ResolveYearText"/> 做过回退，避免 Year 有值却清空年份字段。
+    /// </summary>
+    private static void WriteRawYearText(TagLib.File file, string path, string? yearText)
+    {
+        var text = yearText?.Trim();
+        var hasText = !string.IsNullOrEmpty(text);
+        var rawTag = file.GetTag(DefaultTagTypeFor(path), true);
+        var dayAtom = TagLib.ByteVector.FromString("©day", TagLib.StringType.Latin1);
+        var tdrcFrame = TagLib.ByteVector.FromString("TDRC", TagLib.StringType.Latin1);
+        var tyerFrame = TagLib.ByteVector.FromString("TYER", TagLib.StringType.Latin1);
+
+        switch (rawTag)
+        {
+            case TagLib.Mpeg4.AppleTag apple:
+                if (hasText)
+                {
+                    apple.SetText(dayAtom, text!);
+                }
+                else
+                {
+                    apple.ClearData(dayAtom);
+                }
+
+                break;
+
+            case TagLib.Id3v2.Tag id3v2:
+                if (hasText)
+                {
+                    // TDRC 是 ID3v2.4 的录制日期；旧的 TYER（ID3v2.3）与新值冲突，删除。
+                    id3v2.RemoveFrames(tyerFrame);
+                    id3v2.SetTextFrame(tdrcFrame, text!);
+                }
+                else
+                {
+                    id3v2.RemoveFrames(tdrcFrame);
+                    id3v2.RemoveFrames(tyerFrame);
+                }
+
+                break;
+
+            case TagLib.Ogg.XiphComment xiph:
+                if (hasText)
+                {
+                    xiph.RemoveField("YEAR");
+                    xiph.SetField("DATE", text!);
+                }
+                else
+                {
+                    xiph.RemoveField("DATE");
+                    xiph.RemoveField("YEAR");
+                }
+
+                break;
+
+            case TagLib.Asf.Tag asf:
+                if (hasText)
+                {
+                    asf.SetDescriptorString(text!, "WM/Year");
+                }
+                else
+                {
+                    asf.RemoveDescriptors("WM/Year");
+                }
+
+                break;
+        }
     }
 
     private static void ApplyAdditionalTagChanges(TagLib.File file, IReadOnlyList<AudioTagChange> changes)

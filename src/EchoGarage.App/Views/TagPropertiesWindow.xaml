@@ -63,6 +63,23 @@
                             Click="OnQuickNormalizeClick"
                             ToolTip="按设置页配置的正则规则快速改写下方标签框里的文本；保存后才写入文件。" />
                 </Grid>
+                <!-- 文件路径：单文件显示完整路径，多文件显示数量与公共目录（无公共目录时显示首个文件路径）。
+                     只读 TextBox 便于选中复制；长路径自动换行，不会把窗口撑宽。 -->
+                <Grid Margin="0,-2,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="68" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="文件路径" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                               VerticalAlignment="Top" Margin="0,1,8,0" />
+                    <TextBox x:Name="FilePathBox" Grid.Column="1" IsReadOnly="True" IsTabStop="False"
+                             TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0"
+                             VerticalContentAlignment="Top" FontSize="11"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                             ToolTip="可选中路径后按 Ctrl+C 复制。" />
+                </Grid>
                 <TextBlock x:Name="QuickNormalizeStatusText" Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="11" TextWrapping="Wrap" Margin="0,-4,0,8" Visibility="Collapsed" />
                 <Grid x:Name="FieldsGrid">
@@ -157,5 +174,52 @@
             <Button Content="取消" Style="{StaticResource FlatButton}" Click="OnCancel" IsCancel="True" Margin="0,0,8,0" />
             <Button x:Name="SaveButton" Content="保存到文件" Style="{StaticResource AccentButton}" Click="OnOk" IsDefault="True" />
         </StackPanel>
+
+        <!-- 标签补全候选浮层：由代码在艺术家 / 专辑艺术家 / 作曲家 / 流派四个输入框上共用。 -->
+        <Popup x:Name="SuggestionPopup" Placement="Bottom" StaysOpen="True" AllowsTransparency="True"
+               PopupAnimation="Fade">
+            <Border Background="{DynamicResource PanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6"
+                    Margin="0,2,0,0" SnapsToDevicePixels="True">
+                <ListBox x:Name="SuggestionList" MaxHeight="240" BorderThickness="0" Background="Transparent"
+                         Focusable="False" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Padding" Value="8,5" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                            <!-- 鼠标点击候选：在容器级别处理，避免浮层提前关闭导致列表级事件收不到。 -->
+                            <EventSetter Event="PreviewMouseLeftButtonDown"
+                                         Handler="OnSuggestionItemPreviewMouseLeftButtonDown" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ItemBorder" Property="Background"
+                                                        Value="{DynamicResource RowHoverBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="ItemBorder" Property="Background"
+                                                        Value="{DynamicResource AccentSoftBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+        </Popup>
     </Grid>
 </views:ThemedWindow>

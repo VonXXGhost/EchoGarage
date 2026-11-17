@@ -36,6 +36,7 @@ public sealed class HotkeyService : IDisposable
     private Window? _window;
     private int _nextGlobalId = FirstGlobalId;
     private bool _disposed;
+    private bool _mediaHookAcquired;
 
     public HotkeyService(MainViewModel vm, IAppLogger logger)
     {
@@ -97,6 +98,9 @@ public sealed class HotkeyService : IDisposable
             }, gesture);
         }
 
+        // Media keys are invisible to WPF and RegisterHotKey; the low-level hook handles them.
+        UpdateMediaHook();
+
         if (_global.Count == 0)
         {
             _logger.Info($"Hotkeys loaded: local={_local.Count} global=0");
@@ -119,6 +123,11 @@ public sealed class HotkeyService : IDisposable
         var registered = 0;
         foreach (var entry in _global)
         {
+            if (HotkeyGesture.IsMediaGesture(entry.Gesture))
+            {
+                continue;
+            }
+
             var key = ToWpfKey(entry.Gesture.Key);
             var virtualKey = key is null ? 0 : KeyInterop.VirtualKeyFromKey(key.Value);
             if (virtualKey == 0)
@@ -138,8 +147,140 @@ public sealed class HotkeyService : IDisposable
             }
         }
 
-        _logger.Info($"Hotkeys loaded: local={_local.Count} global={registered}/{_global.Count}");
+        var mediaGlobal = _global.Count(entry => HotkeyGesture.IsMediaGesture(entry.Gesture));
+        _logger.Info(
+            $"Hotkeys loaded: local={_local.Count} global={registered}/{_global.Count - mediaGlobal} media={mediaGlobal}");
     }
+
+    /// <summary>
+    /// Media keys never reach WPF key events or <c>RegisterHotKey</c>, and the standard media
+    /// keys must work without being configured, so the low-level hook stays installed for the
+    /// lifetime of the service. The settings capture button acquires the hook independently
+    /// while it records a gesture.
+    /// </summary>
+    private void UpdateMediaHook()
+    {
+        if (_mediaHookAcquired)
+        {
+            return;
+        }
+
+        MediaKeyHookService.MediaKeyDown += OnMediaKeyDown;
+        MediaKeyHookService.AddRef();
+        _mediaHookAcquired = true;
+        if (MediaKeyHookService.IsInstalled)
+        {
+            _logger.Info("Media key hook installed.");
+        }
+        else
+        {
+            _logger.Warn("Media key hook installation failed; media keys will not work.");
+        }
+    }
+
+    private void OnMediaKeyDown(object? sender, MediaKeyHookEventArgs e)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // An explicitly configured media gesture always takes precedence over the built-in
+        // media-key action. A local binding only fires while one of our windows has focus;
+        // when it does not apply the key is left to the system instead of falling back to the
+        // default action, so an explicit choice stays predictable.
+        var binding = FindMediaBinding(e, out var explicitlyConfigured);
+        if (explicitlyConfigured)
+        {
+            if (binding is null)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            DispatchToUi(() => Execute(binding));
+            return;
+        }
+
+        var gesture = new HotkeyGesture(e.Modifiers, e.KeyName);
+        if (HotkeyDefaults.ResolveMediaAction(gesture) is not { } action)
+        {
+            return;
+        }
+
+        // Default media keys respond while this app has an active playback session (playing or
+        // paused) or while one of its windows is in the foreground. In the background with no
+        // session they are passed through so the system / other players keep working.
+        var hasActiveSession = _vm.CurrentRow is not null;
+        if (!hasActiveSession && !ForegroundWindowHelper.IsOwnProcessForeground())
+        {
+            return;
+        }
+
+        e.Handled = true;
+        _logger.Info($"Media key default action: {gesture} -> {action}");
+
+        if (action is HotkeyAction.Next or HotkeyAction.Previous && !hasActiveSession)
+        {
+            // Nothing is loaded yet: treat "next/previous" as "start playing" so the media
+            // key does something useful instead of only swallowing the key.
+            DispatchToUi(() => Await(_vm.PlayPauseCommand.ExecuteAsync(null)));
+            return;
+        }
+
+        DispatchToUi(() => Execute(new HotkeyBinding { Action = action, Gesture = gesture.ToString() }));
+    }
+
+    /// <summary>
+    /// Never execute UI work inside the hook callback: blocking it makes Windows drop the hook.
+    /// Queue the action on the dispatcher instead.
+    /// </summary>
+    private static void DispatchToUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.HasShutdownStarted)
+        {
+            dispatcher.BeginInvoke(action);
+            return;
+        }
+
+        action();
+    }
+
+    /// <summary>
+    /// Finds the user-configured binding for a media key. <paramref name="configured"/> is true
+    /// when the key was configured at all, even if the local binding does not apply right now.
+    /// </summary>
+    private HotkeyBinding? FindMediaBinding(MediaKeyHookEventArgs e, out bool configured)
+    {
+        configured = false;
+        foreach (var entry in _global)
+        {
+            if (MatchesMediaGesture(entry.Gesture, e))
+            {
+                configured = true;
+                return entry.Binding;
+            }
+        }
+
+        var foreground = ForegroundWindowHelper.IsOwnProcessForeground();
+        foreach (var entry in _local)
+        {
+            if (!MatchesMediaGesture(entry.Gesture, e))
+            {
+                continue;
+            }
+
+            configured = true;
+            return foreground ? entry.Binding : null;
+        }
+
+        return null;
+    }
+
+    private static bool MatchesMediaGesture(HotkeyGesture gesture, MediaKeyHookEventArgs e) =>
+        gesture.Modifiers == e.Modifiers &&
+        string.Equals(gesture.Key, e.KeyName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Matches a key press against the local bindings. Plain (unmodified) keys are ignored
@@ -160,6 +301,12 @@ public sealed class HotkeyService : IDisposable
 
         foreach (var entry in _local)
         {
+            // Media keys never reach WPF key events; they are matched by the low-level hook.
+            if (HotkeyGesture.IsMediaGesture(entry.Gesture))
+            {
+                continue;
+            }
+
             if (entry.Gesture.Modifiers != modifiers || !MatchesKey(entry.Gesture.Key, key))
             {
                 continue;
@@ -234,6 +381,12 @@ public sealed class HotkeyService : IDisposable
             case HotkeyAction.OpenSearch:
                 _vm.OpenAdvancedSearchCommand.Execute(null);
                 break;
+            case HotkeyAction.OpenTagProperties:
+                if (_vm.SelectedRow is { } row)
+                {
+                    Await(_vm.EditTagsCommand.ExecuteAsync(row));
+                }
+                break;
             case HotkeyAction.ConvertPreset:
                 _vm.RequestConversionPreset(binding.PresetId);
                 break;
@@ -280,6 +433,13 @@ public sealed class HotkeyService : IDisposable
 
         _disposed = true;
         UnregisterGlobal();
+        if (_mediaHookAcquired)
+        {
+            MediaKeyHookService.MediaKeyDown -= OnMediaKeyDown;
+            MediaKeyHookService.Release();
+            _mediaHookAcquired = false;
+        }
+
         if (_source is not null)
         {
             _source.RemoveHook(WndProc);

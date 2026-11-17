@@ -100,6 +100,67 @@ public sealed class TagAndCoverTests : IDisposable
     }
 
     [Fact]
+    public void WriteThenRead_RoundTripsDetailedYearText()
+    {
+        // ID3v2 的 TDRC 支持 "2023-05-12" 这类详细日期，读取时应保留原始文本（Year 仍是 2023）。
+        var path = TestAudio.CreateWav(_workspace.Combine("media", "detailed-year.wav"));
+        _tags.Write(path, new TagEditModel
+        {
+            Title = "标题",
+            Year = 2023,
+            YearText = "2023-05-12"
+        });
+
+        var stored = _tags.Read(path);
+
+        Assert.Equal(2023, stored.Year);
+        Assert.Equal("2023-05-12", stored.YearText);
+    }
+
+    [Fact]
+    public void EditingOtherFields_KeepsDetailedYearText()
+    {
+        // 回归：只改标题时不能把详细日期覆盖成纯年份。
+        var path = TestAudio.CreateWav(_workspace.Combine("media", "keep-detailed-year.wav"));
+        _tags.Write(path, new TagEditModel { Title = "one", Year = 2023, YearText = "2023-05-12" });
+
+        // 模拟属性面板：只提交标题，年份字段没有出现在编辑里（YearChanged=false）。
+        _tags.Write(path, new TagEditModel { Title = "two", Year = 2023, YearChanged = false });
+
+        var stored = _tags.Read(path);
+
+        Assert.Equal("two", stored.Title);
+        Assert.Equal(2023, stored.Year);
+        Assert.Equal("2023-05-12", stored.YearText);
+    }
+
+    [Fact]
+    public void ClearingYear_RemovesDetailedYearText()
+    {
+        var path = TestAudio.CreateWav(_workspace.Combine("media", "clear-detailed-year.wav"));
+        _tags.Write(path, new TagEditModel { Title = "x", Year = 2023, YearText = "2023-05-12" });
+
+        _tags.Write(path, new TagEditModel { Title = "x", Year = 0, YearText = null, YearChanged = true });
+
+        var stored = _tags.Read(path);
+
+        Assert.Null(stored.Year);
+        Assert.Null(stored.YearText);
+    }
+
+    [Fact]
+    public void WriteThenRead_PlainYearFallsBackToYearText()
+    {
+        var path = TestAudio.CreateWav(_workspace.Combine("media", "plain-year.wav"));
+        _tags.Write(path, new TagEditModel { Title = "x", Year = 2024 });
+
+        var stored = _tags.Read(path);
+
+        Assert.Equal(2024, stored.Year);
+        Assert.Equal("2024", stored.YearText);
+    }
+
+    [Fact]
     public async Task CoverCache_ExtractsCoverToDisk_AndCachesNegativeResults()
     {
         var paths = new AppPaths(_workspace.Combine("state"));

@@ -18,6 +18,37 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_RoundTripsAllPlaybackModes()
+    {
+        await _settings.LoadAsync();
+
+        foreach (var mode in Enum.GetValues<PlaybackMode>())
+        {
+            _settings.Current.PlaybackMode = mode;
+            await _settings.SaveAsync();
+
+            var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+            await reloaded.LoadAsync();
+            Assert.Equal(mode, reloaded.Current.PlaybackMode);
+        }
+    }
+
+    [Fact]
+    public async Task Load_MissingPlaybackModeDefaultsToSequential()
+    {
+        await _settings.LoadAsync();
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        Assert.True(node.Remove("playbackMode"));
+        await File.WriteAllTextAsync(_paths.SettingsFile, node.ToJsonString());
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(PlaybackMode.Sequential, reloaded.Current.PlaybackMode);
+    }
+
+    [Fact]
     public async Task Load_CreatesDefaultSettingsFile()
     {
         await _settings.LoadAsync();

@@ -303,20 +303,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public string MuteToolTip => IsMuted ? "取消静音" : "静音";
 
-    /// <summary>Sequential or random playback; persisted in settings.</summary>
+    /// <summary>Sequential, random or single-track repeat playback; persisted in settings.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayModeLabel))]
     [NotifyPropertyChangedFor(nameof(PlayModeToolTip))]
     [NotifyPropertyChangedFor(nameof(IsShuffleEnabled))]
+    [NotifyPropertyChangedFor(nameof(IsRepeatOneEnabled))]
     private PlaybackMode _playMode = PlaybackMode.Sequential;
 
     public bool IsShuffleEnabled => PlayMode == PlaybackMode.Shuffle;
 
-    public string PlayModeLabel => IsShuffleEnabled ? "随机" : "顺序";
+    public bool IsRepeatOneEnabled => PlayMode == PlaybackMode.RepeatOne;
 
-    public string PlayModeToolTip => IsShuffleEnabled
-        ? "随机播放（点击切换为顺序播放）"
-        : "顺序播放（点击切换为随机播放）";
+    public string PlayModeLabel => PlayMode switch
+    {
+        PlaybackMode.Shuffle => "随机",
+        PlaybackMode.RepeatOne => "单曲循环",
+        _ => "顺序"
+    };
+
+    public string PlayModeToolTip => PlayMode switch
+    {
+        PlaybackMode.Shuffle => "随机播放（点击切换为单曲循环）",
+        PlaybackMode.RepeatOne => "单曲循环（点击切换为顺序播放）",
+        _ => "顺序播放（点击切换为随机播放）"
+    };
 
     partial void OnPlayModeChanged(PlaybackMode value)
     {
@@ -324,12 +335,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _shuffleOrder = null;
         Settings.PlaybackMode = value;
         QueueSettingsSave();
-        SetStatus(value == PlaybackMode.Shuffle ? "已切换为随机播放" : "已切换为顺序播放");
+        SetStatus(value switch
+        {
+            PlaybackMode.Shuffle => "已切换为随机播放",
+            PlaybackMode.RepeatOne => "已切换为单曲循环",
+            _ => "已切换为顺序播放"
+        });
     }
 
     [RelayCommand]
     private void TogglePlayMode() =>
-        PlayMode = PlayMode == PlaybackMode.Shuffle ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
+        PlayMode = PlayMode switch
+        {
+            PlaybackMode.Sequential => PlaybackMode.Shuffle,
+            PlaybackMode.Shuffle => PlaybackMode.RepeatOne,
+            _ => PlaybackMode.Sequential
+        };
 
     [ObservableProperty]
     private bool _showAlbumPanel = true;
@@ -808,6 +829,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         _sourcesView.Refresh();
+
+        // 媒体库数据可能刚发生变化（扫描、标签写入完成后都会走到这里），
+        // 让标签补全候选缓存下次重新查询；晚一拍刷新不影响编辑功能。
+        _host.TagSuggestions.Invalidate();
     }
 
     private void SetSelectedSourceSilently(SourceNodeViewModel? node)
@@ -1612,8 +1637,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var index = CurrentRow is null ? -1 : order.IndexOf(CurrentRow);
         if (index < 0 || index + 1 >= order.Count)
         {
-            _host.Player.Stop();
-            IsPlaying = false;
+            // End of the playable list: there is nothing to continue with, so return to the
+            // idle state exactly like pressing Stop instead of leaving a stopped track displayed.
+            Stop();
             return;
         }
 
@@ -1656,8 +1682,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var nextRound = _shuffleOrder.Where(r => !ReferenceEquals(r, CurrentRow)).ToList();
         if (nextRound.Count == 0)
         {
-            _host.Player.Stop();
-            IsPlaying = false;
+            // A shuffled round with a single playable track has nothing else to continue with.
+            Stop();
             return;
         }
 
@@ -1901,6 +1927,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             if (CurrentRow is null)
             {
+                return;
+            }
+
+            if (IsRepeatOneEnabled)
+            {
+                // Single-track repeat: a natural end restarts the same track.
+                await PlayRowAsync(CurrentRow);
                 return;
             }
 
@@ -2759,6 +2792,94 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await ReloadSourcesAsync();
         await SelectSourceAsync(Sources.FirstOrDefault());
         SetStatus("播放列表已删除");
+    }
+
+    /// <summary>
+    /// 按给定顺序重排左侧来源列表中的播放列表节点（默认播放列表除外）并持久化。
+    /// 只移动 <see cref="Sources"/> 尾部连续的播放列表节点，不重建集合，因此当前选中来源保持不变；
+    /// 写库失败时重新加载来源列表，回退到数据库里的原顺序。
+    /// </summary>
+    public async Task ReorderPlaylistsAsync(IReadOnlyList<Playlist> orderedPlaylists)
+    {
+        if (orderedPlaylists.Count == 0 || _isDisposed)
+        {
+            return;
+        }
+
+        var playlistNodes = Sources.Where(s => s.Kind == SourceKind.Playlist && s.Playlist is not null).ToList();
+        if (playlistNodes.Count != orderedPlaylists.Count)
+        {
+            _host.Logger.Warn($"Playlist reorder ignored: {orderedPlaylists.Count} ordered vs {playlistNodes.Count} in sources.");
+            return;
+        }
+
+        var orderedNodes = orderedPlaylists
+            .Select(playlist => playlistNodes.FirstOrDefault(node => node.Playlist!.Id == playlist.Id))
+            .ToList();
+        if (orderedNodes.Any(node => node is null))
+        {
+            _host.Logger.Warn("Playlist reorder ignored: ordered playlist is not present in sources.");
+            return;
+        }
+
+        // ReloadSourcesAsync 会把所有播放列表放在文件夹节点之后，这里再确认一次连续性，
+        // 避免在异常布局下用 Move 打乱“媒体库 / 播放列表”分组。
+        var firstIndex = Sources.IndexOf(playlistNodes[0]);
+        for (var i = 0; i < playlistNodes.Count; i++)
+        {
+            if (firstIndex < 0 || firstIndex + i >= Sources.Count || !ReferenceEquals(Sources[firstIndex + i], playlistNodes[i]))
+            {
+                _host.Logger.Warn("Playlist reorder ignored: playlist nodes are not contiguous in sources.");
+                return;
+            }
+        }
+
+        var selected = SelectedSource;
+        _suppressSourceSelection = true;
+        try
+        {
+            for (var i = 0; i < orderedNodes.Count; i++)
+            {
+                var node = orderedNodes[i]!;
+                var currentIndex = Sources.IndexOf(node);
+                if (currentIndex != firstIndex + i)
+                {
+                    Sources.Move(currentIndex, firstIndex + i);
+                }
+            }
+
+            _sourcesView.Refresh();
+
+            // 分组刷新可能让 ListBox 暂时清空 SelectedItem，这里把来源选择恢复回来。
+            if (!ReferenceEquals(SelectedSource, selected))
+            {
+                SetSelectedSourceSilently(selected);
+            }
+        }
+        finally
+        {
+            _suppressSourceSelection = false;
+        }
+
+        try
+        {
+            await _host.PlaylistRepository.UpdatePlaylistOrderAsync(
+                orderedNodes.Select(node => node!.Playlist!.Id).ToList());
+            var sortOrder = 1;
+            foreach (var node in orderedNodes)
+            {
+                var playlist = node!.Playlist!;
+                playlist.SortOrder = playlist.IsDefault ? 0 : sortOrder++;
+            }
+
+            SetStatus("播放列表顺序已保存");
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error("Updating playlist order failed", ex);
+            SetStatus($"保存播放列表顺序失败：{ex.Message}");
+            await ReloadSourcesAsync();
+        }
     }
 
     [RelayCommand]

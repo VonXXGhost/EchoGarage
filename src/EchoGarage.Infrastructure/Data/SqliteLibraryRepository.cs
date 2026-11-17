@@ -275,6 +275,45 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         return rows.ToDictionary(r => r.FolderId, r => r.Count);
     }
 
+    /// <summary>
+    /// 标签编辑补全候选的列映射。列名是内部常量，不来自用户输入，因此可以安全地拼进 SQL。
+    /// </summary>
+    private static readonly (string FieldKey, string Column)[] SuggestionColumns =
+    [
+        (TagFieldKeys.Artist, "Artist"),
+        (TagFieldKeys.AlbumArtist, "AlbumArtist"),
+        (TagFieldKeys.Composer, "Composer"),
+        (TagFieldKeys.Genre, "Genre")
+    ];
+
+    public async Task<TagSuggestionValues> GetTagSuggestionValuesAsync(
+        int limitPerField = TagSuggestionValues.DefaultLimit,
+        CancellationToken cancellationToken = default)
+    {
+        // 限制上限防止调用方误传巨大值；每字段的 DISTINCT 值可能很多，但只取频率最高的前 N 个。
+        limitPerField = Math.Clamp(limitPerField, 1, 10000);
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken);
+        var byField = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (fieldKey, column) in SuggestionColumns)
+        {
+            // TRIM 让前后空格不同的缓存值合并；GROUP BY + COUNT(*) 让常用值排在前面，
+            // 配合 LIMIT 把读取量限制在常数级，且不需要为这几个字段新增索引（避免拖慢扫描写入）。
+            var rows = await connection.QueryAsync<string>(new CommandDefinition($"""
+                SELECT TRIM({column}) AS Value
+                FROM tracks
+                WHERE IsInLibrary = 1 AND IsMissing = 0
+                  AND {column} IS NOT NULL AND TRIM({column}) <> ''
+                GROUP BY TRIM({column})
+                ORDER BY COUNT(*) DESC, TRIM({column}) COLLATE NOCASE
+                LIMIT @limit;
+                """, new { limit = limitPerField }, cancellationToken: cancellationToken));
+            byField[fieldKey] = rows.ToList();
+        }
+
+        return new TagSuggestionValues(byField);
+    }
+
     private static string NormalizeDirectory(string path) =>
         PathUtil.Normalize(path)
             .TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);

@@ -69,6 +69,8 @@ public static class TagBatchEditor
             Genre = source.Genre,
             Comment = source.Comment,
             Year = source.Year ?? 0,
+            YearText = source.YearText,
+            YearChanged = false,
             TrackNumber = source.TrackNumber,
             DiscNumber = source.DiscNumber
         };
@@ -80,7 +82,14 @@ public static class TagBatchEditor
         if (edit.Fields.TryGetValue(TagFieldKeys.Composer, out var composer)) model.Composer = composer;
         if (edit.Fields.TryGetValue(TagFieldKeys.Genre, out var genre)) model.Genre = genre;
         if (edit.Fields.TryGetValue(TagFieldKeys.Comment, out var comment)) model.Comment = comment;
-        if (edit.Fields.TryGetValue(TagFieldKeys.Year, out var year)) model.Year = ParseInt(year);
+        if (edit.Fields.TryGetValue(TagFieldKeys.Year, out var year))
+        {
+            // 用户编辑了年份字段：值可能是纯年份，也可能包含月/日（如 "2023-05-12"）。
+            // Year 仍按整数解析（无法解析时为 0），原始文本交给 YearText 写回文件。
+            model.YearChanged = true;
+            model.Year = ParseInt(year);
+            model.YearText = year.Trim();
+        }
         if (edit.Fields.TryGetValue(TagFieldKeys.TrackNumber, out var track)) model.TrackNumber = ParseInt(track);
         if (edit.Fields.TryGetValue(TagFieldKeys.DiscNumber, out var disc)) model.DiscNumber = ParseInt(disc);
 

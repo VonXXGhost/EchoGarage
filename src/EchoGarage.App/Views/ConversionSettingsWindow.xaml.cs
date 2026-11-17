@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using EchoGarage.App.Controls;
 using EchoGarage.App.Services;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
@@ -134,6 +135,11 @@ public partial class ConversionSettingsWindow : ThemedWindow
             return;
         }
 
+        if (HotkeyBox.IsCapturing)
+        {
+            HotkeyBox.CancelCapture();
+        }
+
         _loading = true;
         try
         {
@@ -152,8 +158,8 @@ public partial class ConversionSettingsWindow : ThemedWindow
             ProfileBox.SelectedIndex = Array.IndexOf(ResampleProfiles, preset.ResampleProfile);
             CopyTagsCheck.IsChecked = preset.CopyTags;
             CopyCoverCheck.IsChecked = preset.CopyCover;
-            HotkeyBox.Text = preset.Hotkey;
-            HotkeyGlobalCheck.IsChecked = preset.HotkeyGlobal;
+            HotkeyBox.Gesture = preset.Hotkey;
+            HotkeyGlobalCheck.IsChecked = preset.HotkeyGlobal && !string.IsNullOrWhiteSpace(preset.Hotkey);
             UpdateFormatUi();
             UpdateOutputModeUi();
             UpdateResampleUi();
@@ -211,8 +217,8 @@ public partial class ConversionSettingsWindow : ThemedWindow
 
         preset.CopyTags = CopyTagsCheck.IsChecked == true;
         preset.CopyCover = CopyCoverCheck.IsChecked == true;
-        preset.Hotkey = HotkeyBox.Text.Trim();
-        preset.HotkeyGlobal = HotkeyGlobalCheck.IsChecked == true;
+        preset.Hotkey = HotkeyBox.Gesture.Trim();
+        preset.HotkeyGlobal = preset.Hotkey.Length > 0 && HotkeyGlobalCheck.IsChecked == true;
         PresetList.Items.Refresh();
     }
 
@@ -380,9 +386,114 @@ public partial class ConversionSettingsWindow : ThemedWindow
         }
     }
 
+    private void OnHotkeyGestureCommitted(object sender, HotkeyGestureCommittedEventArgs e)
+    {
+        if (_loading || sender is not HotkeyCaptureButton button)
+        {
+            return;
+        }
+
+        var preset = Current;
+        if (preset is null)
+        {
+            return;
+        }
+
+        preset.Hotkey = e.Gesture;
+        if (preset.Hotkey.Length == 0)
+        {
+            HotkeyGlobalCheck.IsChecked = false;
+            SetStatus("已清除快捷键。", error: false);
+            return;
+        }
+
+        var canonical = CanonicalHotkey(e.Gesture);
+        var other = _presets.FirstOrDefault(p =>
+            !ReferenceEquals(p, preset) &&
+            CanonicalHotkey(p.Hotkey) is { Length: > 0 } existing &&
+            string.Equals(existing, canonical, StringComparison.OrdinalIgnoreCase));
+        if (other is not null)
+        {
+            button.Gesture = e.PreviousGesture;
+            preset.Hotkey = e.PreviousGesture;
+            SetStatus($"快捷键“{canonical}”已被预设“{DisplayName(other)}”使用。", error: true);
+            return;
+        }
+
+        SetStatus($"快捷键已设置为 {canonical}。", error: false);
+    }
+
+    private void OnHotkeyGlobalChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        if (HotkeyGlobalCheck.IsChecked == true && string.IsNullOrWhiteSpace(HotkeyBox.Gesture))
+        {
+            HotkeyGlobalCheck.IsChecked = false;
+            SetStatus("请先绑定快捷键，再勾选“全局”。", error: true);
+        }
+    }
+
+    /// <summary>Validates and canonicalizes the shortcuts of every preset before saving.</summary>
+    private bool ValidatePresetHotkeys()
+    {
+        var gestures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var preset in _presets)
+        {
+            var text = preset.Hotkey.Trim();
+            if (text.Length == 0)
+            {
+                preset.Hotkey = string.Empty;
+                preset.HotkeyGlobal = false;
+                continue;
+            }
+
+            if (!HotkeyGesture.TryParse(text, out var gesture) || gesture is null)
+            {
+                SetStatus($"预设“{DisplayName(preset)}”的快捷键“{text}”格式无效。", error: true);
+                return false;
+            }
+
+            var canonical = gesture.ToString();
+            if (gestures.TryGetValue(canonical, out var other))
+            {
+                SetStatus($"快捷键“{canonical}”被“{other}”和“{DisplayName(preset)}”重复使用。", error: true);
+                return false;
+            }
+
+            gestures[canonical] = DisplayName(preset);
+            preset.Hotkey = canonical;
+        }
+
+        return true;
+    }
+
+    private static string CanonicalHotkey(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        return HotkeyGesture.TryParse(text, out var gesture) && gesture is not null
+            ? gesture.ToString()
+            : text.Trim();
+    }
+
+    private static string DisplayName(ConversionPreset preset) =>
+        string.IsNullOrWhiteSpace(preset.Name) ? "未命名预设" : preset.Name.Trim();
+
     private void OnSaveClick(object sender, RoutedEventArgs e)
     {
         CommitEditor();
+        if (!ValidatePresetHotkeys())
+        {
+            return;
+        }
+
         var selectedIndex = PresetList.SelectedIndex;
         var presets = ConversionPresetFactory.NormalizeAll(_presets, null, null);
         _presets.Clear();
@@ -407,6 +518,12 @@ public partial class ConversionSettingsWindow : ThemedWindow
     {
         if (e.Key == Key.Escape)
         {
+            // The capture control handles Esc itself; do not close the dialog while capturing.
+            if (HotkeyBox.IsCapturing)
+            {
+                return;
+            }
+
             DialogResult = Result is not null;
         }
     }

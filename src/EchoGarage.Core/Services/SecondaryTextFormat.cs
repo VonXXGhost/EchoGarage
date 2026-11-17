@@ -34,6 +34,7 @@ public static class SecondaryTextFormat
         new("codec", "格式"),
         new("fileSize", "文件大小"),
         new("addedAt", "添加时间"),
+        new("modifiedAt", "文件修改时间"),
         new("path", "文件路径"),
         new("fileName", "文件名"),
         new("comment", "备注")

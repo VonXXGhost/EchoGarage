@@ -91,7 +91,7 @@
                                     <CheckBox Grid.Column="0" Content="{Binding Header}" IsChecked="{Binding IsVisible, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
                                     <TextBox Grid.Column="1" Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                             Height="24" Margin="0,2,10,2" Padding="4,0" />
+                                             Height="24" Margin="0,2,10,2" />
                                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                                         <Button Content="↑" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="11"
                                                 Click="OnMoveUp" />
@@ -100,12 +100,12 @@
                                     </StackPanel>
                                 </Grid>
                                 <Grid Margin="0,2,0,0" Visibility="{Binding SecondaryRowVisibility}">
-                                    <TextBox Height="22" FontSize="11" Padding="4,0"
+                                    <TextBox Height="22" FontSize="11"
                                              Text="{Binding SecondaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                              ToolTip="{Binding FormatHint}" />
                                     <TextBlock IsHitTestVisible="False" Text="次行格式（可选，例如 {genre}）"
                                                Foreground="{DynamicResource TextMutedBrush}" FontSize="10.5"
-                                               VerticalAlignment="Center" Margin="5,0,0,0">
+                                               VerticalAlignment="Center" Margin="10,0,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Visibility" Value="Collapsed" />

@@ -1554,6 +1554,7 @@ public partial class MainWindow : Window
 
         menu.Items.Add(CreatePlayModeMenuItem("顺序播放", PlaybackMode.Sequential, "PlayModeSequential"));
         menu.Items.Add(CreatePlayModeMenuItem("随机播放", PlaybackMode.Shuffle, "PlayModeShuffle"));
+        menu.Items.Add(CreatePlayModeMenuItem("单曲循环", PlaybackMode.RepeatOne, "PlayModeRepeatOne"));
 
         _playModeMenu = menu;
         menu.IsOpen = true;
@@ -1632,10 +1633,20 @@ public partial class MainWindow : Window
         saveItem.Click += (_, _) =>
         {
             var name = _dialogs.AskText("保存显示预设", "预设名称", _vm.CurrentLayout.PresetName ?? "我的布局");
-            if (!string.IsNullOrWhiteSpace(name))
+            if (string.IsNullOrWhiteSpace(name))
             {
-                _vm.SaveCurrentLayoutAsPreset(name);
+                return;
             }
+
+            // 同名预设先确认是否覆盖；取消则保持现有预设不变。
+            if (_vm.Presets.Any(preset =>
+                    string.Equals(preset.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)) &&
+                !_dialogs.Confirm($"已存在名为“{name.Trim()}”的显示预设，是否覆盖？", "覆盖显示预设"))
+            {
+                return;
+            }
+
+            _vm.SaveCurrentLayoutAsPreset(name);
         };
         menu.Items.Add(saveItem);
 
@@ -1871,16 +1882,26 @@ public partial class MainWindow : Window
         var isTextInput = focused is TextBox ||
                           (focused is FrameworkElement fe && fe.TemplatedParent is TextBox);
 
+        // Alt+Enter 是“打开标签属性”的内置回退快捷键。WPF 在按住 Alt 时把按键报告为
+        // Key.System（真实按键在 SystemKey），因此必须在 switch 之前单独判断，不能直接
+        // 匹配 case Key.Enter，否则内置 Alt+Enter 永远不会触发（自定义绑定走
+        // TryHandleLocal 时已做过同样的归一化，所以那里的 Alt+Enter 是正常的）。
+        // 用户为该动作配置了快捷键后不再响应内置组合，避免同一动作存在两个快捷键。
+        var normalizedKey = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (normalizedKey == Key.Enter && Keyboard.Modifiers == ModifierKeys.Alt && !isTextInput &&
+            !HasConfiguredHotkey(HotkeyAction.OpenTagProperties) &&
+            _vm.SelectedRow is { } propertiesRow)
+        {
+            e.Handled = true;
+            await _vm.EditTagsCommand.ExecuteAsync(propertiesRow);
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Space when !isTextInput:
                 e.Handled = true;
                 await _vm.PlayPauseCommand.ExecuteAsync(null);
-                break;
-            case Key.Enter when Keyboard.Modifiers == ModifierKeys.Alt && !isTextInput &&
-                                _vm.SelectedRow is { } propertiesRow:
-                e.Handled = true;
-                await _vm.EditTagsCommand.ExecuteAsync(propertiesRow);
                 break;
             case Key.Enter when !isTextInput && _vm.SelectedRow is { } row:
                 e.Handled = true;
@@ -1899,14 +1920,19 @@ public partial class MainWindow : Window
                 await _vm.RescanCommand.ExecuteAsync(null);
                 break;
             case Key.M when Keyboard.Modifiers == ModifierKeys.Control:
-                e.Handled = true;
-                _vm.ToggleMuteCommand.Execute(null);
+                // Ctrl+M 是静音切换的内置回退快捷键；用户自定义该动作后交给上面的
+                // TryHandleLocal 处理。
+                if (!HasConfiguredHotkey(HotkeyAction.Mute))
+                {
+                    e.Handled = true;
+                    _vm.ToggleMuteCommand.Execute(null);
+                }
+
                 break;
             case Key.F when Keyboard.Modifiers == ModifierKeys.Control:
                 // Ctrl+F opens the advanced search unless the user bound that action to a
                 // different key in the settings dialog (then TryHandleLocal above ran it).
-                if (!_vm.Settings.Hotkeys.Any(h =>
-                        h.Action == HotkeyAction.OpenSearch && !string.IsNullOrWhiteSpace(h.Gesture)))
+                if (!HasConfiguredHotkey(HotkeyAction.OpenSearch))
                 {
                     e.Handled = true;
                     _vm.OpenAdvancedSearchCommand.Execute(null);
@@ -1915,6 +1941,12 @@ public partial class MainWindow : Window
                 break;
         }
     }
+
+    /// <summary>
+    /// 判断某个可配置动作是否已被用户绑定了快捷键；内置回退快捷键仅在该动作未自定义时生效。
+    /// </summary>
+    private bool HasConfiguredHotkey(HotkeyAction action) =>
+        _vm.Settings.Hotkeys.Any(h => h.Action == action && !string.IsNullOrWhiteSpace(h.Gesture));
 
     private void OnSearchBoxKeyDown(object sender, KeyEventArgs e)
     {

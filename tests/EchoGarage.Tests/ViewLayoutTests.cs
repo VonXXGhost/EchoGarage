@@ -158,6 +158,61 @@ public sealed class ViewLayoutTests
     }
 
     [Fact]
+    public void ColumnCatalog_OffersFileModifiedTimeSort()
+    {
+        var descriptor = ColumnCatalog.FindBySortProperty("ModifiedSort");
+
+        Assert.NotNull(descriptor);
+        Assert.Equal("modifiedAt", descriptor!.Key);
+        Assert.Equal("文件修改时间", descriptor.Header);
+
+        var layout = ViewLayoutFactory.CreateDefault();
+        layout.Columns.First(c => c.Key == "modifiedAt").Visible = true;
+        layout.SortColumn = "ModifiedSort";
+        layout.SortDescending = true;
+
+        var normalized = ViewLayoutFactory.Normalize(layout);
+        Assert.Equal("ModifiedSort", normalized.SortColumn);
+        Assert.True(normalized.SortDescending);
+        Assert.True(normalized.Columns.Single(c => c.Key == "modifiedAt").Visible);
+    }
+
+    [Fact]
+    public void Normalize_ClearsSortByRemovedGenreAndCommentColumns()
+    {
+        // Genre / comment columns stay available for display, but they are no longer offered as
+        // sort methods; previously saved layouts that sorted by them fall back to the default order.
+        Assert.Null(ColumnCatalog.Find("genre")!.SortProperty);
+        Assert.Null(ColumnCatalog.Find("comment")!.SortProperty);
+
+        foreach (var removedSortProperty in new[] { "Genre", "Comment" })
+        {
+            var layout = ViewLayoutFactory.CreateDefault();
+            layout.SortColumn = removedSortProperty;
+            layout.SortDescending = true;
+
+            var normalized = ViewLayoutFactory.Normalize(layout);
+            Assert.Null(normalized.SortColumn);
+            Assert.False(normalized.SortDescending);
+        }
+    }
+
+    [Fact]
+    public void SortOptions_IncludeModifiedTimeAndExcludeGenreAndComment()
+    {
+        var options = ColumnCatalog.SortOptions;
+
+        Assert.Equal("（默认顺序）", options[0].Label);
+        Assert.Null(options[0].Property);
+        Assert.Contains(options, option => option is { Property: "ModifiedSort", Label: "文件修改时间" });
+        Assert.DoesNotContain(options, option => option.Property is "Genre" or "Comment");
+        Assert.DoesNotContain(options, option => option.Label is "流派" or "备注");
+        Assert.Equal(
+            1 + ColumnCatalog.All.Count(c => c is { Sortable: true, SortProperty: not null }),
+            options.Count);
+    }
+
+    [Fact]
     public void SerializeRoundTrip_PreservesDurationSort()
     {
         // Regression: the old normalization compared SortColumn with column *keys*, so sorting

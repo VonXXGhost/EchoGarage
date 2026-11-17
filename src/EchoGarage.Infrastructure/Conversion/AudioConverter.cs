@@ -309,7 +309,19 @@ public sealed class AudioConverter : IAudioConverter
     private void CopyTags(string sourcePath, string outputPath, bool copyCover)
     {
         var tags = _tagService.Read(sourcePath, includeCover: copyCover);
-        _tagService.Write(outputPath, new TagEditModel
+        _tagService.Write(outputPath, CreateTagCopy(tags, copyCover));
+    }
+
+    /// <summary>
+    /// Builds the tag write model that copies the source file's tags onto a conversion output.
+    /// 单独抽成公开静态方法便于单元测试断言字段传递：尤其 <see cref="TagEditModel.YearText"/>
+    /// 必须一并复制，否则 <c>TagLibTagService</c> 会按“清空年份”处理，导致输出文件年份丢失。
+    /// </summary>
+    public static TagEditModel CreateTagCopy(AudioTagData tags, bool copyCover)
+    {
+        ArgumentNullException.ThrowIfNull(tags);
+
+        return new TagEditModel
         {
             Title = tags.Title,
             Artist = tags.Artist,
@@ -319,12 +331,16 @@ public sealed class AudioConverter : IAudioConverter
             Genre = tags.Genre,
             Comment = tags.Comment,
             Year = tags.Year ?? 0,
+            // 源文件年份/日期原文（如 Vorbis DATE="2025-06-04"、Apple ©day="2025.06.04"），
+            // 按输出文件的默认标签类型原样写回；为空时由 TagLibTagService 回退为 4 位年份。
+            YearText = tags.YearText,
+            YearChanged = true,
             TrackNumber = tags.TrackNumber,
             DiscNumber = tags.DiscNumber,
             NewCoverBytes = copyCover ? tags.CoverBytes : null,
             NewCoverMime = copyCover ? tags.CoverMime : null,
             RemoveCover = false
-        });
+        };
     }
 
     private static string DescribeMissingEncoder(ConversionFormat format)

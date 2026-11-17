@@ -70,11 +70,9 @@ public sealed class ColumnEditRow : CommunityToolkit.Mvvm.ComponentModel.Observa
 
 public partial class ColumnsWindow : ThemedWindow
 {
-    private sealed record SortOption(string Label, string? Property);
-
     private readonly ObservableCollection<ColumnEditRow> _rows = [];
     private readonly ObservableCollection<ColumnPreset> _presets = [];
-    private readonly List<SortOption> _sortOptions = [];
+    private readonly List<ColumnCatalog.SortOption> _sortOptions = [];
     private readonly double _groupCoverSize;
 
     public ColumnsWindow(PlaylistViewLayout layout, IReadOnlyList<ColumnPreset> presets)
@@ -109,17 +107,10 @@ public partial class ColumnsWindow : ThemedWindow
 
         // Sorting does not require the column to be visible: hiding "album" or
         // "album artist" is a normal way to keep the grouped view while saving width.
-        _sortOptions.Add(new SortOption("（默认顺序）", null));
-        foreach (var row in _rows)
-        {
-            var descriptor = ColumnCatalog.Find(row.Key);
-            if (descriptor is not { Sortable: true, SortProperty: not null })
-            {
-                continue;
-            }
-
-            _sortOptions.Add(new SortOption(row.Header, descriptor.SortProperty));
-        }
+        // The shared catalog list keeps the dialog and the header/grouping logic on the
+        // same source of truth; its stable order also keeps newly added sort columns
+        // (e.g. file modified time) at a fixed position for old layouts.
+        _sortOptions.AddRange(ColumnCatalog.SortOptions);
 
         SortColumnBox.ItemsSource = _sortOptions;
         var currentSort = _sortOptions.FirstOrDefault(option =>
@@ -195,6 +186,14 @@ public partial class ColumnsWindow : ThemedWindow
         var existing = _presets.FirstOrDefault(p => string.Equals(p.Name, dialog.Value, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
+            // 同名预设先确认是否覆盖；取消则保持现有预设不变。
+            var result = MessageBox.Show(this, $"已存在名为“{dialog.Value}”的显示预设，是否覆盖？",
+                "覆盖显示预设", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (result != MessageBoxResult.OK)
+            {
+                return;
+            }
+
             _presets.Remove(existing);
         }
 
@@ -260,7 +259,7 @@ public partial class ColumnsWindow : ThemedWindow
             });
         }
 
-        if (SortColumnBox.SelectedItem is SortOption sortOption)
+        if (SortColumnBox.SelectedItem is ColumnCatalog.SortOption sortOption)
         {
             layout.SortColumn = sortOption.Property;
         }

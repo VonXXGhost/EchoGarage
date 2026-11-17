@@ -25,7 +25,6 @@
             <TextBlock Text="关键词" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
             <TextBox x:Name="KeywordBox"
                      Height="30"
-                     Padding="8,0"
                      VerticalContentAlignment="Center"
                      ToolTip="空格分隔多个关键词；英文双引号可保留短语中的空格，例如 &quot;kizuna ai&quot;。" />
             <TextBlock Text="搜索范围：当前播放列表"

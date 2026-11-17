@@ -43,7 +43,12 @@ public sealed class DialogService : IDialogService
     public TagBatchEdit? EditTags(IReadOnlyList<Track> tracks, IReadOnlyList<AudioTagData> currentTags)
     {
         // 标签属性窗口的「快捷规范化」使用设置页最新的规则列表（ADR-025 / KB-018）。
-        var window = new TagPropertiesWindow(tracks, currentTags, _host.Settings.Current.TagNormalizationRules)
+        // 候选值来自媒体库缓存（ADR-027），通过 ITagSuggestionService 异步读取并缓存。
+        var window = new TagPropertiesWindow(
+            tracks,
+            currentTags,
+            _host.Settings.Current.TagNormalizationRules,
+            _host.TagSuggestions)
         {
             Owner = _owner,
         };

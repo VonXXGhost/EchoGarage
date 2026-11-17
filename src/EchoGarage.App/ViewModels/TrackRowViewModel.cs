@@ -178,6 +178,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
         ["codec"] = Track.FormatDisplay,
         ["fileSize"] = DisplayFormatter.FileSize(Track.FileSize),
         ["addedAt"] = DisplayFormatter.Date(Track.AddedAtUtc),
+        ["modifiedAt"] = DisplayFormatter.Date(Track.ModifiedAtUtc),
         ["path"] = Track.Path,
         ["fileName"] = Track.FileName,
         ["comment"] = Track.Comment
@@ -212,6 +213,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
     public string SampleRateText => DisplayFormatter.SampleRate(Track.SampleRate);
     public string Codec => Track.FormatDisplay;
     public string AddedText => DisplayFormatter.Date(Track.AddedAtUtc);
+    public string ModifiedText => DisplayFormatter.Date(Track.ModifiedAtUtc);
     public string FileSizeText => DisplayFormatter.FileSize(Track.FileSize);
     public string PathText => Track.Path;
     public string FileName => Track.FileName;
@@ -227,6 +229,7 @@ public sealed partial class TrackRowViewModel : ObservableObject
     public int BitrateSort => Track.Bitrate;
     public int SampleRateSort => Track.SampleRate;
     public DateTime AddedSort => Track.AddedAtUtc;
+    public DateTime ModifiedSort => Track.ModifiedAtUtc;
     public long FileSizeSort => Track.FileSize;
 
     public string AlbumGroupKey => string.IsNullOrWhiteSpace(Track.Album)

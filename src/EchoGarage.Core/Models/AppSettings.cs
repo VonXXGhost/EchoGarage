@@ -21,7 +21,10 @@ public enum ThemeKind
 public enum PlaybackMode
 {
     Sequential,
-    Shuffle
+    Shuffle,
+
+    /// <summary>单曲循环：每次自然播放结束后重播当前曲目。</summary>
+    RepeatOne
 }
 
 /// <summary>进度条形态：滑块（默认，兼容旧配置）或波形（ADR-015）。</summary>

@@ -342,6 +342,14 @@
             </StackPanel>
         </DataTemplate>
 
+        <DataTemplate x:Key="Cell.ModifiedAt">
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding ModifiedText}" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Style="{StaticResource SecondaryCellText}"
+                           Text="{Binding SecondaryTexts, Converter={StaticResource SecondaryTextConverter}, ConverterParameter=modifiedAt}" />
+            </StackPanel>
+        </DataTemplate>
+
         <DataTemplate x:Key="Cell.FileSize">
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="{Binding FileSizeText}" Foreground="{DynamicResource TextMutedBrush}"
@@ -446,7 +454,8 @@
              MenuItem 没有子项时不会弹出子菜单；若等到菜单已显示后再改子项
              （Opened / SubmenuOpened），WPF 会重建已显示的菜单容器，
              鼠标移入子菜单时整条菜单链会被收起。 -->
-        <ContextMenu x:Key="TrackMenu">
+        <ContextMenu x:Key="TrackMenu"
+                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
             <MenuItem Header="移除列表" Click="OnRemoveSelectedClick" />
             <MenuItem Header="属性（标签）…" Click="OnPropertiesClick" />
             <MenuItem Header="Web 搜索标签…" Click="OnWebTagSearchClick" />
@@ -455,8 +464,31 @@
             <MenuItem Header="文件操作" />
             <Separator />
             <MenuItem Header="添加到播放列表…" Click="OnAddToPlaylistClick" />
+            <MenuItem Header="新建播放列表…" Command="{Binding NewPlaylistCommand}" />
+            <MenuItem Header="新建智能播放列表…" Command="{Binding NewSmartPlaylistCommand}" />
             <Separator />
             <MenuItem Header="在资源管理器中显示" Click="OnRevealClick" />
+        </ContextMenu>
+
+        <!-- 左侧“媒体库 / 播放列表”来源列表的右键菜单：原顶部菜单栏的“播放列表”菜单整体迁移到这里。
+             命令可用状态在 ContextMenuOpening（MainWindow.Sources.cs）里按右键命中的来源节点刷新；
+             DataContext 跟随 PlacementTarget（SourceList）的 DataContext，即 MainViewModel。 -->
+        <ContextMenu x:Key="SourceListMenu"
+                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+            <MenuItem Header="新建播放列表…" Tag="NewPlaylist" Command="{Binding NewPlaylistCommand}" />
+            <MenuItem Header="新建智能播放列表…" Tag="NewSmartPlaylist" Command="{Binding NewSmartPlaylistCommand}" />
+            <Separator />
+            <MenuItem Header="编辑智能条件…" Tag="EditSmartRules" Command="{Binding EditSmartRulesCommand}"
+                      IsEnabled="False" />
+            <MenuItem Header="重命名播放列表…" Tag="RenamePlaylist" Command="{Binding RenamePlaylistCommand}"
+                      IsEnabled="False" />
+            <MenuItem Header="删除播放列表…" Tag="DeletePlaylist" Command="{Binding DeletePlaylistCommand}"
+                      IsEnabled="False" />
+            <Separator />
+            <MenuItem Header="从播放列表移除所选歌曲" Tag="RemoveSelected" Command="{Binding RemoveSelectedCommand}"
+                      InputGestureText="Delete" IsEnabled="False" />
+            <MenuItem Header="添加所选歌曲到其他播放列表…" Tag="AddSelectedToPlaylist"
+                      Command="{Binding AddSelectedToPlaylistCommand}" IsEnabled="False" />
         </ContextMenu>
     </Window.Resources>
 
@@ -496,17 +528,6 @@
                         <MenuItem Header="打开日志目录" Command="{Binding OpenLogsCommand}" />
                         <Separator />
                         <MenuItem Header="退出" Click="OnExitMenuClick" />
-                    </MenuItem>
-                    <MenuItem Header="播放列表">
-                        <MenuItem Header="新建播放列表…" Command="{Binding NewPlaylistCommand}" />
-                        <MenuItem Header="新建智能播放列表…" Command="{Binding NewSmartPlaylistCommand}" />
-                        <Separator />
-                        <MenuItem Header="编辑智能条件…" Command="{Binding EditSmartRulesCommand}" />
-                        <MenuItem Header="重命名播放列表…" Command="{Binding RenamePlaylistCommand}" />
-                        <MenuItem Header="删除播放列表…" Command="{Binding DeletePlaylistCommand}" />
-                        <Separator />
-                        <MenuItem Header="从播放列表移除所选歌曲" Command="{Binding RemoveSelectedCommand}" InputGestureText="Delete" />
-                        <MenuItem Header="添加所选歌曲到其他播放列表…" Command="{Binding AddSelectedToPlaylistCommand}" />
                     </MenuItem>
                     <MenuItem Header="视图">
                         <MenuItem Header="显示专辑信息面板" Command="{Binding ToggleAlbumPanelCommand}" />
@@ -561,7 +582,7 @@
             <!-- Sidebar -->
             <Border Grid.Column="0" Background="{DynamicResource SidebarBackgroundBrush}"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
-                <Grid>
+                <Grid x:Name="SidebarRoot">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
@@ -569,12 +590,21 @@
 
                     <ListBox x:Name="SourceList" Grid.Row="0" Background="Transparent" BorderThickness="0"
                              AutomationProperties.AutomationId="SourceList"
+                             AllowDrop="True"
                              ItemsSource="{Binding SourcesView}"
+                             ContextMenu="{StaticResource SourceListMenu}"
+                             ContextMenuOpening="OnSourceListContextMenuOpening"
                              SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
                              ItemContainerStyle="{StaticResource SourceItemStyle}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             SelectionChanged="OnSourceSelectionChanged">
+                             SelectionChanged="OnSourceSelectionChanged"
+                             PreviewMouseLeftButtonDown="OnSourceListPreviewMouseLeftButtonDown"
+                             PreviewMouseRightButtonDown="OnSourceListPreviewMouseRightButtonDown"
+                             PreviewMouseMove="OnSourceListPreviewMouseMove"
+                             DragOver="OnSourceListDragOver"
+                             Drop="OnSourceListDrop"
+                             DragLeave="OnSourceListDragLeave">
                         <ListBox.GroupStyle>
                             <GroupStyle>
                                 <GroupStyle.HeaderTemplate>
@@ -585,6 +615,12 @@
                             </GroupStyle>
                         </ListBox.GroupStyle>
                     </ListBox>
+
+                    <!-- 播放列表拖拽排序时的插入位置指示线：由 MainWindow.Playlists.cs 定位并显示。 -->
+                    <Border x:Name="SourceDropIndicator" Grid.RowSpan="2" Height="2" Margin="8,0,8,0"
+                            VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                            Background="{DynamicResource AccentBrush}"
+                            IsHitTestVisible="False" Visibility="Collapsed" Panel.ZIndex="100" />
 
                     <StackPanel Grid.Row="1" Margin="8,6,8,10">
                         <Button Content="＋ 新建播放列表" Style="{StaticResource FlatButton}" HorizontalAlignment="Stretch"
@@ -614,14 +650,14 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Grid Width="240" Margin="0,0,10,0" VerticalAlignment="Center">
-                            <TextBox x:Name="SearchBox" Height="28" Padding="7,0,24,0" FontSize="12"
+                            <TextBox x:Name="SearchBox" Height="28" Padding="3,0,24,0" FontSize="12"
                                      Background="{DynamicResource SearchBackgroundBrush}"
                                      AutomationProperties.AutomationId="SearchBox"
                                      Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
                                      KeyDown="OnSearchBoxKeyDown"
                                      ToolTip="搜索当前播放列表的标题、艺术家、专辑、专辑艺术家；空格分隔多个关键词。Ctrl+F 打开高级搜索，可按字段搜索。" />
                             <TextBlock Text="搜索标题 / 艺术家 / 专辑…" Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="12" Margin="9,0,0,0" VerticalAlignment="Center"
+                                       FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center"
                                        IsHitTestVisible="False">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -1093,6 +1129,9 @@
                                             <DataTrigger Binding="{Binding IsShuffleEnabled}" Value="True">
                                                 <Setter Property="Visibility" Value="Collapsed" />
                                             </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsRepeatOneEnabled}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Path.Style>
@@ -1113,6 +1152,30 @@
                                     </Style>
                                 </Path.Style>
                             </Path>
+                            <!-- 单曲循环：循环箭头 + 1 -->
+                            <Grid>
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsRepeatOneEnabled}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round"
+                                      Data="M13.2,8 A5.2,5.2 0 1 1 7.9,2.8" />
+                                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round" Data="M9.9,1.5 L7.9,2.8 L9.9,4.1" />
+                                <TextBlock Text="1" FontSize="6.5" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="0,0,1,1"
+                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            </Grid>
                         </Grid>
                     </Button>
                 </StackPanel>

@@ -38,7 +38,11 @@ internal static class Diagnostics
                     180000, 320, 44100, 2, "FLAC", null, null);
             }
 
-            await CaptureWindowAsync(new TagPropertiesWindow([firstTrack], [tags]), directory, "dialog-tags.png", main);
+            await CaptureWindowAsync(
+                new TagPropertiesWindow([firstTrack], [tags], host.Settings.Current.TagNormalizationRules, host.TagSuggestions),
+                directory,
+                "dialog-tags.png",
+                main);
 
             var multiTracks = vm.Tracks.Take(3).Select(r => r.Track).ToList();
             if (multiTracks.Count > 1)
@@ -57,7 +61,7 @@ internal static class Diagnostics
                 }
 
                 await CaptureWindowAsync(
-                    new TagPropertiesWindow(multiTracks, multiTags),
+                    new TagPropertiesWindow(multiTracks, multiTags, host.Settings.Current.TagNormalizationRules, host.TagSuggestions),
                     directory,
                     "dialog-tags-multi.png",
                     main);

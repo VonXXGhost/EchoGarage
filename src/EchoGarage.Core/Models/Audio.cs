@@ -105,6 +105,13 @@ public sealed record AudioTagData(
 {
     /// <summary>Other tags present in the file, shown in the tag editor.</summary>
     public IReadOnlyList<AudioTagEntry> AdditionalTags { get; init; } = [];
+
+    /// <summary>
+    /// 文件中的原始年份/日期文本（如 "2025.06.04"、"2023-05-12"）。
+    /// 仅用于属性面板显示与写回文件；<see cref="Year"/> 仍是可用于排序/分组的前 4 位年份。
+    /// 不写入数据库，数据库缓存只保存 <see cref="Year"/>。
+    /// </summary>
+    public string? YearText { get; init; }
 }
 
 public sealed class TagEditModel
@@ -117,6 +124,20 @@ public sealed class TagEditModel
     public string Genre { get; set; } = string.Empty;
     public string Comment { get; set; } = string.Empty;
     public int Year { get; set; }
+
+    /// <summary>
+    /// 年份字段的原始文本（可包含月/日，如 "2023-05-12"）；写回时保留详细日期。
+    /// 仅当 <see cref="YearChanged"/> 为 true 时被 <c>TagLibTagService</c> 使用。
+    /// </summary>
+    public string? YearText { get; set; }
+
+    /// <summary>
+    /// 本次编辑是否包含年份字段。默认 true 以兼容直接构造模型并全量写入的旧调用方；
+    /// 批量编辑（<c>TagBatchEditor.CreateEdit</c>）在用户未修改年份时置为 false，
+    /// 避免写回时把文件中的详细日期覆盖成纯年份。
+    /// </summary>
+    public bool YearChanged { get; set; } = true;
+
     public int TrackNumber { get; set; }
     public int DiscNumber { get; set; }
     public byte[]? NewCoverBytes { get; set; }

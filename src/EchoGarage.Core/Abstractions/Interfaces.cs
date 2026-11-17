@@ -31,6 +31,15 @@ public interface ILibraryRepository
     Task UpdateFolderScanTimeAsync(long folderId, DateTime scannedAtUtc, CancellationToken cancellationToken = default);
     Task RecordPlaybackAsync(string path, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<long, int>> GetFolderTrackCountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 读取标签编辑补全候选：媒体库中已解析歌曲出现过的艺术家 / 专辑艺术家 / 作曲家 / 流派，
+    /// 按字段内出现频率降序、每字段最多 <paramref name="limitPerField"/> 个。
+    /// 仅统计 <c>IsInLibrary = 1 AND IsMissing = 0</c> 的缓存行，不访问音频文件。
+    /// </summary>
+    Task<TagSuggestionValues> GetTagSuggestionValuesAsync(
+        int limitPerField = TagSuggestionValues.DefaultLimit,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IPlaylistRepository
@@ -39,6 +48,13 @@ public interface IPlaylistRepository
     Task<IReadOnlyList<Playlist>> GetPlaylistsAsync(CancellationToken cancellationToken = default);
     Task<Playlist?> GetDefaultPlaylistAsync(CancellationToken cancellationToken = default);
     Task<Playlist> CreatePlaylistAsync(string name, PlaylistKind kind, SmartPlaylistDefinition? definition,
+        CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 批量更新播放列表的显示顺序：按 <paramref name="orderedPlaylistIds"/> 的先后依次为非默认播放列表写入
+    /// <c>SortOrder = index + 1</c>；默认播放列表固定排在最前，<c>SortOrder</c> 保持 0，即使出现在列表中也会被跳过。
+    /// 整个更新在一个事务里完成；空列表直接返回，不访问数据库。
+    /// </summary>
+    Task UpdatePlaylistOrderAsync(IReadOnlyList<long> orderedPlaylistIds,
         CancellationToken cancellationToken = default);
     Task RenamePlaylistAsync(long playlistId, string name, CancellationToken cancellationToken = default);
     Task DeletePlaylistAsync(long playlistId, CancellationToken cancellationToken = default);
@@ -68,6 +84,18 @@ public interface ITagService
     /// </summary>
     AudioTagData Read(string path, bool includeCover = true);
     void Write(string path, TagEditModel edit);
+}
+
+/// <summary>
+/// 标签编辑候选项的读取/缓存入口。底层从媒体库缓存（library.db）查询，
+/// UI 只在需要时异步取一次快照；媒体库数据变化后由应用层调用 <see cref="Invalidate"/>。
+/// </summary>
+public interface ITagSuggestionService
+{
+    /// <summary>取候选值快照；首次调用会查询数据库，之后命中内存缓存。</summary>
+    Task<TagSuggestionValues> GetAsync(CancellationToken cancellationToken = default);
+    /// <summary>让缓存失效；下次 <see cref="GetAsync"/> 会重新查询媒体库。</summary>
+    void Invalidate();
 }
 
 public interface ICoverCache

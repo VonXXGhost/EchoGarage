@@ -3,6 +3,7 @@ using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Configuration;
 using EchoGarage.Infrastructure.Data;
 using EchoGarage.Infrastructure.Logging;
+using EchoGarage.Infrastructure.Tagging;
 using Microsoft.Data.Sqlite;
 
 namespace EchoGarage.Tests;
@@ -11,6 +12,7 @@ public sealed class RepositoryTests : IDisposable
 {
     private readonly TempWorkspace _workspace = new();
     private readonly AppPaths _paths;
+    private readonly FileLogger _logger;
     private readonly SqliteDatabase _database;
     private readonly SqliteLibraryRepository _library;
     private readonly SqlitePlaylistRepository _playlists;
@@ -19,10 +21,10 @@ public sealed class RepositoryTests : IDisposable
     {
         _paths = new AppPaths(_workspace.Combine("state"));
         _paths.EnsureCreated();
-        var logger = new FileLogger(_paths);
-        _database = new SqliteDatabase(_paths, logger);
-        _library = new SqliteLibraryRepository(_database, logger);
-        _playlists = new SqlitePlaylistRepository(_database, logger);
+        _logger = new FileLogger(_paths);
+        _database = new SqliteDatabase(_paths, _logger);
+        _library = new SqliteLibraryRepository(_database, _logger);
+        _playlists = new SqlitePlaylistRepository(_database, _logger);
         _library.InitializeAsync().GetAwaiter().GetResult();
         _playlists.EnsureDefaultsAsync().GetAwaiter().GetResult();
     }
@@ -191,6 +193,44 @@ public sealed class RepositoryTests : IDisposable
         Assert.Single(defaults);
         Assert.Equal(PlaylistKind.Normal, defaults[0].Kind);
         Assert.Equal("默认播放列表", defaults[0].Name);
+    }
+
+    [Fact]
+    public async Task UpdatePlaylistOrder_PersistsNewOrder_AndKeepsDefaultFirst()
+    {
+        var first = await _playlists.CreatePlaylistAsync("List A", PlaylistKind.Normal, null);
+        var second = await _playlists.CreatePlaylistAsync("List B", PlaylistKind.Smart, new SmartPlaylistDefinition());
+        var third = await _playlists.CreatePlaylistAsync("List C", PlaylistKind.Normal, null);
+
+        Assert.Equal(["默认播放列表", "List A", "List B", "List C"],
+            (await _playlists.GetPlaylistsAsync()).Select(p => p.Name));
+
+        // 逆序：C、B、A。默认播放列表也一并传入（与拖拽时保持一致），它必须被跳过且保持首位。
+        var before = await _playlists.GetPlaylistsAsync();
+        var defaultPlaylist = before.Single(p => p.IsDefault);
+        await _playlists.UpdatePlaylistOrderAsync([defaultPlaylist.Id, third.Id, second.Id, first.Id]);
+
+        var after = await _playlists.GetPlaylistsAsync();
+        Assert.Equal(["默认播放列表", "List C", "List B", "List A"], after.Select(p => p.Name));
+        Assert.True(after[0].IsDefault);
+        Assert.Equal(0, after[0].SortOrder);
+        Assert.Equal([1, 2, 3], after.Skip(1).Select(p => p.SortOrder));
+    }
+
+    [Fact]
+    public async Task UpdatePlaylistOrder_OnlyAffectsNormalLists_AndEmptyListIsSafe()
+    {
+        var normal = await _playlists.CreatePlaylistAsync("List A", PlaylistKind.Normal, null);
+        var smart = await _playlists.CreatePlaylistAsync("Smart", PlaylistKind.Smart, new SmartPlaylistDefinition());
+        var playlistsBefore = await _playlists.GetPlaylistsAsync();
+
+        // 空列表不报错，也不改动现有顺序。
+        await _playlists.UpdatePlaylistOrderAsync([]);
+        Assert.Equal(playlistsBefore.Select(p => p.Name), (await _playlists.GetPlaylistsAsync()).Select(p => p.Name));
+
+        await _playlists.UpdatePlaylistOrderAsync([smart.Id, normal.Id]);
+        var reordered = (await _playlists.GetPlaylistsAsync()).Where(p => !p.IsDefault).ToList();
+        Assert.Equal([smart.Id, normal.Id], reordered.Select(p => p.Id));
     }
 
     [Fact]
@@ -453,6 +493,90 @@ public sealed class RepositoryTests : IDisposable
         var forwardSlashes = mixedSeparators.Path.Replace('\\', '/');
         Assert.Equal(1, await _playlists.RemovePlaylistItemsByPathAsync([forwardSlashes]));
         Assert.Empty(await _playlists.GetPlaylistTracksAsync(playlist));
+    }
+
+    [Fact]
+    public async Task GetTagSuggestionValues_ReturnsFrequentLibraryValuesPerField()
+    {
+        // 候选项按媒体库出现频率降序；TRIM 把前后空格不同的缓存值合并。
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var a1 = MakeTrack("s1.wav", "A", folderId: folder.Id);
+        var a2 = MakeTrack("s2.wav", "A", folderId: folder.Id);
+        var a3 = MakeTrack("s3.wav", "A ", folderId: folder.Id);
+        var b1 = MakeTrack("s4.wav", "B", folderId: folder.Id);
+        var b2 = MakeTrack("s5.wav", "B", folderId: folder.Id);
+        var c = MakeTrack("s6.wav", "C", folderId: folder.Id);
+        a1.Composer = "Composer X";
+        a2.Composer = "Composer X";
+        a3.Composer = "Composer Y";
+        b1.Composer = "Composer Z";
+        b2.Composer = "Composer Z";
+        c.Composer = "Composer W";
+        a1.AlbumArtist = "Album Artist";
+        a2.AlbumArtist = "Album Artist";
+        a3.AlbumArtist = "Album Artist";
+        b1.AlbumArtist = "Album Artist";
+        b2.AlbumArtist = "Album Artist";
+        c.AlbumArtist = "Album Artist";
+        a1.Genre = "Rock";
+        a2.Genre = "Rock";
+        a3.Genre = "Jazz";
+        b1.Genre = "Jazz";
+        b2.Genre = "Pop";
+        c.Genre = "Pop";
+        await _library.UpsertTracksAsync([a1, a2, a3, b1, b2, c]);
+
+        var values = await _library.GetTagSuggestionValuesAsync();
+
+        Assert.Equal(["A", "B", "C"], values.Get(TagFieldKeys.Artist));
+        Assert.Equal(["Album Artist"], values.Get(TagFieldKeys.AlbumArtist));
+        Assert.Equal(["Composer X", "Composer Z", "Composer W", "Composer Y"], values.Get(TagFieldKeys.Composer));
+        // 三者频率相同（各 2 首），同频时按名称 NOCASE 排序。
+        Assert.Equal(["Jazz", "Pop", "Rock"], values.Get(TagFieldKeys.Genre));
+    }
+
+    [Fact]
+    public async Task GetTagSuggestionValues_ExcludesUnavailableAndBlankRows_AndRespectsLimit()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var keep = MakeTrack("keep.wav", "Keep", folderId: folder.Id);
+        keep.Genre = "Rock";
+        var notInLibrary = MakeTrack("external.wav", "External", inLibrary: false);
+        notInLibrary.Genre = "Rock";
+        var missing = MakeTrack("missing.wav", "Missing", folderId: folder.Id);
+        missing.Genre = "Rock";
+        var blank = MakeTrack("blank.wav", "", folderId: folder.Id);
+        blank.Artist = "";
+        blank.Genre = "   ";
+        await _library.UpsertTracksAsync([keep, notInLibrary, missing, blank]);
+        await _library.MarkTrackMissingAsync(missing.Path);
+
+        // limitPerField = 1：每字段只返回频率最高的一条，证明 LIMIT 生效。
+        var values = await _library.GetTagSuggestionValuesAsync(1);
+
+        Assert.Equal(["Keep"], values.Get(TagFieldKeys.Artist));
+        Assert.Equal(["Rock"], values.Get(TagFieldKeys.Genre));
+    }
+
+    [Fact]
+    public async Task TagSuggestionService_CachesSnapshotUntilInvalidated()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        await _library.UpsertTracksAsync([MakeTrack("first.wav", "First Artist", folderId: folder.Id)]);
+
+        var service = new TagSuggestionService(_library, _logger);
+        var initial = await service.GetAsync();
+        Assert.Contains("First Artist", initial.Get(TagFieldKeys.Artist));
+
+        // 媒体库新增歌曲后，未失效前仍返回旧快照（避免每次补全都查库）。
+        await _library.UpsertTracksAsync([MakeTrack("second.wav", "Second Artist", folderId: folder.Id)]);
+        var cached = await service.GetAsync();
+        Assert.DoesNotContain("Second Artist", cached.Get(TagFieldKeys.Artist));
+
+        // 扫描/标签保存等流程会调用 Invalidate，下一次读取应重新查询。
+        service.Invalidate();
+        var refreshed = await service.GetAsync();
+        Assert.Contains("Second Artist", refreshed.Get(TagFieldKeys.Artist));
     }
 
     public void Dispose()

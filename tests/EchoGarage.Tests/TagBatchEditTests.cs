@@ -4,9 +4,12 @@ namespace EchoGarage.Tests;
 
 public sealed class TagBatchEditTests
 {
-    private static AudioTagData CreateTag() => new(
+    private static AudioTagData CreateTag(int? year = 2024, string? yearText = null) => new(
         "Title", "Artist", "Album", "AlbumArtist", "Composer", "Genre", "Comment",
-        2024, 3, 1, 0, 0, 0, 0, "FLAC", null, null);
+        year, 3, 1, 0, 0, 0, 0, "FLAC", null, null)
+    {
+        YearText = yearText
+    };
 
     [Fact]
     public void GetFieldValues_FormatsNumbersAndEmptyZeros()
@@ -17,6 +20,15 @@ public sealed class TagBatchEditTests
         Assert.Equal("3", values[TagFieldKeys.TrackNumber]);
         Assert.Equal("1", values[TagFieldKeys.DiscNumber]);
         Assert.Equal("Title", values[TagFieldKeys.Title]);
+    }
+
+    [Fact]
+    public void GetFieldValues_YearStaysFourDigitTextEvenWhenRawYearTextHasDate()
+    {
+        // 列表 / 分组 / 规范化依赖数字语义，因此面板以外的消费者仍只能看到 4 位年份。
+        var values = TagBatchEditor.GetFieldValues(CreateTag(2025, "2025.06.04"));
+
+        Assert.Equal("2025", values[TagFieldKeys.Year]);
     }
 
     [Fact]
@@ -72,6 +84,69 @@ public sealed class TagBatchEditTests
         Assert.Equal(1999, model.Year);
         Assert.Equal(0, model.TrackNumber);
         Assert.Equal(0, model.DiscNumber);
+    }
+
+    [Fact]
+    public void CreateEdit_WithoutYearField_DoesNotMarkYearChangedAndKeepsRawText()
+    {
+        // 只改其它字段时不能把文件里的详细日期（如 2025.06.04）覆盖成纯年份。
+        var source = CreateTag(2025, "2025.06.04");
+        var edit = new TagBatchEdit();
+        edit.Fields[TagFieldKeys.Title] = "New Title";
+
+        var model = TagBatchEditor.CreateEdit(source, edit);
+
+        Assert.False(model.YearChanged);
+        Assert.Equal(2025, model.Year);
+        Assert.Equal("2025.06.04", model.YearText);
+    }
+
+    [Fact]
+    public void CreateEdit_WithNumericYear_MarksYearChangedAndWritesNumberText()
+    {
+        var edit = new TagBatchEdit();
+        edit.Fields[TagFieldKeys.Year] = " 1999 ";
+
+        var model = TagBatchEditor.CreateEdit(CreateTag(2025, "2025.06.04"), edit);
+
+        Assert.True(model.YearChanged);
+        Assert.Equal(1999, model.Year);
+        Assert.Equal("1999", model.YearText);
+    }
+
+    [Fact]
+    public void CreateEdit_WithDetailedYearText_KeepsRawTextForWriteBack()
+    {
+        var edit = new TagBatchEdit();
+        edit.Fields[TagFieldKeys.Year] = " 2023-05-12 ";
+
+        var model = TagBatchEditor.CreateEdit(CreateTag(), edit);
+
+        Assert.True(model.YearChanged);
+        Assert.Equal("2023-05-12", model.YearText);
+    }
+
+    [Fact]
+    public void CreateEdit_EmptyYear_MarksYearChangedAndClearsRawText()
+    {
+        var edit = new TagBatchEdit();
+        edit.Fields[TagFieldKeys.Year] = "   ";
+
+        var model = TagBatchEditor.CreateEdit(CreateTag(2025, "2025.06.04"), edit);
+
+        Assert.True(model.YearChanged);
+        Assert.Equal(0, model.Year);
+        Assert.Equal(string.Empty, model.YearText);
+    }
+
+    [Fact]
+    public void TagEditModel_DefaultsToYearChangedForNonBatchCallers()
+    {
+        // 音频转换等直接构造 TagEditModel 的调用方没有“字段是否编辑”的上下文，默认仍写年份。
+        var model = new TagEditModel();
+
+        Assert.True(model.YearChanged);
+        Assert.Null(model.YearText);
     }
 
     [Fact]
