@@ -74,11 +74,11 @@ public sealed class AudioConverter : IAudioConverter
             Report(ConversionStage.Decoding, 0.1);
             var decoded = MediaDecoder.Open(sourcePath);
             var intermediateWav = Path.Combine(tempDirectory, "decoded.wav");
-            ConversionPreset effectivePreset;
+            // 有损格式的降采样由调用方在转换前询问用户（ConversionCoordinator），这里只执行预设自己的要求。
+            var effectivePreset = preset;
             try
             {
                 var sourceSampleRate = decoded.Provider.WaveFormat.SampleRate;
-                effectivePreset = ResolveEffectivePreset(preset, sourceSampleRate, ref warning);
                 var sourceBits = decoded.SourceBitsPerSample > 0
                     ? decoded.SourceBitsPerSample
                     : ProbeBitsPerSample(sourcePath);
@@ -215,6 +215,48 @@ public sealed class AudioConverter : IAudioConverter
         }
     }
 
+    /// <inheritdoc />
+    public int? TryProbeSampleRate(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var file = TagLib.File.Create(path);
+            var sampleRate = file.Properties.AudioSampleRate;
+            if (sampleRate > 0)
+            {
+                return sampleRate;
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.Debug($"TagLib sample rate probe failed for {path}: {exception.Message}");
+        }
+
+        try
+        {
+            var decoded = MediaDecoder.Open(path);
+            try
+            {
+                var sampleRate = decoded.Provider.WaveFormat.SampleRate;
+                return sampleRate > 0 ? sampleRate : null;
+            }
+            finally
+            {
+                decoded.Owner.Dispose();
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.Debug($"Media Foundation sample rate probe failed for {path}: {exception.Message}");
+            return null;
+        }
+    }
+
     private async Task<ResampleOutcome> ResampleAsync(
         NAudio.Wave.ISampleProvider source,
         ConversionPreset preset,
@@ -250,36 +292,6 @@ public sealed class AudioConverter : IAudioConverter
         var resampler = new WdlResamplingSampleProvider(source, preset.TargetSampleRate);
         PcmWavWriter.Write(resampler, resampledPath, bitDepth, cancellationToken);
         return new ResampleOutcome(resampledPath, null);
-    }
-
-    private static ConversionPreset ResolveEffectivePreset(
-        ConversionPreset preset,
-        int sourceSampleRate,
-        ref string? warning)
-    {
-        if (preset.Resample && preset.TargetSampleRate > 0)
-        {
-            return preset;
-        }
-
-        var forcedRate = preset.Format switch
-        {
-            ConversionFormat.Mp3 when sourceSampleRate > 48000 => 48000,
-            ConversionFormat.Aac when sourceSampleRate > 96000 => 96000,
-            _ => 0
-        };
-
-        if (forcedRate <= 0)
-        {
-            return preset;
-        }
-
-        var effective = preset.Clone();
-        effective.Resample = true;
-        effective.TargetSampleRate = forcedRate;
-        var formatLabel = preset.Format == ConversionFormat.Mp3 ? "MP3" : "AAC";
-        warning = AppendWarning(warning, $"{formatLabel} 不支持 {sourceSampleRate} Hz，已自动重采样到 {forcedRate} Hz。");
-        return effective;
     }
 
     private static int ResolveBitDepth(ConversionPreset preset, int sourceBitsPerSample)

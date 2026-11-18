@@ -164,6 +164,20 @@ public sealed class ConversionPipelineTests
         Assert.InRange(converted.Properties.Duration.TotalSeconds, 0.8, 1.3);
     }
 
+    [Fact]
+    public void TryProbeSampleRate_ReadsWavAndReturnsNullForMissingFile()
+    {
+        using var workspace = new TempWorkspace();
+        var paths = new AppPaths(workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        var source = TestAudio.CreateWav(workspace.Combine("source.wav"), sampleRate: 96000);
+        var converter = new AudioConverter(new TagLibTagService(logger), logger, paths);
+
+        Assert.Equal(96000, converter.TryProbeSampleRate(source));
+        Assert.Null(converter.TryProbeSampleRate(workspace.Combine("missing.wav")));
+    }
+
     private static async Task<(ConversionResult Result, string OutputPath)> ConvertAsync(
         AppPaths paths,
         IAppLogger logger,

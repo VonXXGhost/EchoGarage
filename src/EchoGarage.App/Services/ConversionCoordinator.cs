@@ -75,6 +75,13 @@ public sealed class ConversionCoordinator
             return;
         }
 
+        var presetsByPath = await ResolveResamplePresetsAsync(preset, items);
+        if (presetsByPath is null)
+        {
+            _vm.SetStatus("转换已取消。");
+            return;
+        }
+
         _running = true;
         using var cancellation = new CancellationTokenSource();
         var window = new ConversionProgressWindow(preset.Name, items.Count) { Owner = _owner };
@@ -99,8 +106,11 @@ public sealed class ConversionCoordinator
                     window.Report(currentIndex, items.Count, Path.GetFileName(item.Track.Path),
                         report.Stage, report.Fraction, report.Detail));
 
+                var itemPreset = presetsByPath.TryGetValue(item.Track.Path, out var resolvedPreset)
+                    ? resolvedPreset
+                    : preset;
                 var result = await _host.Converter.ConvertAsync(
-                    new ConversionRequest(item.Track.Path, item.OutputPath, preset, _host.Settings.Current.Encoders),
+                    new ConversionRequest(item.Track.Path, item.OutputPath, itemPreset, _host.Settings.Current.Encoders),
                     progress,
                     cancellation.Token);
                 results.Add(result);
@@ -123,6 +133,95 @@ public sealed class ConversionCoordinator
         }
 
         ReportSummary(preset, items.Count, results, plan, cancelled);
+    }
+
+    /// <summary>
+    /// Offers downsampling when a lossy preset would otherwise receive sources above 48 kHz.
+    /// Returns null when the user cancels (the batch must not start). The returned map contains
+    /// the preset to use for every above-limit item; all other items keep the batch preset.
+    /// </summary>
+    private async Task<Dictionary<string, ConversionPreset>?> ResolveResamplePresetsAsync(
+        ConversionPreset preset,
+        IReadOnlyList<ConversionPlanItem> items)
+    {
+        var presets = new Dictionary<string, ConversionPreset>(StringComparer.OrdinalIgnoreCase);
+        if (!ConversionResamplePolicy.IsLossyFormat(preset.Format) ||
+            ConversionResamplePolicy.HasExplicitResample(preset))
+        {
+            return presets;
+        }
+
+        _vm.SetStatus($"正在检查 {items.Count} 个文件的采样率…");
+        var candidates = await Task.Run(() =>
+        {
+            var found = new List<(ConversionPlanItem Item, int SampleRate)>();
+            foreach (var item in items)
+            {
+                var sampleRate = _host.Converter.TryProbeSampleRate(item.Track.Path);
+                if (sampleRate is int rate && ConversionResamplePolicy.NeedsDownsamplePrompt(preset, rate))
+                {
+                    found.Add((item, rate));
+                }
+            }
+
+            return found;
+        });
+
+        if (candidates.Count == 0)
+        {
+            return presets;
+        }
+
+        var targetRate = ConversionResamplePolicy.LossySampleRateLimit;
+        var first = candidates[0];
+        var firstChoice = _dialogs.ShowConversionResamplePrompt(new ConversionResamplePrompt(
+            Path.GetFileName(first.Item.Track.Path),
+            preset.Format,
+            first.SampleRate,
+            targetRate));
+
+        if (firstChoice == ConversionResampleChoice.Cancel)
+        {
+            return null;
+        }
+
+        var downsamplePreset = ConversionResamplePolicy.WithDownsample(preset);
+        var firstDownsampled = firstChoice == ConversionResampleChoice.Downsample;
+        var firstPreset = firstDownsampled ? downsamplePreset : preset;
+        presets[first.Item.Track.Path] = firstPreset;
+
+        var remaining = candidates.Skip(1).ToList();
+        var sameAsFirstForRemaining = false;
+        if (remaining.Count > 0)
+        {
+            var scopeChoice = _dialogs.ShowConversionResampleScopePrompt(new ConversionResampleScopePrompt(
+                remaining.Count,
+                remaining.Take(3).Select(entry => Path.GetFileName(entry.Item.Track.Path)).ToList(),
+                preset.Format,
+                targetRate,
+                firstDownsampled));
+
+            if (scopeChoice == ConversionResampleScopeChoice.Cancel)
+            {
+                return null;
+            }
+
+            sameAsFirstForRemaining = scopeChoice == ConversionResampleScopeChoice.SameAsFirst;
+            var remainingPreset = sameAsFirstForRemaining
+                ? firstPreset
+                : (firstDownsampled ? preset : downsamplePreset);
+            foreach (var entry in remaining)
+            {
+                presets[entry.Item.Track.Path] = remainingPreset;
+            }
+        }
+
+        var remainingDownsampled = remaining.Count > 0 &&
+            (sameAsFirstForRemaining ? firstDownsampled : !firstDownsampled);
+        var downsampleCount = (firstDownsampled ? 1 : 0) + (remainingDownsampled ? remaining.Count : 0);
+        _host.Logger.Info(
+            $"Conversion resample decisions: preset={preset.Name}, format={preset.Format}, downsample={downsampleCount}, keepSource={candidates.Count - downsampleCount}.");
+        return presets;
     }
 
     public Task OpenSettingsAsync()

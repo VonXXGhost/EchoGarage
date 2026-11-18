@@ -34,6 +34,20 @@ public sealed class DialogService : IDialogService
         return window.Choice;
     }
 
+    public ConversionResampleChoice ShowConversionResamplePrompt(ConversionResamplePrompt prompt)
+    {
+        var window = new ConversionResampleWindow(prompt) { Owner = _owner };
+        window.ShowDialog();
+        return window.Choice;
+    }
+
+    public ConversionResampleScopeChoice ShowConversionResampleScopePrompt(ConversionResampleScopePrompt prompt)
+    {
+        var window = new ConversionResampleScopeWindow(prompt) { Owner = _owner };
+        window.ShowDialog();
+        return window.Choice;
+    }
+
     public SmartPlaylistDefinition? EditSmartPlaylist(string playlistName, SmartPlaylistDefinition definition)
     {
         var window = new SmartPlaylistWindow(playlistName, definition) { Owner = _owner };
