@@ -54,7 +54,7 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Database_MigratesVersion1ToVersion3_AddsComposerAndInvalidatesDuration()
+    public async Task Database_MigratesVersion1ToLatest_AddsComposerAndInvalidatesDuration()
     {
         // Build a database that looks like the old (v1) schema, then let InitializeAsync
         // upgrade it. Old rows must keep working with an empty Composer value, and the
@@ -78,6 +78,8 @@ public sealed class RepositoryTests : IDisposable
                     Title TEXT NOT NULL DEFAULT '',
                     Album TEXT NOT NULL DEFAULT '',
                     AlbumArtist TEXT NOT NULL DEFAULT '',
+                    TrackNumber INTEGER NOT NULL DEFAULT 0,
+                    DiscNumber INTEGER NOT NULL DEFAULT 0,
                     DurationMs INTEGER NOT NULL DEFAULT 0);
                 INSERT INTO tracks (Path, FolderId, Title, Album, AlbumArtist, DurationMs)
                 VALUES ('old/one.wav', 1, 'Old', 'Album', 'Artist', 2000);
@@ -107,7 +109,7 @@ public sealed class RepositoryTests : IDisposable
         await using var versionCommand = upgraded.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
         var version = Convert.ToInt64(await versionCommand.ExecuteScalarAsync());
-        Assert.Equal(3, version);
+        Assert.Equal(4, version);
 
         await using var legacy = upgraded.CreateCommand();
         legacy.CommandText = "SELECT Composer, DurationMs FROM tracks WHERE Path = 'old/one.wav';";
@@ -118,7 +120,7 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Database_MigratesVersion2ToVersion3_AndKeepsComposer()
+    public async Task Database_MigratesVersion2ToLatest_AndKeepsComposer()
     {
         // A v2 library already has the Composer column but its cached value is empty because
         // the v2 migration did not force a rescan. The v3 migration invalidates DurationMs.
@@ -142,6 +144,8 @@ public sealed class RepositoryTests : IDisposable
                     Album TEXT NOT NULL DEFAULT '',
                     AlbumArtist TEXT NOT NULL DEFAULT '',
                     Composer TEXT NOT NULL DEFAULT '',
+                    TrackNumber INTEGER NOT NULL DEFAULT 0,
+                    DiscNumber INTEGER NOT NULL DEFAULT 0,
                     DurationMs INTEGER NOT NULL DEFAULT 0);
                 INSERT INTO tracks (Path, FolderId, Title, Album, AlbumArtist, Composer, DurationMs)
                 VALUES ('old/two.wav', 1, 'Old', 'Album', 'Artist', 'Some Composer', 5000);
@@ -158,7 +162,7 @@ public sealed class RepositoryTests : IDisposable
         await upgraded.OpenAsync();
         await using var versionCommand = upgraded.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
-        Assert.Equal(3, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
+        Assert.Equal(4, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
 
         await using var legacy = upgraded.CreateCommand();
         legacy.CommandText = "SELECT Composer, DurationMs FROM tracks WHERE Path = 'old/two.wav';";
@@ -166,6 +170,80 @@ public sealed class RepositoryTests : IDisposable
         Assert.True(await legacyReader.ReadAsync());
         Assert.Equal("Some Composer", legacyReader.GetString(0));
         Assert.Equal(0, legacyReader.GetInt64(1));
+    }
+
+    [Fact]
+    public async Task Database_MigratesVersion3ToVersion4_InvalidatesAppleRowsWithoutTrackNumber()
+    {
+        // Legacy Apple taggers (for example Nero AAC) stored track/disc numbers as freeform
+        // ----:com.apple.iTunes:track boxes. Version 3 and older cached those rows with
+        // TrackNumber = 0 and the incremental scan skips unchanged files, so the v4 migration
+        // marks exactly the affected Apple-container rows as stale for the startup repair scan.
+        var paths = new AppPaths(_workspace.Combine("migrate-v3"));
+        paths.EnsureCreated();
+        var options = new SqliteConnectionStringBuilder
+        {
+            DataSource = paths.DatabaseFile,
+            Mode = SqliteOpenMode.ReadWriteCreate
+        };
+        await using (var connection = new SqliteConnection(options.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE tracks (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Path TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    FolderId INTEGER NULL,
+                    IsMissing INTEGER NOT NULL DEFAULT 0,
+                    Title TEXT NOT NULL DEFAULT '',
+                    Album TEXT NOT NULL DEFAULT '',
+                    AlbumArtist TEXT NOT NULL DEFAULT '',
+                    TrackNumber INTEGER NOT NULL DEFAULT 0,
+                    DiscNumber INTEGER NOT NULL DEFAULT 0,
+                    DurationMs INTEGER NOT NULL DEFAULT 0);
+                INSERT INTO tracks (Path, FolderId, TrackNumber, DurationMs) VALUES
+                    ('media/legacy-a.m4a', 1, 0, 2000),
+                    ('media/LEGACY-B.M4A', 1, 0, 3000),
+                    ('media/legacy-c.mp4', 1, 0, 4000),
+                    ('media/has-track.m4a', 1, 5, 5000),
+                    ('media/plain.flac', 1, 0, 6000),
+                    ('external/outside.m4a', NULL, 0, 7000);
+                PRAGMA user_version = 3;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var logger = new FileLogger(paths);
+        var database = new SqliteDatabase(paths, logger);
+        await database.InitializeAsync();
+
+        await using var upgraded = new SqliteConnection(options.ToString());
+        await upgraded.OpenAsync();
+        await using var versionCommand = upgraded.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version;";
+        Assert.Equal(4, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
+
+        await using var rows = upgraded.CreateCommand();
+        rows.CommandText = "SELECT Path, DurationMs FROM tracks ORDER BY Path;";
+        var durations = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        await using (var reader = await rows.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                durations[reader.GetString(0)] = reader.GetInt64(1);
+            }
+        }
+
+        // Apple containers without a cached track number are invalidated (case-insensitive
+        // extension match), including playlist-only rows so ADR-018 activation refresh fixes them.
+        Assert.Equal(0, durations["media/legacy-a.m4a"]);
+        Assert.Equal(0, durations["media/LEGACY-B.M4A"]);
+        Assert.Equal(0, durations["media/legacy-c.mp4"]);
+        Assert.Equal(0, durations["external/outside.m4a"]);
+        // Rows that already have a track number, or are not MP4 containers, stay untouched.
+        Assert.Equal(5000, durations["media/has-track.m4a"]);
+        Assert.Equal(6000, durations["media/plain.flac"]);
     }
 
     [Fact]

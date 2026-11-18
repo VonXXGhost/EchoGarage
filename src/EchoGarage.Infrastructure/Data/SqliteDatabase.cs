@@ -65,6 +65,12 @@ public sealed class SqliteDatabase
         if (version < 3)
         {
             await MigrateToVersion3Async(connection, cancellationToken);
+            version = 3;
+        }
+
+        if (version < 4)
+        {
+            await MigrateToVersion4Async(connection, cancellationToken);
         }
     }
 
@@ -167,6 +173,26 @@ public sealed class SqliteDatabase
             PRAGMA user_version = 3;
             """, cancellationToken: cancellationToken));
         _logger.Info("SQLite schema migrated to version 3 (metadata repair for Composer).");
+    }
+
+    private async Task MigrateToVersion4Async(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // Older versions only read track/disc numbers from the standard MP4 `trkn`/`disk`
+        // atoms. Files tagged by Nero AAC or other legacy Apple tools store them as freeform
+        // `----:com.apple.iTunes:track` / `disc` boxes instead, so their cached rows kept
+        // TrackNumber = 0 forever: the incremental scan compares only size + mtime and skips
+        // these unchanged files. The tag reader now understands the legacy boxes, but the
+        // existing cache rows never get re-read. Resetting DurationMs marks exactly those
+        // Apple-container rows as stale (ADR-010: DurationMs <= 0 means the row must be
+        // rebuilt), so the startup repair scan re-reads their tags once. Rows that genuinely
+        // have no track number are re-read once too and simply stay at 0.
+        await connection.ExecuteAsync(new CommandDefinition("""
+            UPDATE tracks SET DurationMs = 0
+            WHERE TrackNumber = 0
+              AND (Path LIKE '%.m4a' OR Path LIKE '%.mp4' OR Path LIKE '%.m4b');
+            PRAGMA user_version = 4;
+            """, cancellationToken: cancellationToken));
+        _logger.Info("SQLite schema migrated to version 4 (metadata repair for legacy Apple track numbers).");
     }
 
     public async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
