@@ -38,6 +38,29 @@ public sealed class TagLibTagService : ITagService
         var genre = tag?.JoinedGenres ?? string.Empty;
         var comment = tag?.Comment ?? string.Empty;
 
+        // Nero AAC 等旧式标签器把音轨号/碟片号写在 ---- 自由标签（com.apple.iTunes:track / disc）
+        // 而不是标准 trkn / disk atom；foobar2000 认得这种写法，TagLib# 不认，这里做读取回退。
+        // 只有标准 atom 缺省时才回退，避免有冲突值的老文件覆盖标准值。
+        var trackNumber = (int)(tag?.Track ?? 0);
+        var discNumber = (int)(tag?.Disc ?? 0);
+        var consumedFreeformKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (file.GetTag(TagLib.TagTypes.Apple) is TagLib.Mpeg4.AppleTag appleTag)
+        {
+            if (trackNumber <= 0 &&
+                TryReadLegacyNumber(appleTag, AppleLegacyTagNumber.TrackName, out var legacyTrack))
+            {
+                trackNumber = legacyTrack.Value;
+                consumedFreeformKeys.Add(legacyTrack.Key);
+            }
+
+            if (discNumber <= 0 &&
+                TryReadLegacyNumber(appleTag, AppleLegacyTagNumber.DiscName, out var legacyDisc))
+            {
+                discNumber = legacyDisc.Value;
+                consumedFreeformKeys.Add(legacyDisc.Key);
+            }
+        }
+
         return new AudioTagData(
             title,
             artist,
@@ -47,8 +70,8 @@ public sealed class TagLibTagService : ITagService
             genre,
             comment,
             tag?.Year is { } year && year != 0 ? (int)year : null,
-            (int)(tag?.Track ?? 0),
-            (int)(tag?.Disc ?? 0),
+            trackNumber,
+            discNumber,
             properties is null ? 0 : (long)Math.Round(properties.Duration.TotalMilliseconds),
             properties?.AudioBitrate ?? 0,
             properties?.AudioSampleRate ?? 0,
@@ -57,7 +80,7 @@ public sealed class TagLibTagService : ITagService
             picture?.Data.Data,
             picture?.MimeType)
         {
-            AdditionalTags = ReadAdditionalTags(file),
+            AdditionalTags = ReadAdditionalTags(file, consumedFreeformKeys),
             YearText = ReadYearText(file)
         };
     }
@@ -164,8 +187,22 @@ public sealed class TagLibTagService : ITagService
             WriteRawYearText(file, path, ResolveYearText(edit, yearNumber));
         }
 
-        tag.Track = (uint)Math.Max(0, edit.TrackNumber);
-        tag.Disc = (uint)Math.Max(0, edit.DiscNumber);
+        // 旧式 Nero/Apple 自由标签里可能保存着音轨号/碟片号；这类文件继续写回同一处，
+        // 不要顺带创建标准 trkn / disk atom，否则同一个值会同时以两种形式存在，
+        // foobar2000 等工具会读到互相冲突的数字。
+        var appleTag = file.GetTag(TagLib.TagTypes.Apple, false) as TagLib.Mpeg4.AppleTag;
+        WriteNumberField(
+            appleTag,
+            tag.Track,
+            Math.Max(0, edit.TrackNumber),
+            AppleLegacyTagNumber.TrackName,
+            value => tag.Track = value);
+        WriteNumberField(
+            appleTag,
+            tag.Disc,
+            Math.Max(0, edit.DiscNumber),
+            AppleLegacyTagNumber.DiscName,
+            value => tag.Disc = value);
 
         if (edit.RemoveCover)
         {
@@ -186,6 +223,86 @@ public sealed class TagLibTagService : ITagService
 
         ApplyAdditionalTagChanges(file, edit.AdditionalTagChanges);
         file.Save();
+    }
+
+    /// <summary>旧式 M4A 自由标签里读到的音轨号/碟片号（mean / name / 原文 / 数值）。</summary>
+    private readonly record struct LegacyAppleNumber(string Mean, string Name, string RawText, int Value)
+    {
+        public string Key => AdditionalTagKey.AppleFreeform(Mean, Name);
+    }
+
+    /// <summary>
+    /// 在 Apple 标签的自由标签（----）中查找 name 为 track / disc、mean 为 com.apple.iTunes
+    /// 且能解析出正整数的条目。这正是 foobar2000 读取 Nero AAC 输出的方式；
+    /// TagLib# 只认标准 trkn / disk atom，不会映射这些自由标签。
+    /// </summary>
+    private static bool TryReadLegacyNumber(
+        TagLib.Mpeg4.AppleTag apple,
+        string alias,
+        out LegacyAppleNumber number)
+    {
+        number = default;
+        foreach (var box in apple)
+        {
+            try
+            {
+                if (AtomName(box.BoxType) != "----")
+                {
+                    continue;
+                }
+
+                var mean = ChildText(box, "mean");
+                var name = ChildText(box, "name");
+                if (!string.Equals(mean, AppleLegacyTagNumber.ITunesMean, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(name, alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var text = box.Children.OfType<TagLib.Mpeg4.AppleDataBox>().FirstOrDefault()?.Text;
+                if (!AppleLegacyTagNumber.TryParse(text, out var value))
+                {
+                    continue;
+                }
+
+                number = new LegacyAppleNumber(mean, name, text!.Trim(), value);
+                return true;
+            }
+            catch
+            {
+                // 无法解析的自由标签盒直接跳过，继续找下一个。
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 写入音轨号/碟片号：文件只有旧式自由标签（没有标准 atom）时更新该自由标签并保留 "/总数"，
+    /// 值未变化时完全不写；其它情况维持原来的标准标签写入路径。
+    /// 这样编辑旧式文件时既能让 foobar2000 看到新值，又不会额外生成重复的标准 atom。
+    /// </summary>
+    private static void WriteNumberField(
+        TagLib.Mpeg4.AppleTag? apple,
+        uint standardValue,
+        int desiredValue,
+        string alias,
+        Action<uint> writeStandard)
+    {
+        if (apple is not null &&
+            standardValue == 0 &&
+            TryReadLegacyNumber(apple, alias, out var legacy))
+        {
+            if (desiredValue == legacy.Value)
+            {
+                return;
+            }
+
+            apple.SetDashBox(legacy.Mean, legacy.Name, AppleLegacyTagNumber.Format(legacy.RawText, desiredValue));
+            return;
+        }
+
+        writeStandard((uint)Math.Max(0, desiredValue));
     }
 
     /// <summary>
@@ -482,7 +599,9 @@ public sealed class TagLibTagService : ITagService
         }
     }
 
-    private IReadOnlyList<AudioTagEntry> ReadAdditionalTags(TagLib.File file)
+    private IReadOnlyList<AudioTagEntry> ReadAdditionalTags(
+        TagLib.File file,
+        IReadOnlyCollection<string> excludedFreeformKeys)
     {
         var entries = new List<AudioTagEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -502,7 +621,7 @@ public sealed class TagLibTagService : ITagService
 
             if (file.GetTag(TagLib.TagTypes.Apple) is TagLib.Mpeg4.AppleTag apple)
             {
-                CollectAppleBoxes(apple, entries, seen);
+                CollectAppleBoxes(apple, entries, seen, excludedFreeformKeys);
             }
 
             if (file.GetTag(TagLib.TagTypes.Asf) is TagLib.Asf.Tag asf)
@@ -609,7 +728,11 @@ public sealed class TagLibTagService : ITagService
         }
     }
 
-    private static void CollectAppleBoxes(TagLib.Mpeg4.AppleTag tag, List<AudioTagEntry> entries, HashSet<string> seen)
+    private static void CollectAppleBoxes(
+        TagLib.Mpeg4.AppleTag tag,
+        List<AudioTagEntry> entries,
+        HashSet<string> seen,
+        IReadOnlyCollection<string> excludedFreeformKeys)
     {
         foreach (var box in tag)
         {
@@ -618,7 +741,7 @@ public sealed class TagLibTagService : ITagService
                 var atom = AtomName(box.BoxType);
                 if (atom == "----")
                 {
-                    CollectAppleFreeform(box, entries, seen);
+                    CollectAppleFreeform(box, entries, seen, excludedFreeformKeys);
                     continue;
                 }
 
@@ -651,7 +774,8 @@ public sealed class TagLibTagService : ITagService
     private static void CollectAppleFreeform(
         TagLib.Mpeg4.Box box,
         List<AudioTagEntry> entries,
-        HashSet<string> seen)
+        HashSet<string> seen,
+        IReadOnlyCollection<string> excludedFreeformKeys)
     {
         var mean = ChildText(box, "mean");
         var name = ChildText(box, "name");
@@ -666,13 +790,21 @@ public sealed class TagLibTagService : ITagService
             return;
         }
 
+        var key = AdditionalTagKey.AppleFreeform(mean, name);
+        if (excludedFreeformKeys.Contains(key))
+        {
+            // 该自由标签已被当作音轨号/碟片号读入，不再作为“其他标签”重复显示
+            // （与 trkn / disk 标准 atom 不出现在其他标签列表里保持一致）。
+            return;
+        }
+
         AddEntry(
             entries,
             seen,
             string.IsNullOrWhiteSpace(name) ? mean : name,
             data.Text,
             AdditionalTagKinds.AppleFreeform,
-            AdditionalTagKey.AppleFreeform(mean, name));
+            key);
     }
 
     private static string ChildText(TagLib.Mpeg4.Box box, string atom) =>
