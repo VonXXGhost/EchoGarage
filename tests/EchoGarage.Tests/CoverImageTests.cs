@@ -102,4 +102,42 @@ public sealed class CoverImageTests
             sourceIsJpeg: false, sourceWidth: 800, sourceHeight: 600, targetMaxEdge: 1000,
             originalSize: 100_000, convertedSize: 0));
     }
+
+    [Theory]
+    [InlineData(1000, 1000, 1000)]
+    [InlineData(1000, 900, 1000)]
+    [InlineData(800, 1000, 1000)]
+    public void AlreadyAtTargetEdge_JpegOnTheLimit_AsksBeforeRecompressing(
+        int width, int height, int maxEdge)
+    {
+        Assert.True(CoverConversionPolicy.IsAlreadyAtTargetEdge(
+            sourceIsJpeg: true, sourceWidth: width, sourceHeight: height, targetMaxEdge: maxEdge));
+    }
+
+    [Theory]
+    [InlineData(1000, 1000, 1200)] // 还要缩小：属于正常的压缩，不提示。
+    [InlineData(1000, 1000, 800)]  // 比限制小：策略本来就不会重新编码。
+    [InlineData(1000, 1000, 0)]    // 没有分辨率限制。
+    public void AlreadyAtTargetEdge_OtherSizes_DoNotAsk(int width, int height, int maxEdge)
+    {
+        Assert.False(CoverConversionPolicy.IsAlreadyAtTargetEdge(
+            sourceIsJpeg: true, sourceWidth: width, sourceHeight: height, targetMaxEdge: maxEdge));
+    }
+
+    [Fact]
+    public void AlreadyAtTargetEdge_NonJpeg_DoesNotAsk()
+    {
+        Assert.False(CoverConversionPolicy.IsAlreadyAtTargetEdge(
+            sourceIsJpeg: false, sourceWidth: 1000, sourceHeight: 1000, targetMaxEdge: 1000));
+    }
+
+    [Theory]
+    [InlineData(0, 1000)]
+    [InlineData(1000, 0)]
+    [InlineData(-1, 1000)]
+    public void AlreadyAtTargetEdge_InvalidSize_DoesNotAsk(int width, int height)
+    {
+        Assert.False(CoverConversionPolicy.IsAlreadyAtTargetEdge(
+            sourceIsJpeg: true, sourceWidth: width, sourceHeight: height, targetMaxEdge: 1000));
+    }
 }

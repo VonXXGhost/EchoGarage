@@ -108,6 +108,12 @@ public partial class TagPropertiesWindow : ThemedWindow
     private string? _coverMime;
     private CoverAction _coverAction = CoverAction.None;
 
+    /// <summary>当前预览封面的解码信息（格式 / 分辨率 / 体积）；没有封面或封面不一致时为 null。</summary>
+    private CoverImageInfo? _coverInfo;
+
+    /// <summary>本次保存时用户选择「保持原样」，跳过封面转换（避免重复压缩已转换过的封面）。</summary>
+    private bool _skipCoverCompression;
+
     /// <summary>True when the selected files do not share the same cover (some have one, some don't, or they differ).</summary>
     private bool _coverMixed;
 
@@ -835,6 +841,7 @@ public partial class TagPropertiesWindow : ThemedWindow
             CoverPlaceholder.Text = MultiValueText;
             CoverPlaceholder.Visibility = Visibility.Visible;
             CoverInfoText.Text = DescribeMixedCover();
+            _coverInfo = null;
             return;
         }
 
@@ -845,6 +852,7 @@ public partial class TagPropertiesWindow : ThemedWindow
             CoverImage.Source = null;
             CoverPlaceholder.Visibility = Visibility.Visible;
             CoverInfoText.Text = "无封面";
+            _coverInfo = null;
             return;
         }
 
@@ -867,6 +875,7 @@ public partial class TagPropertiesWindow : ThemedWindow
         }
 
         var info = CoverImageProcessor.ReadInfo(bytes);
+        _coverInfo = info;
         CoverInfoText.Text = info is null
             ? "封面信息不可用"
             : $"{info.FormatName} · {info.Width}×{info.Height} · {DisplayFormatter.FileSize(info.ByteSize)}";
@@ -996,8 +1005,59 @@ public partial class TagPropertiesWindow : ThemedWindow
 
     private void OnOk(object sender, RoutedEventArgs e)
     {
+        if (!ConfirmCoverRecompression())
+        {
+            // 用户在“是否再压一次封面”里选择了取消：留在属性页继续编辑，不保存。
+            return;
+        }
+
         Result = BuildResult();
         DialogResult = true;
+    }
+
+    /// <summary>
+    /// 保存前的封面重复压缩确认。封面已经是 JPEG 且最长边正好等于当前设置的最大边长时，
+    /// 再保存只会以相同分辨率重新做一次有损编码（体积可能略小、画质继续损失），
+    /// 因此先把当前分辨率与体积摆给用户，由用户决定仍然压缩还是保持原样。
+    /// </summary>
+    /// <returns>false 表示用户取消了本次保存。</returns>
+    private bool ConfirmCoverRecompression()
+    {
+        _skipCoverCompression = false;
+        if (ConvertCoverCheck.IsChecked != true)
+        {
+            return true;
+        }
+
+        var bytes = _coverAction == CoverAction.Remove ? null : _coverBytes;
+        if (bytes is not { Length: > 0 } || _coverInfo is not { } info)
+        {
+            return true;
+        }
+
+        var (quality, maxEdge) = ReadCoverConversionOptions();
+        if (!CoverConversionPolicy.IsAlreadyAtTargetEdge(info.IsJpeg, info.Width, info.Height, maxEdge))
+        {
+            return true;
+        }
+
+        var window = new CoverRecompressWindow(
+            new CoverRecompressPrompt(info.Width, info.Height, info.ByteSize, quality, maxEdge, _tracks.Count))
+        {
+            Owner = this,
+        };
+        window.ShowDialog();
+
+        switch (window.Choice)
+        {
+            case CoverRecompressChoice.Compress:
+                return true;
+            case CoverRecompressChoice.KeepOriginal:
+                _skipCoverCompression = true;
+                return true;
+            default:
+                return false;
+        }
     }
 
     /// <summary>根据当前控件值生成批量编辑结果（只包含被修改的字段与封面改动）。</summary>
@@ -1035,10 +1095,9 @@ public partial class TagPropertiesWindow : ThemedWindow
         var mime = _coverAction == CoverAction.Remove ? null : _coverMime;
         var coverChanged = _coverAction == CoverAction.Replace;
 
-        if (bytes is { Length: > 0 } && ConvertCoverCheck.IsChecked == true)
+        if (!_skipCoverCompression && bytes is { Length: > 0 } && ConvertCoverCheck.IsChecked == true)
         {
-            var quality = ParseIntInRange(CoverQualityBox.Text, 1, 100, 90);
-            var maxEdge = ParseIntInRange(CoverMaxEdgeBox.Text, 0, 20000, 1000);
+            var (quality, maxEdge) = ReadCoverConversionOptions();
             var converted = CoverImageProcessor.ConvertToJpeg(bytes, quality, maxEdge);
             if (converted.Converted)
             {
@@ -1054,6 +1113,11 @@ public partial class TagPropertiesWindow : ThemedWindow
         edit.NewCoverMime = edit.RemoveCover ? null : mime;
         return edit;
     }
+
+    /// <summary>读取封面转换设置（质量 / 最大边长）；保存与重复压缩提示共用同一套归一化规则。</summary>
+    private (int Quality, int MaxEdge) ReadCoverConversionOptions() => (
+        ParseIntInRange(CoverQualityBox.Text, 1, 100, 90),
+        ParseIntInRange(CoverMaxEdgeBox.Text, 0, 20000, 1000));
 
     private static int ParseIntInRange(string text, int min, int max, int fallback) =>
         int.TryParse(text, out var value) ? Math.Clamp(value, min, max) : fallback;
