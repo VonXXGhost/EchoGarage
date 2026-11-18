@@ -96,4 +96,6 @@
   （旧式 Apple 自由标签音轨号的缓存自愈：schema v4 迁移把 `.m4a/.mp4/.m4b` 且 `TrackNumber = 0`
   的缓存行 `DurationMs` 清 0 标记失效，复用 ADR-010 启动修复扫描重读标签；
   外部播放列表行由 ADR-018 激活刷新处理）。
-- 当前状态：**`docs/proposals/` 存在待批准提案，详见目录内文件**。
+- 2026-11-18：owner 批准 `ADR-029` 并归档到 `docs/adr/ADR-029-apple-legacy-cache-invalidation.md`，
+  `docs/adr/ADR-index.md` 已更新。
+- 当前状态：**`docs/proposals/` 暂无待批准提案**。
