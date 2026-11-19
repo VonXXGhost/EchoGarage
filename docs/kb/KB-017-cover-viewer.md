@@ -1,9 +1,10 @@
-# KB-017 封面大图浏览窗口（双击「正在播放」封面放大查看）
+# KB-017：封面大图浏览窗口（双击「正在播放」封面放大查看）
 
-- 状态：**Accepted**（owner 批准：2026-11-16）
+- 状态：Accepted（2026-11-16 批准）
 - 日期：2026-11-16
-- 相关：右栏「正在播放」面板（`MainWindow.xaml` Album panel）、封面缓存（`ICoverCache` / `CoverImageService`）、
-  五套主题令牌（`docs/kb/KB-015-theme-token-map.md`）
+- 相关：右栏「正在播放」面板（`MainWindow.xaml` Album panel）、封面缓存（`ICoverCache` / `CoverImageService`，
+  生命周期见 `docs/kb/KB-008-grouped-cover-and-layout-persistence.md` §3）、
+  五套主题令牌（`docs/kb/KB-006-theme-system.md`）
 
 ## 1. 背景与需求
 
@@ -81,7 +82,8 @@ owner 需求原文：**“双击后可放大浏览封面”**。
 
 - 窗口根元素为 `views:ThemedWindow`，标题栏随当前深浅主题切换（基类 DWM 处理）。
 - 代码与 XAML 中没有硬编码颜色；按钮复用 `Resources/Controls.xaml` 的 `FlatButton`。
-- 主题热切换由 `ThemeManager.Apply` 替换合并字典实现，`DynamicResource` 自动刷新，无需窗口重建。
+- 主题热切换由 `ThemeManager.Apply` 替换合并字典实现，`DynamicResource` 自动刷新，无需窗口重建
+  （主题切换链路见 KB-006 §2）。
 
 ## 5. 缩放 / 平移实现
 
@@ -107,7 +109,8 @@ owner 需求原文：**“双击后可放大浏览封面”**。
 
 ## 6. 高清封面回退策略
 
-- 右栏现有加载链路只按 `DecodePixelWidth = 420` 解码并进入 `CoverImageService` 的 300 条 LRU；
+- 右栏现有加载链路只按 `DecodePixelWidth = 420` 解码并进入 `CoverImageService` 的 300 条 LRU
+  （封面加载三条触发路径与缓存可靠性见 KB-008 §3）；
   直接放大到 4x 会发虚。
 - 浏览窗口打开后先显示 `MainViewModel.CurrentCover`（420px 回退图），立即可用；
 - 随后在后台线程用 `ICoverCache.Resolve(track.CoverKey)` 取得已解压的封面缓存文件
@@ -178,11 +181,11 @@ owner 需求原文：**“双击后可放大浏览封面”**。
 
 ## 12. 验证记录
 
-- 2026-11-16：Debug 全量构建通过（0 错误；仅他人新增测试文件的一条 xUnit1025 警告，与本提案无关）；
+- 2026-11-16：Debug 全量构建通过（0 错误；仅他人新增测试文件的一条 xUnit1025 警告，与本窗口无关）；
   `scripts/test.ps1` 全量 xUnit v3 进程内测试 **582 项全部通过（0 失败、0 跳过）**。
 - 2026-11-16：Release 全量构建通过（`scripts/build.ps1 -Configuration Release`，0 错误）。
 - 构建 / 测试在 `.scratch/build.lock` 串行锁下执行，避免多任务共享 `bin/obj` 的并发冲突。
 - 说明：全量套件曾出现一次 `ScannerTests.Progress_IsReported` 偶发失败（扫描进度回调时序），
-  该测试单独运行 3/3 通过、复跑全量套件通过；扫描器不在本提案改动范围，确认与封面浏览窗口无关。
+  该测试单独运行 3/3 通过、复跑全量套件通过；扫描器不在本窗口改动范围，确认与封面浏览窗口无关。
 - 未运行 UI 自动化（按 AGENTS 约定，不抢占前台窗口），第 8 节手工验收步骤待 owner 执行。
 - 示例歌曲 / 专辑名均使用 dummy 值（`Demo Artist` / `Demo Album A` / `Demo Track 01`），不含真实作品信息。

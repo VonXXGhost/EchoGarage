@@ -3,11 +3,11 @@ using EchoGarage.Core.Services;
 namespace EchoGarage.Tests;
 
 /// <summary>
-/// ADR-015 §6 / ADR-015-A2 的纯函数测试：分位拉伸、静音、包络、份额量化、设备像素列聚合。
+/// ADR-015 §6（含 A2 修订）的纯函数测试：分位拉伸、静音、包络、份额量化、设备像素列聚合。
 /// </summary>
 public sealed class WaveformMathTests
 {
-    // ---- 分位拉伸 / 高度（§6.6、ADR-015-A2）----
+    // ---- 分位拉伸 / 高度（§6.6，含 A2 修订）----
 
     [Fact]
     public void StretchWindow_ConstantSignal_ExtendsFloorToMinimumRange()

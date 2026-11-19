@@ -116,10 +116,12 @@ https://is1-ssl.mzstatic.com/image/thumb/.../xxx.jpg/{w}x{h}bb.{f}
 
 ### 6. 现有代码集成点
 
-- `src\EchoGarage.App\AppHost.cs:31-46`：手写组合根；新增 Web 源/HTTP 工厂/服务在这里装配。启动路径不联网。
-- `src\EchoGarage.App\Services\DialogService.cs`：现有对话框统一入口；`EditTags` 在 41-45 行构造
+> 本节按“符号 + 文件”定位，行号以归档时为准（随后续代码演进会漂移）。
+
+- `src\EchoGarage.App\AppHost.cs`：手写组合根；新增 Web 源 / HTTP 工厂 / 服务在这里装配（`WebTags` 装配段）。启动路径不联网。
+- `src\EchoGarage.App\Services\DialogService.cs`：现有对话框统一入口；`EditTags` 方法构造
   `TagPropertiesWindow`；Web 窗口走新的打开方法。
-- `src\EchoGarage.App\ViewModels\MainViewModel.cs:2741-2818`：`EditTagsAsync` 已有“读取标签 → 弹窗 →
+- `src\EchoGarage.App\ViewModels\MainViewModel.cs`：`EditTagsAsync` 已有“读取标签 → 弹窗 →
   逐文件写入 → 重新索引 → 失效封面缓存 → 刷新列表/正在播放”的完整闭环；Web 写入复用/抽取该闭环，
   不复制第二份写文件代码。
 - `src\EchoGarage.Core\Models\TagBatchEdit.cs`：`TagFieldKeys` 已含 `composer`；`TagBatchEdit` /
@@ -127,7 +129,7 @@ https://is1-ssl.mzstatic.com/image/thumb/.../xxx.jpg/{w}x{h}bb.{f}
 - `src\EchoGarage.Core\Models\Audio.cs`：`AudioTagData` / `TagEditModel` 已有 `Composer`；
   `TagLibTagService` 已写入 `Composers`。因此“标准字段 + 作曲”不需要改标签数据模型。
 - `src\EchoGarage.App\Views\SettingsWindow.xaml`：设置页分区块、逐项即时保存；新增“网络与 Web 标签”区块。
-- `src\EchoGarage.App\Views\MainWindow.xaml:426-436`：歌曲右键菜单；新增「Web 搜索标签…」。
+- `src\EchoGarage.App\Views\MainWindow.xaml`：歌曲右键菜单；新增「Web 搜索标签…」。
 - 启动路径不能做网络请求；Web 源只在用户打开窗口并点击搜索后才联网。
 
 ## 总体设计

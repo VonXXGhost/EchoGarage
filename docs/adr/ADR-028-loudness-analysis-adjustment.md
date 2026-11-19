@@ -1,8 +1,8 @@
-# ADR-028 响度计算与响度调整（LUFS / LRA / True Peak）
+# ADR-028：响度计算与响度调整（LUFS / LRA / True Peak）
 
 - 状态：Accepted（owner 批准：2026-11-19）
 - 日期：2026-11-18
-- 相关：ADR-017（音频转换流水线，本 ADR 修订其 `ConversionRequest`）、ADR-024（五主题与主题令牌）、ADR-027（右键菜单/对话框模式）、KB-019（响度测量算法与验证笔记）
+- 相关：ADR-017（音频转换流水线，本 ADR 修订其 `ConversionRequest`）、ADR-024（五主题与主题令牌）、ADR-025（标签编辑辅助：规范化规则与候选值，含原 ADR-027 的候选值决策与右键批量编辑模式）、KB-019（响度测量算法与验证笔记）
 
 ## 1. 背景与问题
 
@@ -308,18 +308,22 @@ public static class LoudnessGain
 6. **主题回归**：只加一个 Setter，影响面小；5 主题截图验证。
 7. **不写 tag/不缓存** 与「跨会话无结果」的取舍：owner 已明确要求；UI 文案说明结果仅本次有效。
 
-## 7. 待 owner 决策
+## 7. 决策落定（2026-11-19 更新）
 
-以下默认值已按调研推荐，若 owner 不另行指定则按此实施：
+> 本节原为“待 owner 决策”；下列各项已在 2026-11-18 / 11-19 的实施与验收中定稿，现记录最终口径
+> （原提问已删除，仅保留结论）。
 
-1. **默认目标响度（已由 owner 指定）**：-10.0 LUFS，且在设置页可配置（默认值仍为 -10.0）；不提供预设，用户直接输入。注意：-10 LUFS 是很响的目标，很多动态素材（PLR 12–18 dB）在 -1 dBTP 上限下无法无失真达到（此时 PLR 上限 9 dB），程序会截到最大安全增益并提示可达到值。
-2. **真峰值上限**：无损（FLAC/WAV）-1.0 dBTP；有损（MP3/AAC）-2.0 dBTP。是否统一 -1.0 或采用其它值？
-3. **扫描窗口指标**：v1 显示 I / LRA / True Peak / Sample Peak；是否首版还要 M/S 最大值、DR、clip 数？
-4. **响度调整窗口**：模态（推荐，单文件流程）还是非模态？输出格式 v1 提供 FLAC/WAV/MP3/AAC 四项是否够？
-5. **dither（已确认启用）**：16-bit 输出加 TPDF，24-bit / 32f / 有损输出不加；实现为 `PcmWavWriter` 可选开关，响度调整路径对 16-bit 输出启用。
-6. **是否记忆上次目标/格式**：v1 不记忆每首歌上次选择（默认目标值可在设置页配置），可后续加。
+1. **默认目标响度**：-10.0 LUFS，且在设置页可配置（`AppSettings.LoudnessDefaultTargetLufs`，默认 -10.0，范围 -60…0）；
+   不提供预设，用户直接输入。目标很响、动态范围大的素材在 -1 dBTP 上限下无法无失真达到时，程序截到最大安全增益并提示可达到值。
+2. **真峰值上限**：无损（FLAC/WAV）**-1.0 dBTP**；有损（MP3/AAC）**-2.0 dBTP**
+   （`LoudnessGain.LosslessCeilingDbTp` / `LossyCeilingDbTp`）；两者不统一为单值。
+3. **扫描窗口指标**：v1 显示 I / LRA / True Peak / Sample Peak 四项；M/S 最大值、DR、clip 数不在 v1 显示。
+4. **响度调整窗口**：**模态**（单文件流程）；输出格式 v1 提供 FLAC / WAV / MP3 / AAC 四项。
+5. **dither（已启用）**：16-bit 输出加 TPDF，24-bit / 32f / 有损输出不加；实现为 `PcmWavWriter` 可选开关，
+   响度调整路径对 16-bit 输出启用。
+6. **记忆上次目标/格式**：v1 不记忆每首歌上次选择（默认目标值可在设置页配置），可后续加。
 
-## 8. 实施顺序（获批后）
+## 8. 实施顺序（已实施）
 
 1. Core：`Loudness.cs`、`ILoudnessAnalyzer`、`LoudnessMeter`、`LoudnessGain` + 单元测试。
 2. Infrastructure：`LoudnessAnalyzer`、声道权重解析、`MediaDecoder.Duration` + 集成测试。

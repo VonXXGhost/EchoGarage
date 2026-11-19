@@ -1,4 +1,4 @@
-# ADR-013 列表行次要信息与作曲家标签
+# ADR-013：列表行次要信息与作曲家标签
 
 > 状态：已批准（Accepted，2026-11-14，owner）
 > 日期：2026-11-13
@@ -21,13 +21,13 @@ owner 在 2026-11-13 提出（参考图：foobar2000 风格的双行行信息）
 
 - `Track.Composer`、`AudioTagData.Composer`、`TagEditModel.Composer` 新增；`TagLibTagService` 读 `JoinedComposers`（回退 `FirstComposer`）、写 `tag.Composers`。
 - `LibraryScanner` 扫描时写入 `Composer`；`TagPropertiesWindow` 增加“作曲家”编辑行，保存仍直接写文件（ADR-003）。
-- SQLite schema 升到 v2：`ALTER TABLE tracks ADD COLUMN Composer TEXT NOT NULL DEFAULT ''`，`PRAGMA user_version = 2`。`InitializeAsync` 改为顺序迁移（v1 建表 → v2 加列），旧库自动升级；两个 SQLite 仓储的列清单与 Upsert 同步。缓存列由文件扫描刷新，符合 ADR-010。
+- SQLite schema 升到 v2：`ALTER TABLE tracks ADD COLUMN Composer TEXT NOT NULL DEFAULT ''`，`PRAGMA user_version = 2`。`InitializeAsync` 改为顺序迁移（v1 建表 → v2 加列），旧库自动升级；两个 SQLite 仓储的列清单与 Upsert 同步。缓存列由文件扫描刷新，符合 ADR-010（后续 v3 / v4 缓存修复迁移见 ADR-014）。
 
 ### 2. 布局模型（Core）
 
 - `PlaylistColumn.SecondaryFormat`（`string?`）+ `PlaylistViewLayout.ShowSecondaryInfo`（默认 `false`），随布局、预设、Clone 序列化。
 - `ViewLayoutFactory.Normalize`：清洗格式（去换行/制表、折叠空白、截断 160 字符、全空置 null），隐藏列也保留格式（重新显示时恢复）。
-- `SecondaryTextFormat`：纯函数格式引擎，token 表覆盖 title/artist/album/albumArtist/composer/genre/year/trackNumber/discNumber/duration/bitrate/sampleRate/channels/codec/fileSize/addedAt/path/fileName/comment；支持 `{token}`、`{{`/`}}` 转义、大小写不敏感；token 值为空时自动清理相邻分隔符（`{bitrate}/{sampleRate}` 在采样率缺失时输出 `320K` 而不是 `320K/`），全部为空返回空串。
+- `SecondaryTextFormat`：纯函数格式引擎，token 表覆盖共 20 项：title/artist/album/albumArtist/composer/genre/year/trackNumber/discNumber/duration/bitrate/sampleRate/channels/codec/fileSize/addedAt/modifiedAt/path/fileName/comment；支持 `{token}`、`{{`/`}}` 转义、大小写不敏感；token 值为空时自动清理相邻分隔符（`{bitrate}/{sampleRate}` 在采样率缺失时输出 `320K` 而不是 `320K/`），全部为空返回空串。
 - 评分 / 播放次数不进入次要信息 token：owner 2026-11-13 明确现阶段不做播放统计与歌曲评级等动态信息，因此 `rating` / `playCount` 从 token 表移除，`ColumnCatalog` 的“评分”列与相关显示/主题资源一并删除；数据库中的历史字段保留，不新增功能。
 
 ### 3. 渲染（App）

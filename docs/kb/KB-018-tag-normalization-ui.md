@@ -1,6 +1,6 @@
-# KB-018 标签规范化 UI（设置页规则管理 / 右键批量应用 / 标签属性窗口快捷规范化）
+# KB-018：标签规范化 UI（设置页规则管理 / 右键批量应用 / 标签属性窗口快捷规范化）
 
-- 状态：**Accepted**（owner 批准：2026-11-16）
+- 状态：Accepted（2026-11-16 批准）
 - 日期：2026-11-16
 - 相关：ADR-025（标签规范化规则，见 `docs/adr/ADR-025-tag-normalization-rules.md`）、
   `src/EchoGarage.Core/Models/TagNormalization.cs`、标签写入闭环 `MainViewModel.ApplyTagEditsAsync`、
@@ -12,7 +12,7 @@ ADR-025 已确定“可配置正则快捷规范化”的 Core 规则模型与执
 1 秒正则超时、额外标签只改不删、批量同文件多规则合并为一次 `TagBatchEdit`）。但当时没有任何界面入口，
 用户无法配置规则，也无法在选中歌曲上批量执行。
 
-本提案记录 UI 接线方案：设置页管理规则、主窗口右键菜单批量应用、标签属性窗口内快捷规范化。
+本文记录 UI 接线方案：设置页管理规则、主窗口右键菜单批量应用、标签属性窗口内快捷规范化。
 **不改变** Core 模型、`settings.json` Schema 与 `library.db` Schema。
 
 非目标：
@@ -28,9 +28,9 @@ ADR-025 已确定“可配置正则快捷规范化”的 Core 规则模型与执
 | --- | --- | --- |
 | Core 规则与语义 | ADR-025（已实现） | `TagNormalizationRule`、`TagNormalizationDefaults`、`TagNormalization.Apply/ApplyToTag`、`NormalizeRules`、上限 50 |
 | 设置持久化 | ADR-025 + 既有 `JsonSettingsService` | `AppSettings.TagNormalizationRules`；`SaveAsync` 时 `NormalizeRules` 兜底；`null`→默认两条，空列表→保持空（用户删空不复活） |
-| UI 接线与交互 | 本提案 | 设置页规则编辑、右键菜单批量应用、标签属性窗口快捷应用 |
+| UI 接线与交互 | 本文（KB-018） | 设置页规则编辑、右键菜单批量应用、标签属性窗口快捷应用 |
 
-本提案批准后，建议把“UI 接线点与交互约定”合并进 `docs/kb/`，规则语义继续以 ADR-025 为准。
+UI 接线点与交互约定以本文为准；规则语义继续以 ADR-025 为准。
 
 ## 3. 设置页：规则管理
 
@@ -195,7 +195,7 @@ ADR-025 已确定“可配置正则快捷规范化”的 Core 规则模型与执
   用户可能误以为规则未生效，需在文档 / 提示中说明。
 - **非法正则**：Core 在应用时跳过非法规则；UI 行内提示错误，但不会阻止保存（与 ADR-025 一致）。
 - **设置页即时保存**：每次编辑触发异步 `settings.json` 写入（沿用现有快捷键编辑行为）；若未来需要防抖，
-  可在设置窗口统一加节流，不影响本提案的 UI 结构。
+  可在设置窗口统一加节流，不影响本文描述的 UI 结构。
 - **右键菜单快照**：子菜单在 `ContextMenuOpening` 时构建，菜单打开期间在设置页改规则不会反映到当前菜单；
   关闭重开菜单即可。
 - **多值字段不自动改写**：快捷规范化对 `<多值>` 字段只提示跳过，避免静默丢值；需要用户手动选择/输入。

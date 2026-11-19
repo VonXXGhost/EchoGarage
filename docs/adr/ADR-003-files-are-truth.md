@@ -20,9 +20,10 @@
    - 文件原本没有标签块时，用 `File.GetTag(type, create: true)` 创建。
 4. 封面：优先读取文件内嵌封面（FrontCover 优先），没有时回退到同目录的封面图片（cover/folder/front/album…）；
    解码后按“专辑身份”缓存到磁盘。
-5. 缓存键：
-   - 有专辑：`album_<sha1(albumArtist|album)>`
-   - 无专辑：`file_<sha1(path)>`
+5. 缓存键（`CoverKeyFactory`）：
+   - 有专辑：`album_<hash>`，其中 `hash = sha1("album|" + albumArtist.Trim().ToUpperInvariant()
+     + "|" + album.Trim().ToUpperInvariant())` 的十六进制前 20 位（小写）；
+   - 无专辑：`file_<hash>`，其中 `hash = sha1(path.Trim().ToUpperInvariant())`，同样截断到前 20 位。
 6. 封面未找到时写入 `<key>.none` 标记，内容为源文件的 `mtime:size`；源文件变化后标记失效，不会重复解析。
    - **按文件**的封面键（无专辑）：用 `<key>.stamp` 严格校验，文件变化后自动重建缓存。
    - **按专辑**的封面键：同一专辑的多首歌共享封面，不能用某一首歌的 `mtime` 判定失效（否则会反复删/建）；
@@ -39,7 +40,8 @@
 ## 后果
 
 - 标签写入失败时（只读文件、格式不支持）必须在 UI 上明确报错，不能悄悄只改数据库。
-- 外部工具修改标签后，需要靠扫描 / 文件监听重新索引才能反映到界面。
+- 外部工具修改标签后，需要靠扫描 / 文件监听重新索引才能反映到界面；播放列表中的外部文件另由
+  ADR-018 在窗口激活 / 切换来源时后台刷新。
 - 时长以文件为准；数据库中的时长只是扫描时的快照。
 
 ## 备选方案

@@ -57,7 +57,7 @@
 ### 3. 封面信息与 JPG / 尺寸转换
 
 - 右侧封面区显示 `格式 · 宽×高 · 体积`（如 `JPEG · 1200×900 · 27.5 KB`），移除“建议使用正方形的 JPG/PNG 图片”提示。
-- 新增“封面转换”选项（默认关闭）：勾选后保存标签时把当前封面转成 JPG，可设置 JPG 质量（1–100，默认 90）与最大边长（默认 1000，0 = 不限制）。
+- 新增“封面转换”选项（默认开启）：勾选后保存标签时把当前封面转成 JPG，可设置 JPG 质量（1–100，默认 90）与最大边长（默认 1000，0 = 不限制）。
 - 纯逻辑放 Core（可单测）：
   - `CoverImageSizing.ScaleDown(width, height, maxEdge)`：不放大、保持宽高比、按整数像素尽量逼近目标边长（`Math.Round(..., AwayFromZero)`）；
   - `CoverConversionPolicy.ShouldConvert(sourceIsJpeg, sourceWidth, sourceHeight, targetMaxEdge, originalSize, convertedSize)`：

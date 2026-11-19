@@ -15,30 +15,38 @@
 
 ```
 src/EchoGarage.Core/
-  Models/          领域模型：Track、Playlist、AppSettings、Audio 相关 DTO
-  Services/        ColumnCatalog、ViewLayoutFactory、SmartQueryBuilder、PathUtil、CoverKeyFactory
-  Abstractions/    所有跨层接口（仓储、扫描、播放、日志、设置、封面缓存…）
+  Models/          领域模型与设置：Track、Playlist、AppSettings、主题、快捷键、标签规范化 / 候选值、
+                   转换、响度、波形 / 频谱、搜索、Web 标签等
+  Services/        纯逻辑：ColumnCatalog、ViewLayoutFactory、SmartQueryBuilder、PathUtil、CoverKeyFactory、
+                   TrackSearch、ShuffleOrder、转换规划、响度增益、频谱 / 波形数学、Web 标签匹配等
+  Abstractions/    所有跨层接口（仓储、扫描、播放、转换、响度、Web 标签、日志、设置、缓存…）
 
 src/EchoGarage.Infrastructure/
-  Data/            SqliteDatabase（建表/迁移）、Library/Playlist 仓储（Dapper）
+  Data/            SqliteDatabase（建表 / PRAGMA user_version 迁移）、Library / Playlist 仓储（Dapper）
   Library/         LibraryScanner（增量扫描）、LibraryFileWatcher（FileSystemWatcher）
-  Tagging/         TagLibTagService（读写音频文件标签）
-  Caching/         FileCoverCache（封面文件缓存 + 负缓存标记）
-  Audio/           WasapiAudioPlayer（共享 / 独占、重采样、跳转）
+  Tagging/         TagLibTagService（标签读写、Apple 旧式音轨号）、TagSuggestionService
+  Caching/         FileCoverCache（封面文件缓存 + 负缓存标记）、FileWaveformCache（EGWV 波形缓存）
+  Audio/           WasapiAudioPlayer（共享 / 独占、重采样、跳转）、SharedAudioFileReader、
+                   波形 / 频谱 / 响度分析器
+  Conversion/      AudioConverter、MediaDecoder、编码器命令行与 WAV 写出
+  Files/           文件操作（复制 / 移动 / 回收站）落地服务
+  WebTags/         标签源注册表、Apple Music（日本）源、HTTP 与 HTML 解析
   Windows/         FileAssociationService + IRegistryStore（HKCU 注册，可测试）
   Configuration/   AppPaths（目录与环境变量）、JsonSettingsService
   Logging/         FileLogger
 
 src/EchoGarage.App/
-  App.xaml(.cs)    组合根入口、单实例、全局异常、启动计时
+  App.xaml(.cs)    组合根入口、单实例、全局异常、启动计时、诊断开关
   AppHost.cs       手写依赖装配；生命周期与预热
-  Services/        对话框服务、封面图片解码缓存、单实例、主题管理、格式化、转换器
-  ViewModels/      MainViewModel / TrackRowViewModel / SourceNodeViewModel
-  Views/           MainWindow 与各对话框（列布局、智能播放列表、标签属性、设置…）
-  Resources/       主题字典（Themes/PureStudioTheme.xaml、WarmPaperTheme.xaml、NordicIceTheme.xaml、
+  Diagnostics.cs   诊断截图（主窗口 / 各对话框）
+  Services/        对话框服务、封面图片解码缓存、单实例、主题管理、快捷键、媒体键、响度协调、格式化
+  ViewModels/      MainViewModel / TrackRowViewModel / SourceNodeViewModel 及各窗口视图模型
+  Views/           MainWindow 与各对话框（列布局、智能播放列表、标签属性、设置…）；
+                   Views/Controls/ 自绘控件（波形进度条、频谱图等）
+  Resources/       五套主题字典（Themes/PureStudioTheme.xaml、WarmPaperTheme.xaml、NordicIceTheme.xaml、
                    MidnightVinylTheme.xaml、SlateStudioTheme.xaml）与控件样式（Controls.xaml）
 
-tests/EchoGarage.Tests/   xUnit v3，覆盖布局归一化、智能查询、路径、仓储、扫描、标签、缓存、设置
+tests/EchoGarage.Tests/   xUnit v3，覆盖布局、查询、路径、仓储、扫描、标签、缓存、转换、响度、波形、频谱、Web 标签等
 ```
 
 ## 3. 构建 / 测试 / 运行
@@ -107,8 +115,8 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 日志目录：`<exe目录>\EchoGarageData\data\Logs\echogarage-YYYYMMDD.log`（可用 `ECHOGARAGE_DATA_DIR` 重定向）。
 - 默认是便携模式：配置与媒体库都在 exe 旁的 `EchoGarageData`，不要读写 `%APPDATA%` / `%LOCALAPPDATA%`。
 - 日志级别：`[INFO]` 生命周期与关键操作、`[WARN]` 可恢复问题、`[ERROR]` 需要用户/开发介入、`[DEBUG]` 高频细节。
-- 内置诊断开关：`--screenshot <png>`、`--screenshot-all <dir>`、`--play-file <file>`、`--seek-seconds <n>`、
-  `--waveform <file> <png>`、`--visualizer <file> <png> [秒数]`
+- 内置诊断开关：`--screenshot <png>`、`--screenshot-all <dir>`、`--search <text>`、`--play-file <file>`、
+  `--seek-seconds <n>`、`--waveform <file> <png>`、`--visualizer <file> <png> [秒数]`
   （用于高 DPI / 无 UI 交互时检查界面与跳转行为；`--waveform` 强制本次启动使用波形进度条模式，
   播放指定文件并等待波形分析完整后截图；`--visualizer` 播放指定文件后采样若干秒，
   在日志里输出右栏可视化的渲染帧率 / 分析耗时并截图，见 ADR-023）。
@@ -119,7 +127,9 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 - 提交信息用中文或英文皆可，需说明“改了什么 / 为什么”。
 - 引入新依赖前：确认是否真的需要、许可证、是否影响启动时间与安装体积，并记录到 ADR 提案。
 - 改动架构、数据模型、缓存策略、默认播放器注册方式时，必须同步准备 ADR 提案，等待 owner 批准。
-- **不要提交截图 / 录屏等二进制验证产物**：界面验证截图统一写到 `artifacts/` 或 `.scratch/` 等已被 `.gitignore` 忽略的目录；需要长期记录界面时用文字 / 控件描述，避免 git 历史体积膨胀。`docs/screenshots/` 中已有的截图属历史遗留，不再新增文件。
+- **不要提交截图 / 录屏等二进制验证产物**：界面验证截图统一写到 `artifacts/` 或 `.scratch/` 等已被 `.gitignore` 忽略的目录；需要长期记录界面时用文字 / 控件描述，避免 git 历史体积膨胀。
+- **README 展示截图是唯一例外**：放 `docs/screenshots/`，只允许 JPG（控制体积，单张尽量 < 100 KB），
+  必须由 `.scratch` 下的 dummy 演示媒体库生成，并随 README 更新替换同名文件；不得使用真实歌曲 / 艺术家数据。
 - **文档中的示例歌曲 / 专辑名称必须使用 dummy 演示值**：所有可能提交到 git 的文档（ADR、提案、KB、README、测试说明等）不得出现真实歌曲、专辑名称，也不得保留真实艺术家 / 作曲者姓名作示例或调研证据；统一改为 `Demo Album A`、`Demo Artist`、`Demo Track 01` 这类 dummy 值，并保留字段格式、语言与数据形态，避免版权 / 权利风险。真实调研记录应先脱敏再写入文档。
 
 ## 其他

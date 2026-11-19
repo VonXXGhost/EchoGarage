@@ -698,7 +698,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>右栏是否显示可视化（设置里关掉时整块隐藏，把空间还给窗口）。</summary>
     public bool ShowVisualizer => Settings.Visualization.Kind != VisualizerKind.None;
 
-    /// <summary>右栏可视化的渲染帧率上限（FPS，0 = 不限制；ADR-023 A1，由设置页即时生效）。</summary>
+    /// <summary>右栏可视化的渲染帧率上限（FPS，0 = 不限制；ADR-023（A1 修订），由设置页即时生效）。</summary>
     public int VisualizerFrameRateLimit => Settings.Visualization.FrameRateLimit.ToFps();
 
     /// <summary>
@@ -3595,7 +3595,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 await _host.LibraryRepository.MarkTracksMissingAsync(deleted);
                 try
                 {
-                    // ADR-021-A1：删除到回收站是用户确认过的删除，播放列表里的条目也一并移除，
+                    // ADR-021（A1 修订）：删除到回收站是用户确认过的删除，播放列表里的条目也一并移除，
                     // 避免列表里留下永远无法播放的缺失行。
                     playlistRemoved = await _host.PlaylistRepository.RemovePlaylistItemsByPathAsync(deleted);
                 }

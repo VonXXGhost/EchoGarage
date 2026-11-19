@@ -5,7 +5,7 @@ using EchoGarage.Infrastructure.Audio;
 namespace EchoGarage.Tests;
 
 /// <summary>
-/// ADR-015 §6 / §6.10、ADR-015-A2 波形分析器：频段份额、静音、渐进发布、分块一致性、取消。
+/// ADR-015 §6 / §6.10（含 A2 修订）波形分析器：频段份额、静音、渐进发布、分块一致性、取消。
 /// 分析器是纯计算（不 Task.Run），测试里直接 await。
 /// </summary>
 public sealed class WaveformAnalyzerTests : IDisposable
@@ -44,7 +44,7 @@ public sealed class WaveformAnalyzerTests : IDisposable
     [Fact]
     public async Task Analyze_ConstantLevelSine_FinalSnapshotStaysVisible()
     {
-        // ADR-015-A2：恒定电平 / 窄动态素材 p5 ≈ p99.5，旧窗口会把所有列压到 0 高度（空图）。
+        // ADR-015（A2 修订）：恒定电平 / 窄动态素材 p5 ≈ p99.5，旧窗口会把所有列压到 0 高度（空图）。
         // 新窗口把下界向下扩展到 MinimumStretchDb，稳定段必须接近满高。
         var wav = _workspace.Combine("constant-level.wav");
         WaveformTestAudio.WriteSine(wav, seconds: 3.0, frequency: 440);

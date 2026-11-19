@@ -2,7 +2,7 @@ using EchoGarage.Core.Models;
 
 namespace EchoGarage.Tests;
 
-/// <summary>标签“快捷规范化”规则（提案 ADR-025）的纯逻辑与设置归一化测试。</summary>
+/// <summary>标签“快捷规范化”规则（ADR-025）的纯逻辑与设置归一化测试。</summary>
 public sealed class TagNormalizerTests
 {
     private const string Album = TagFieldKeys.Album;

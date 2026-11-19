@@ -9,10 +9,12 @@
 
 ## 决策
 
-1. 解码：`AudioFileReader`（WAV/MP3/AIFF 原生，FLAC/M4A/AAC/WMA 走 Media Foundation），统一得到 `ISampleProvider`（float）。
+1. 解码：`SharedAudioFileReader`（ADR-020；WAV/AIFF 原生解码，其余格式走 Media Foundation），
+   统一得到 `ISampleProvider`（float）。
 2. 输出链路：
-   `AudioFileReader → WdlResamplingSampleProvider（必要时）→ 声道转换 → VolumeSampleProvider → SampleToWaveProvider(16) → WasapiOut`
-3. 共享模式：目标格式 = 设备的 `AudioClient.MixFormat`（当前机器为 48kHz/2ch float），避免系统混音器二次转换。
+   `SharedAudioFileReader → 可视化抽头（ADR-023 §6，可选）→ WdlResamplingSampleProvider（必要时）→ 声道转换
+   → VolumeSampleProvider → SampleToWaveProvider / SampleToWaveProvider16（按目标格式 float/16 选择）→ WasapiOut`
+3. 共享模式：目标格式 = 设备的 `AudioClient.MixFormat`（运行时读取），避免系统混音器二次转换。
 4. 独占模式：按候选格式依次尝试
    1. 源采样率 + float32；
    2. 48k / 44.1k / 96k / 32k + float32；

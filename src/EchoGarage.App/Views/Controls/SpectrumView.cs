@@ -74,7 +74,7 @@ public sealed class SpectrumView : FrameworkElement
         typeof(SpectrumView),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnOptionsChanged));
 
-    /// <summary>渲染帧率上限（FPS，0 = 不限制；ADR-023 A1）。只节流分析 / 重绘频率，不改分析窗口与弹道。</summary>
+    /// <summary>渲染帧率上限（FPS，0 = 不限制；ADR-023（A1 修订））。只节流分析 / 重绘频率，不改分析窗口与弹道。</summary>
     public static readonly DependencyProperty FrameRateLimitProperty = DependencyProperty.Register(
         nameof(FrameRateLimit),
         typeof(int),
@@ -93,7 +93,7 @@ public sealed class SpectrumView : FrameworkElement
     private const double LabelGap = 5;
 
     /// <summary>
-    /// 节流判定容差（ADR-023 A1）：距上次分析帧不足 <c>0.95 / limit</c> 秒才跳过本 tick。
+    /// 节流判定容差（ADR-023（A1 修订））：距上次分析帧不足 <c>0.95 / limit</c> 秒才跳过本 tick。
     /// 留 5% 余量吸收「上限 = 显示器刷新率」时的帧时间抖动，避免每帧都差一点点而被吞成一半帧率；
     /// 代价是实际帧率最多可比上限高 5%（仍低于显示器刷新率）。
     /// </summary>
@@ -184,7 +184,7 @@ public sealed class SpectrumView : FrameworkElement
         set => SetValue(OptionsProperty, value);
     }
 
-    /// <summary>渲染帧率上限（FPS，0 = 不限制）。见 ADR-023 A1。</summary>
+    /// <summary>渲染帧率上限（FPS，0 = 不限制）。见 ADR-023（A1 修订）。</summary>
     public int FrameRateLimit
     {
         get => (int)GetValue(FrameRateLimitProperty);
@@ -685,7 +685,7 @@ public sealed class SpectrumView : FrameworkElement
             _firstRenderingTime = rendering.RenderingTime;
         }
 
-        // 帧率上限节流（ADR-023 A1）：未到「1 / 上限」就跳过本 tick —— 不分析、不重绘，
+        // 帧率上限节流（ADR-023（A1 修订））：未到「1 / 上限」就跳过本 tick —— 不分析、不重绘，
         // 也不推进 _lastRenderingTime，保证下一个真实分析帧的 dt 是真实经过时间。
         // 弹道按「dB/s × dt」推进，如果把 dt 改小 / 固定成 1/limit，释放速度会变慢，所以只能整帧跳过。
         // 0.95 容差见 FrameRateTolerance 的说明。

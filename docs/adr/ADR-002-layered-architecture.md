@@ -30,7 +30,9 @@ EchoGarage.Core (Models, Abstractions, 纯业务规则)
 
 - 编译期即可看出依赖方向；Core 项目不能引用 WPF/NAudio，避免业务逻辑被 UI 绑死。
 - 手写组合根比容器更容易推理启动顺序与性能。
-- 接口集中在一个文件（`Abstractions/Interfaces.cs`）便于快速浏览契约。
+- 核心接口集中在 `Abstractions/Interfaces.cs` 便于快速浏览主要契约；后续能力按内聚拆分为独立
+  接口文件（`IAudioConverter`、`IFileOperationService`、`ILoudnessAnalyzer`、`IWebTagSource`），
+  不强行塞回单文件。
 
 ## 后果
 
@@ -39,5 +41,5 @@ EchoGarage.Core (Models, Abstractions, 纯业务规则)
 
 ## 备选方案
 
-- **Microsoft.Extensions.DependencyInjection**：生态成熟，但启动期反射装配与“一个文件看清全部依赖”的目标冲突。
+- **Microsoft.Extensions.DependencyInjection**：生态成熟，但启动期反射装配与“接口契约集中可查”的目标冲突。
 - **单一项目**：初期更快，但后续替换音频/标签/数据库时成本过高。

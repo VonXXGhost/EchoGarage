@@ -1,6 +1,6 @@
 # KB-019：响度测量算法（LUFS / LRA / True Peak）与实现笔记
 
-- 状态：Accepted（owner 批准：2026-11-19）
+- 状态：Accepted（2026-11-19 批准）
 - 日期：2026-11-18
 - 关联：ADR-028（响度计算与响度调整）、ADR-017（音频转换流水线）
 - 调研来源：ITU-R BS.1770-5（2023-11）、EBU R 128 / Tech 3341 / Tech 3342（2023-11）、libebur128 / ffmpeg / Audacity / foobar2000 / Audition / REAPER 公开资料；本机 ffmpeg（N-110436-geaf15b5882，2023-05-01）与 Python/numpy/scipy 原型实测。

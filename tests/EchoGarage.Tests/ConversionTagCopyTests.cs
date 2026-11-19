@@ -8,7 +8,7 @@ using Xunit;
 namespace EchoGarage.Tests;
 
 /// <summary>
-/// 回归测试：转换输出复制标签时必须保留源文件的年份/日期（ADR-026 的 YearText）。
+/// 回归测试：转换输出复制标签时必须保留源文件的年份/日期（ADR-016 的 YearText）。
 /// 旧实现只传 Year 且不传 YearText（YearChanged 默认 true），TagLibTagService 会按
 /// “清空年份”处理，把 ©day / TDRC / DATE 全部删除；真实用例是 FLAC 源
 /// （Year=2026、YearText="2026"）经 AAC 预设转成 m4a 后年份完全丢失。

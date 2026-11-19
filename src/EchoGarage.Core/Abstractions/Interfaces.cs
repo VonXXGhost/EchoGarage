@@ -67,7 +67,7 @@ public interface IPlaylistRepository
     Task RemovePlaylistItemsAsync(IReadOnlyList<long> playlistItemIds, CancellationToken cancellationToken = default);
     /// <summary>
     /// 按歌曲路径从所有普通播放列表删除条目（智能播放列表没有 <c>playlist_items</c> 行，天然不受影响）。
-    /// 用于文件删除到回收站后同步播放列表（ADR-021-A1）。路径先经 <see cref="PathUtil.TryNormalize(string, out string)"/>
+    /// 用于文件删除到回收站后同步播放列表（ADR-021（A1 修订））。路径先经 <see cref="PathUtil.TryNormalize(string, out string)"/>
     /// 规范化并按 Windows 语义忽略大小写匹配；空列表直接返回 0，不访问数据库。返回实际删除的行数。
     /// </summary>
     Task<int> RemovePlaylistItemsByPathAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default);

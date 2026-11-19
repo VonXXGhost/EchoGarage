@@ -1,7 +1,7 @@
 # KB-003：WPF 深色主题实现中的坑
 
-- 状态：已批准（Accepted，2026-11-09，owner）
-- 日期：2026-11-09
+- 状态：Accepted（2026-11-09 批准）
+- 日期：2026-11-09（2026-11-19 校对：菜单已改为原生 `Menu`，分组视图已改为 `ListView`）
 - 环境：.NET 10 WPF，PerMonitorV2 DPI
 
 ## 1. TextBox 有固定高度时文字“消失”
@@ -17,14 +17,21 @@
 `DataGrid` 只有 `LoadingRow` / `UnloadingRow`，分组头没有对应的加载事件（`DataGridRowGroupHeader` 在
 `System.Windows.Controls` 且事件不通过 DataGrid 暴露）。
 
-加载分组头封面：在 `GroupStyle.HeaderTemplate` 的根元素上用 `Loaded="OnGroupHeaderLoaded"`，
-在处理器里取 `((FrameworkElement)sender).DataContext as CollectionViewGroup`，再对 `Items[0]` 的
+加载分组头封面：在分组头模板的根元素上用 `Loaded="OnGroupHeaderLoaded"`，在处理器里取
+`((FrameworkElement)sender).DataContext as CollectionViewGroup`，再对 `Items[0]` 的
 `TrackRowViewModel` 触发封面加载。
+
+> 适用范围说明（2026-11-19）：本项目当前的分组视图是独立 `ListView`（`GroupedList`，见 KB-008 §1），
+> 分组封面在 `AlbumGroupContainer` 模板里用 `Loaded="OnGroupCoverLoaded"` 加载
+> （`src/EchoGarage.App/Views/MainWindow.xaml:196`）。本条 WPF 事实（DataGrid 无分组头加载事件）
+> 仍成立，但已不是本项目的主要用法。
 
 ## 3. 分组 + 虚拟化
 
 `DataGrid` 开启分组后必须同时设置 `VirtualizingPanel.IsVirtualizingWhenGrouping="True"`，
-否则几千首会一次性实例化所有行。
+否则几千首会一次性实例化所有行。本项目现行分组视图是 `ListView`（`GroupedList`），同样设置了
+该附加属性与 `VirtualizationMode="Recycling"`、`CacheLength="2"`
+（`src/EchoGarage.App/Views/MainWindow.xaml:788-793`）；原则对两种控件都适用。
 
 ## 4. 高 DPI 下外部截屏不可靠
 
@@ -41,8 +48,9 @@ WPF 没有内置的深色标题栏属性，需要对 HWND 调用 `DwmSetWindowAt
 
 - `ComboBox` 的 `Popup` 必须 `AllowsTransparency=True` 且给 `MinWidth` 绑定 `ActualWidth`，否则下拉框宽度会塌陷。
 - `ContextMenu` 不在可视树内，不会自动继承 `DataContext`。代码里打开菜单前要显式 `menu.DataContext = vm`。
-- 自绘 `MenuItem` 的模板只处理 SubmenuItem 即可；本项目不使用顶层 `Menu`，菜单栏用普通按钮 + ContextMenu 实现，
-  避免为 TopLevelHeader/SubmenuHeader 维护两套模板。
+- 自绘 `MenuItem` 的模板要同时处理 TopLevelHeader / SubmenuHeader。本项目顶栏最终使用原生
+  `<Menu>` + `TopLevelMenuItem`（2026-11-14 由“3 个按钮 + ContextMenu”改为原生菜单，
+  见 KB-014 §5），因此两层模板都要维护；旧结论“不使用顶层 `Menu`”已过时。
 
 ## 7. 窗口尺寸与多显示器
 

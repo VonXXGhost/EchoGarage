@@ -1,104 +1,16 @@
 # 提案区（Pending proposals）
 
-本目录只放**尚未获得 owner 批准**的 ADR / KB 提案。
+本目录只放**尚未获得 owner 批准**的 ADR / KB 提案；已批准文档在 `docs/adr/`、`docs/kb/`。
 
-流程：
+## 流程
 
-1. 新建 `ADR-xxx-*.md` 或 `KB-xxx-*.md`，写清背景、决策、理由、后果与备选方案。
+1. 在本目录新建 `ADR-xxx-*.md` 或 `KB-xxx-*.md`：写清背景、决策、理由、后果与备选方案。
 2. 在会话里向 owner 说明变更点与理由。
-3. owner 明确同意后，把文件移动到 `docs/adr/`（并更新 `docs/adr/ADR-index.md`）或 `docs/kb/`。
+3. owner 明确同意后，把文件移动到 `docs/adr/`（并更新 `docs/adr/ADR-index.md`）或 `docs/kb/`；提案文件不保留副本。
 4. 未经同意，不得直接修改 `docs/adr/` 与 `docs/kb/` 中已生效的文档。
 
 ## 当前状态
 
-- 2026-11-09：ADR-001…009 与 KB-001…005 已获 owner 批准并归档到 `docs/adr/`、`docs/kb/`。
-- 2026-11-11：ADR-010、KB-006、KB-007 已获 owner 批准并归档；ADR-011 提案撤回，
-  相关内容按 owner 要求改为 `docs/kb/KB-008-*`。
-- 2026-11-11：`KB-009`（分组智能判定 / 组内碟片-曲目排序开关 / 滚动条最小滑块 /
-  播放封面加载态）已获 owner 批准，归档到 `docs/kb/KB-009-*`。
-- 2026-11-11：owner 批准 `KB-010`（分组封面加载生命周期 / 状态栏播放信息 / 播放行自动居中 /
-  传输按钮焦点框），已归档到 `docs/kb/KB-010-*`。
-- 2026-11-12：owner 批准 `KB-011`（分组列表拖动滚动条后卡住抽搐的排查、WPF 滚动锚定机理与防御性修复）
-  与 `KB-012`（分组视图偶发巨大封面的祖先绑定失效根因、可继承附加属性加固与自愈日志；状态栏双击跳转播放行），
-  已归档到 `docs/kb/`。
-- 2026-11-12：新增提案 `KB-013-source-switch-layout-persistence.md`
-  （已分组显示的列表切换到其他列表再切回后丢失分组的根因：来源列表双向绑定使布局保存目标错位、
-  播放列表布局只写库未回写内存；修复与验证记录），**已获 owner 批准（2026-11-14）并归档到 `docs/kb/`**。
-- 2026-11-13：新增提案 `KB-014-header-pinning-and-toolbar-refresh.md`
-  （分组表头区分左 / 右固定列与右固定块左边界压缩交互、表头拖拽可视区钳制、音量区滚轮 5% 步进、
-  顶栏移除品牌文字并支持悬停展开菜单、重做透明底播放三角图标），**已获 owner 批准（2026-11-14）并归档到 `docs/kb/`**。
-- 2026-11-14：owner 批准全部待批提案并归档：`ADR-013`（列表行次要信息与作曲家标签）、
-  `KB-013`（来源切换后的布局记忆）、`KB-014`（分组表头左右固定 / 拖拽边界 / 音量滚轮 / 原生菜单栏 / 图标重做）。
-- 2026-11-14：`ADR-014-cache-repair-schema-v3.md`（schema v3 数据修复迁移：失效旧缓存行的 DurationMs，
-  让下次启动扫描回填 ADR-013 新增的 Composer 列）**已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-14：`ADR-016-search-hotkeys-playback-mode.md`（列宽拖拽即时持久化修复、
-  可配置 / 全局播放快捷键、当前播放列表搜索、顺序 / 随机播放）**已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-14：`ADR-017-audio-conversion.md`（预设驱动的音频编码转换：AAC/Nero、FLAC、MP3、WAV，
-  外部命令行编码器、输出位置与文件名模板、重采样、标签复制、右键与可配置快捷键）。
-  owner 已确认关键取舍（FLAC/LAME 随发布包附带、Nero AAC 自备、冲突默认询问、默认模板 `%artist% - %title%`、
-  每个预设自带快捷键），**已实现（2026-11-14，178 项测试通过），已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-14：`ADR-018-track-metadata-refresh.md`（播放列表外部文件的标签缓存刷新：
-  窗口激活 / 切换来源时后台比对文件大小与修改时间，变化则重新索引；解决媒体库扫描与文件监听
-  覆盖不到外部文件、重启后仍显示旧标签的问题）**已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-14：`ADR-019-tag-editor-and-cover-conversion.md`（`#` 列显示碟片号.音轨号、标签编辑页 2 列表格 +
-  额外标签只读展示、封面信息与保存时 JPG / 最大边长转换规则）**已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-14：`ADR-020-playing-file-write-lock.md`（播放中文件被播放器句柄占用导致标签写入失败：
-  播放器改用共享读取句柄（`SharedAudioFileReader`），写标签时检测占用、临时副本 + `File.Replace` 原子替换，
-  播放不中断且位置连续）**已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-14：新增提案 `ADR-021-file-operations.md`（歌曲右键菜单「文件操作」：复制 到 / 移动 到
-  的级联目标目录（设置页可配置并记忆）、删除文件走回收站、忽略「重命名 到…」；
-  移动 / 删除后同步 `tracks` 与 `playlist_items.TrackPath`）——**已获 owner 批准（2026-11-15）并归档到 `docs/adr/`**。
-- 2026-11-15：`ADR-022-web-tag-search.md`（独立三步式 Web 标签搜索：Apple Music 日本源、
-  可选代理、字段勾选记忆、专辑级多文件匹配与写入）**已获 owner 批准并归档到 `docs/adr/`**。
-- 2026-11-15：新增提案 `ADR-023-playback-visualizer.md`（右栏「正在播放」面板精简：
-  删除标题 / 格式 / 路径行与年份；下方新增可切换的「播放可视化」子面板，第一阶段为分段频谱图：
-  无锁环形缓冲抽头 + 渲染帧拉取分析、几何级数频段、dBFS 标定、斜率补偿与弹道、参数全部可配置并持久化、
-  自定义 `OnRender` 控件 + 主题令牌，实测 134–144 FPS 无丢帧）——**已获 owner 批准（2026-11-15）并归档到 `docs/adr/`**。
-- 2026-11-15：新增待批准提案三份：
-  - `ADR-024-multi-theme-system.md`（五套主题体系：Pure Studio / Warm Paper / Nordic Ice / Midnight Vinyl /
-    Slate Studio；`ThemeKind` 枚举 + `ThemeCatalog` 单一来源；`ThemeKindJsonConverter` 兼容旧 `"Light"`/`"Dark"`；
-    5 个主题字典、57 个令牌；`视图 → 主题` 二级菜单与设置页 5 项下拉）；
-  - `ADR-015-A1-waveform-played-fade.md`（修订 ADR-015：已播放区不再用 `WaveformPlayedOverlayBrush` 覆盖，
-    改为按区域 clip + `PushOpacity(0.26)` 绘制三色带；未播放区 100% 不透明度，删除覆盖层令牌/DP）；
-  - `KB-015-theme-token-map.md`（五主题令牌清单、新增令牌检查清单、旧配置迁移与无人工输入验证流程）。
-  **2026-11-16：owner 批准全部三份提案并归档**：`ADR-024`、`ADR-015-A1` → `docs/adr/`，
-  `KB-015` → `docs/kb/`；`docs/adr/ADR-index.md` 已同步（ADR-001 / ADR-015 条目修订）。
-- 2026-11-16：同日完成第二轮调整并更新归档文档 —— 主题显示名中文化（纯净极简白 / 温润纸感白 /
-  极简冰青白 / 午夜黑胶 / 深海蓝灰，`ThemeInfo` 增加 `EnglishName`，界面与菜单不再出现英文名）、
-  五套波形配色按低饱和赤陶 / 麦金 / 蔚蓝体系重定；实现与验证记录见 `docs/adr/ADR-024-*`、`docs/kb/KB-015-*`。
-- 2026-11-16：第二轮体验增强新增待批准提案七份（均为 Proposed，等待 owner 批准）：
-  - `KB-016-list-switch-incremental-rendering.md`（列表切换增量渲染：集合 Reset 批替换、
-    分组单元格与次要文本按可见行延迟构建、重建签名去重；性能优化实现与剩余风险）；
-  - `ADR-015-A2-waveform-stretch-lower-bound.md`（修订 ADR-015：波形纵向窗口改为
-    动态范围不足时只下扩 floor（`MinimumStretchDb = 30 dB`），避免恒定电平/简单乐器
-    “有声音却显示为空”；`AnalyzerVersion` 升至 2 使旧 `.wfm` 自动重算）；
-  - `ADR-021-A1-playlist-remove-on-delete.md`（修订 ADR-021：删除文件移入回收站成功后，
-    同步从所有普通播放列表移除对应条目；智能播放列表与外部删除不清理）；
-  - `ADR-025-tag-normalization-rules.md`（可配置标签规范化规则：配置中的正则快捷处理，
-    默认提供“移除专辑名 `(- EP)`/`(- Single)` 后缀”与“ISO 日期时间 → 日期”两条规则，
-    含批量应用、校验与设置归一化语义）；
-  - `KB-017-cover-viewer.md`（正在播放封面双击放大浏览：非模态窗口、适应窗口/缩放/平移、
-    高清解码与版本号丢弃、主题令牌与生命周期）；
-  - `ADR-023-A1-visualizer-frame-rate-limit.md`（修订 ADR-023：播放可视化帧率上限
-    30/60/120/144/180/不限制，默认不限制；SpectrumView 内按真实经过时间节流、
-    不推进分析时间基准以保持弹道/释放帧率无关；高刷屏取整与实际帧率说明）；
-  - `KB-018-tag-normalization-ui.md`（标签规范化 UI：设置页规则管理、右键菜单批量应用
-    复用标签写入闭环、标签属性窗口快捷规范化与多值限制）。
-- 2026-11-16：owner 批准并归档上述七份提案：`ADR-015-A2` / `ADR-021-A1` / `ADR-023-A1` / `ADR-025` → `docs/adr/`
-  （`docs/adr/ADR-index.md` 已更新，ADR-015 / ADR-021 / ADR-023 条目标注修订关系），
-  `KB-016` / `KB-017` / `KB-018` → `docs/kb/`。
-- 2026-11-17：owner 批准并归档 `ADR-026`（年份原文显示 / 快捷键捕获式设定与媒体键 / 播放列表管理 / 单曲循环）
-  与 `ADR-027`（标签编辑候选值）到 `docs/adr/`，`docs/adr/ADR-index.md` 已更新。
-  同批提交还包含：标签属性页显示文件路径、文本输入框紧凑内边距与搜索框占位 / 光标对齐、
-  转换输出保留源年份原文（含完整日期），以及排序方式调整（新增「文件修改时间」排序与列、
-  移除「备注 / 流派」排序）。
-- 2026-11-18：新增待批准提案 `ADR-029-apple-legacy-cache-invalidation.md`
-  （旧式 Apple 自由标签音轨号的缓存自愈：schema v4 迁移把 `.m4a/.mp4/.m4b` 且 `TrackNumber = 0`
-  的缓存行 `DurationMs` 清 0 标记失效，复用 ADR-010 启动修复扫描重读标签；
-  外部播放列表行由 ADR-018 激活刷新处理）。
-- 2026-11-18：owner 批准 `ADR-029` 并归档到 `docs/adr/ADR-029-apple-legacy-cache-invalidation.md`，
-  `docs/adr/ADR-index.md` 已更新。
-- 2026-11-19：owner 批准 `ADR-028`（响度计算与响度调整）并归档到 `docs/adr/ADR-028-loudness-analysis-adjustment.md`，
-  `KB-019`（响度测量算法笔记）归档到 `docs/kb/KB-019-loudness-measurement.md`，`docs/adr/ADR-index.md` 已更新
-  （ADR-017 标注由 ADR-028 修订）。
-- 当前状态：**`docs/proposals/` 暂无待批准提案**。
+**暂无待批准提案**（2026-11-19）。
+
+历史提案的批准 / 撤回记录见 `docs/adr/ADR-index.md` 文末的“批准记录”，本文件不再逐条重复。

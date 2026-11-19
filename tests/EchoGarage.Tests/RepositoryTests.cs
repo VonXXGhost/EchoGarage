@@ -633,7 +633,7 @@ public sealed class RepositoryTests : IDisposable
     [Fact]
     public async Task RemovePlaylistItemsByPath_RemovesFromEveryNormalPlaylist_AndKeepsOtherItems()
     {
-        // ADR-021-A1：删除到回收站后，同一首歌在所有普通播放列表里的条目都应移除，
+        // ADR-021：删除到回收站后，同一首歌在所有普通播放列表里的条目都应移除，
         // 其它歌曲的条目保留；返回实际删除的行数。
         var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
         var deletedTrack = MakeTrack("deleted.wav", folderId: folder.Id);

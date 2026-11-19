@@ -21,11 +21,17 @@
    - 启动时**绝不自动注册**，也不修改任何文件的默认处理程序；只有用户在界面里明确点击并确认才写入。
    - 注册对话框列出支持的扩展名（mp3、flac、wav、m4a、aac、aiff、wma、mp4），用户勾选需要关联的格式；
      选择结果保存在配置中，下次打开对话框时恢复勾选。
-   - 在 `HKCU\Software\Classes` 写入 ProgId `EchoGarage.AudioFile`、`OpenWithProgids`、
-     `Applications\EchoGarage.exe`、`RegisteredApplications` 与 `Capabilities`，只针对勾选的扩展名。
+   - 只写 `HKCU`，按勾选的扩展名分别写入：
+     `Software\Classes\{ProgId}`（ProgId 描述、`DefaultIcon`、`shell\open\command`）、
+     `Software\Classes\{扩展名}\OpenWithProgids`、
+     `Software\Classes\Applications\EchoGarage.exe`（`FriendlyAppName` / `shell\open\command` / `SupportedTypes`）、
+     `Software\{ProgId}\Capabilities`（`ApplicationName` / `ApplicationDescription` / `FileAssociations`）
+     与 `Software\RegisteredApplications`。
    - 重复注册时以本次勾选为准：取消勾选的格式会移除其 `OpenWithProgids` 与 `Capabilities` 条目。
-   - 覆盖写当前默认处理程序（`UserChoice` 由系统保护），注册后提示用户到 `ms-settings:defaultapps` 确认。
-   - 提供“取消注册”，清理上述键与值。
+   - **不覆盖**扩展名当前的默认处理程序（`UserChoice` 由系统保护，直接写默认值无效，也会被视为劫持）；
+     只提供“打开方式”候选，注册后提示用户到 `ms-settings:defaultapps` 确认。
+   - 提供“取消注册”，清理上述 ProgId、Applications、`OpenWithProgids`、Capabilities 与
+     `RegisteredApplications` 值。
 4. 单实例失败（互斥体 / 管道不可用）时**优先保证能启动**，不阻塞用户使用。
 
 ## 理由

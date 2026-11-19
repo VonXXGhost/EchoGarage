@@ -28,11 +28,15 @@ logs/
 *.db-wal
 
 # Screenshots / screen recordings are verification artifacts: do not commit them.
-# Keep UI verification images in artifacts/ or .scratch/ (ignored below). Existing
-# docs/screenshots files are historical; new ones are ignored on purpose.
-docs/screenshots/
+# Keep UI verification images in artifacts/ or .scratch/ (ignored below). The only
+# exception is README documentation screenshots: JPG only, generated from dummy demo data.
+docs/screenshots/*
+!docs/screenshots/*.jpg
 *.mp4
 *.webm
+
+# WPF 构建临时工程文件
+*_wpftmp.csproj
 
 # OS
 Thumbs.db

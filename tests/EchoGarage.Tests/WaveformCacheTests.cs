@@ -230,7 +230,7 @@ public sealed class WaveformCacheTests : IDisposable
     [Fact]
     public async Task CacheFromPreviousAnalyzerVersion_IsRejectedAndDeleted()
     {
-        // ADR-015-A2 把 AnalyzerVersion 从 1 升到 2：旧 .wfm 必须被视为失效并删除，下次请求重新分析。
+        // ADR-015（A2 修订）把 AnalyzerVersion 从 1 升到 2：旧 .wfm 必须被视为失效并删除，下次请求重新分析。
         var wav = WriteTestWav("legacy-analyzer.wav");
         var directory = NewCacheDirectory();
         var previousVersion = WaveformAnalyzer.AnalyzerVersion - 1;
@@ -257,7 +257,7 @@ public sealed class WaveformCacheTests : IDisposable
 
         Assert.NotNull(peaks);
         Assert.True(peaks.IsComplete);
-        // 恒定电平素材在新窗口下稳定段应显示为高柱（ADR-015-A2 的核心验收点）。
+        // 恒定电平素材在新窗口下稳定段应显示为高柱（ADR-015 A2 修订的核心验收点）。
         Assert.All(peaks.Height.Skip(6), height => Assert.True(height > 200, $"稳定段应有高度，实际 {height}"));
         // 重新分析的结果已按当前 AnalyzerVersion 写回；再次读取命中缓存。
         Assert.NotNull(await cache.TryLoadAsync(wav));

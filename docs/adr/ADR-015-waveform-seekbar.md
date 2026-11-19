@@ -2,19 +2,20 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | **Accepted（2026-11-14）** |
+| 状态 | **Accepted（2026-11-14；2026-11-16 并入原 ADR-015-A1 / ADR-015-A2）** |
 | 实现 | **P0 + P1 已实现（2026-11-14）**，提交 `af9ddf2` / `51107d6` / `d187305`；P2 / P3 未做 |
 | 日期 | 2026-11-14 |
-| 关联 | ADR-002（分层）、ADR-003（文件是真相）、ADR-006（配置与库分离）、ADR-010（缓存失效）、KB-001（解码）、KB-007（Seek 输入） |
+| 关联 | ADR-002（分层）、ADR-003（文件是真相）、ADR-006（配置与库分离）、ADR-010（缓存失效）、KB-001（解码与 Seek 输入） |
 | 影响面 | 新增 Core 抽象 / 新增磁盘缓存格式 / 新增 App 控件 / 主题令牌 / AppSettings 字段（2026-11-16 起按 ADR-024 五套主题提供令牌） |
 | 不改动 | SQLite schema、`IAudioPlayer`、扫描器、现有 `SeekSlider` 的行为 |
 
 > 本文是已批准的方案（owner 于 2026-11-14 批准），按 §13 分阶段实施。P0 + P1 已实现并合入。
 >
-> **2026-11-16 修订（ADR-015-A1，owner 已批准）**：已播放区不再用半透明遮罩覆盖，改为按区域
-> clip + `PushOpacity(0.26)` 直接绘制三色带（未播放区 100% 不透明度），`WaveformPlayedOverlayBrush`
-> 令牌与依赖属性已删除；三色带配色随 ADR-024 五套主题重定（低饱和赤陶 / 麦金 / 蔚蓝体系）。
-> 本文中与上述冲突的 §5.3、§6、§9.5 描述以 ADR-015-A1 为准。
+> **2026-11-16 两份修订案已并入本文（原 ADR-015-A1 / ADR-015-A2，owner 已批准）**：
+> 已播放区不再用半透明遮罩覆盖，改为按区域 clip + `PushOpacity(0.26)` 直接绘制三色带
+> （未播放区 100% 不透明度），`WaveformPlayedOverlayBrush` 令牌与依赖属性已删除（§5.3 / §5.4 / §9.1 / §9.5）；
+> 高度窗口改为只向下放宽下界，最小显示动态范围 30 dB，`AnalyzerVersion` 升至 2、旧 `.wfm` 自动失效重算（§6.6 / §6.8 / §6.10 / §7.3 / §12.1）。
+> 三色带配色随 ADR-024 五套主题重定（低饱和赤陶 / 麦金 / 蔚蓝体系）。
 > 实施过程中 owner 又确认了三处调整（切换按钮形态、波形高度、归一化策略），本文已同步为**实际实现**的规格；修订点见 §17 修订记录。
 
 ---
@@ -23,12 +24,12 @@
 
 1. 进度条支持在**滑块**与**整曲波形**两种形态间切换；切换按钮放在进度区左端（30 px 见方、仅图标），观感与右侧顺序/随机按钮一致——只靠图标区分形态，不画“已启用”底色。
 2. 波形是**整曲缩略**，不是 DJ 软件的滚动波形：平底、自下而上 **低频 / 中频 / 高频** 三层**不透明堆叠**，总高度表示整体能量；波形高度**填满传输条可用高度**（约 63 px，最小 28 px），不是固定 28 px。
-3. 高度用**逐曲分位数拉伸的 RMS 包络**（p5–p99.5，最小 8 dB），颜色用**频段份额的幂次加权**（p = 0.8 / 1.1 / 1.4），落盘量化到 0–255。
+3. 高度用**逐曲分位数拉伸的 RMS 包络**（p5–p99.5，最小显示动态范围 30 dB，只向下放宽下界），颜色用**频段份额的幂次加权**（p = 0.8 / 1.1 / 1.4），落盘量化到 0–255。
 4. 分析在**后台线程分段**完成（每段约 5 s 音频），已分析部分**按时间顺序即时绘制**；完整结果写入**逐曲二进制缓存**（50 列/秒，约 40 KB/首），缓存带 **LRU 上限（可配置，默认 256 MB）**；失败只记日志，界面回退为轨道底。
-5. 渲染用自定义 `FrameworkElement` + **按尺寸缓存、按段追加的三层几何**；播放位置变化只重绘遮罩与播放头。
+5. 渲染用自定义 `FrameworkElement` + **按尺寸缓存、按段追加的三层几何**；播放位置变化只重绘已播放区（26% 不透明度）与播放头。
 6. **不引入新 NuGet 依赖**：解码复用 NAudio 的 `AudioFileReader`，FFT 用 NAudio 2.2.1 自带的 `NAudio.Dsp.FastFourierTransform`。
 7. 模式是**全局记忆**：首次默认滑块，用户切到波形后一直保持；持久化到 `AppSettings.SeekBarMode`。
-8. 配色全部走**主题令牌**（深/浅两套），控件内不硬编码颜色。
+8. 配色全部走**主题令牌**（ADR-024 的五套主题），控件内不硬编码颜色。
 9. 渐进渲染期间归一化窗口**锁死**在 −48…0 dB（上限固定为 0 dBFS = 电平最大值），已画出的列在生成过程中不重排；分析完成时才用全曲 p5 / p99.5 重算一次最终快照（owner 2026-11-14 决定，以“生成过程零跳动”优先）。
 10. 缓存清理改为**菜单**（可分别清封面/波形/全部）；新增 `--waveform <file> <png>` 无 UI 诊断开关。
 
@@ -70,13 +71,13 @@
 
 ### 3.1 传输条布局
 
-`src/EchoGarage.App/Views/MainWindow.xaml:877-973`：
+`src/EchoGarage.App/Views/MainWindow.xaml`（传输条 `Border Grid.Row=3 Height=72` 约在 :1060；行号以归档时为准，检索锚点为下列 `x:Name` / 成员名）：
 
 - `Border Grid.Row=3 Height=72`，内部 `Grid Margin="16,0"`，三列 `Auto / * / Auto`；
 - 列 0：上一首/播放/停止/下一首；
 - 列 1：`Grid Margin="20,0"`，四列 `30 / 46 / * / 46` —— 左端形态切换按钮、`PositionText`、波形或滑块、`DurationText`；
-- `SeekSlider`（`:953-958`）：`Minimum=0`、`Maximum={Binding SeekMaximum}`、`Value={Binding PositionSeconds, Mode=OneWay}`、`IsEnabled={Binding HasCurrentTrack}`、`IsMoveToPointEnabled=False`；
-- `WaveformSeekBar`（`:959-968`，`x:Name="WaveformView"`）：`Margin="0,4"`，`Peaks / Position / Duration` 绑定，`IsEnabled={Binding HasCurrentTrack}`，`Visibility` 与滑块互斥；
+- `SeekSlider`（约 :1136）：`Minimum=0`、`Maximum={Binding SeekMaximum}`、`Value={Binding PositionSeconds, Mode=OneWay}`、`IsEnabled={Binding HasCurrentTrack}`、`IsMoveToPointEnabled=False`；
+- `WaveformSeekBar`（约 :1142，`x:Name="WaveformView"`）：`Margin="0,4"`，`Peaks / Position / Duration` 绑定，`IsEnabled={Binding HasCurrentTrack}`，`Visibility` 与滑块互斥；
 - 列 2：音量标签 + 120 px 滑块 + 百分比 + 静音按钮。
 
 滑块模板（`Resources/Controls.xaml`）：高 18 px、轨道 4 px、Thumb 11 px；波形形态下这 18 px 让位给填满高度的波形控件（§5.5）。
@@ -87,13 +88,13 @@
 - `SeekMaximum => DurationSeconds > 0 ? DurationSeconds : 1`（`MainViewModel.SeekMaximum`）；
 - 滑块手势由 `MainWindow.xaml.cs` 的 `HookSeekSlider` / `OnSeekMouseDown` / `OnSeekMouseMove` / `OnSeekMouseUp` / `OnSeekLostCapture` 手工实现：`AddHandler(..., handledEventsToo: true)` + `CaptureMouse`，按 `x / ActualWidth` 计算目标，`BeginSeek()` 冻结 tick，松开时 `CommitSeek(target)`；
 - 提交有 0.75 s 与 2 px 的防误触门限（`CommitSeekInteraction`），因为滑块有可抓的 Thumb；波形没有实体，不走这个门限（§10.2）；
-- `CommitSeek` 内部 `Player.Seek` 后直接写 `PositionSeconds/PositionText`（`MainViewModel.CommitSeek`），Seek 本身是 `Pause → reader.CurrentTime → Play`（KB-007，实测 2–9 ms）。
+- `CommitSeek` 内部 `Player.Seek` 后直接写 `PositionSeconds/PositionText`（`MainViewModel.CommitSeek`），Seek 本身是 `Pause → reader.CurrentTime → Play`（KB-001，实测 2–9 ms）。
 
 ### 3.3 缓存与主题基础设施
 
 - `AppPaths.DefaultCacheDirectory = <root>\data\Cache`，`EnsureCreated()` 建目录；设置页可改目录并迁移（`AppHost.ApplyCacheDirectoryAsync`，`AppHost.cs:109-123`）；
 - `FileCoverCache` 是现成的范式：目录 + 内容键 + sidecar `.stamp` + `.none` 负缓存 + `SemaphoreSlim` 串行写 + `RelocateAsync`（`Infrastructure/Caching/FileCoverCache.cs`）；
-- 主题令牌模式：`Color x:Key` + `SolidColorBrush x:Key`（`StaticResource` 引用），视图一律 `DynamicResource`（`DarkTheme.xaml` / `LightTheme.xaml`）；
+- 主题令牌模式：`Color x:Key` + `SolidColorBrush x:Key`（`StaticResource` 引用），视图一律 `DynamicResource`（ADR-024 起的五套主题字典：`PureStudio` / `WarmPaper` / `NordicIce` / `MidnightVinyl` / `SlateStudio`）；
 - `AppSettings` 是 JSON 持久化的 sealed class，新增字段有默认值即向后兼容（`SchemaVersion=1` 不需要迁移）；
 - 当前**没有任何波形相关代码**，`NAudio.Dsp` 也未被引用（但 NAudio 2.2.1 已包含 `FastFourierTransform` 与 `BiQuadFilter`）。
 
@@ -211,12 +212,11 @@ y = H   └───────────────────────
 | `WaveformMidBrush` | `#C98335` | `#B2691F` | 中频层 |
 | `WaveformHighBrush` | `#1E43C8` | `#2F55C8` | 高频层 |
 | `WaveformTrackBackgroundBrush` | `#1A1F27` | `#F0F2F6` | 波形轨道底 |
-| ~~`WaveformPlayedOverlayBrush`~~ | — | — | **2026-11-16 删除**（ADR-015-A1）：已播放区改为三色带 26% 不透明度 |
 | `WaveformPlayheadBrush` | `#E7EAEF` | `#1B1F27` | 播放头（用文本主色，两种主题都够亮） |
 
-~~已播放区用面板色半透明覆盖（深色 alpha 0.28–0.35、浅色 0.45–0.50）。~~ **2026-11-16 改为 ADR-015-A1 方案**：已播放区直接绘制三色带、整体 `PushOpacity(0.26)`，不做颜色混合；未播放区 100%。
+**已播放区的画法（2026-11-16，并入原 ADR-015-A1）**：不引入覆盖色令牌——未播放区 `[playhead, width)` 以 100% 不透明度绘制三色带；已播放区 `[0, playhead)` 同样绘制三色带，但整体 `PushOpacity(0.26)`（控件内部常量 `PlayedOpacity = 0.26`，落在 owner 要求的 25–28% 区间中部；未来若需按主题微调再升级为令牌）。这样低/中/高三个频段在两侧都保持色相分离，不会像半透明覆盖层那样与面板底色混合、在浅色主题下发灰。播放头、悬停预览、聚焦环与未分析区提示线仍绘制在色带之上。
 
-> 令牌必须同时写进主题字典（2026-11-16 起为 ADR-024 的 5 套；旧 `DarkTheme.xaml`/`LightTheme.xaml` 已移除），控件默认样式里用 `DynamicResource` 绑定；主题切换时 `DynamicResource` 会重新求值，控件需在画刷变化时使几何缓存失效（§9.2）。
+> 令牌必须同时写进主题字典（ADR-024 的 5 套），控件默认样式里用 `DynamicResource` 绑定；主题切换时 `DynamicResource` 会重新求值，控件需在画刷变化时使几何缓存失效（§9.2）。
 
 ### 5.4 状态
 
@@ -224,7 +224,7 @@ y = H   └───────────────────────
 | --- | --- |
 | 无歌曲 | 只画整条轨道底（30% 不透明度），无文字 |
 | 分析中 | 已分析段正常绘制；未分析段轨道底 + 2 px 基线，前缘 1 px 竖线；不转圈、不闪烁（避免干扰播放） |
-| 就绪 | 三层波形 + 已播放遮罩 + 播放头 |
+| 就绪 | 三层波形 + 已播放区（26% 不透明度）+ 播放头 |
 | 悬停 | 鼠标处 1 px 竖线（`TextSecondary`，50%）+ 可选时间气泡（P2） |
 | 键盘焦点 | 内侧 1 px `AccentBrush` 描边 |
 | 分析失败 | 同“无歌曲”，日志 `Warn`，状态栏不报错（非关键路径） |
@@ -305,9 +305,11 @@ attack 让鼓点“起得快”，release 让波形在鼓点之间不塌成梳�
 
 1. 对整曲所有列的 `RMS_total` 取 dB：`20·log10(max(rms, 1e-5))`；
 2. 取 `lo = p5`、`hi = p99.5`（排序后取分位；99.5 而不是 100，避免单个爆音把上限拉高）；
-3. `hi = max(hi, lo + 8.0)`（最小动态范围 8 dB，防止整曲只有 2 dB 动态时把噪声放大成“假层次”）；
+3. `lo = max(SilenceDb, min(lo, hi - MinimumStretchDb))`，`MinimumStretchDb = 30.0`（最小**显示**动态范围：只向下放宽下界，**不抬高** `hi`）；
 4. `v = clamp((dB - lo) / (hi - lo), 0, 1)`；`height = round(255·v)`，`v>0` 但四舍五入为 0 时取 1；
 5. 静音列（`RMS < 1e-5`）高度为 0。
+
+**为什么是“向下放宽”而不是“抬高上限”（2026-11-16，并入原 ADR-015-A2）**：抬高上限（旧做法 `hi = max(hi, lo + 8)`）对恒定电平 / 窄动态素材无效——这类素材 `p5 ≈ p99.5`，`lo ≈ hi` 被抬到 `lo + 8`，而所有列的 dB 都约等于 `lo`，高度归 0，整条波形显示为空白（渐进分析时固定 −48…0 dB 窗口反而正常，分析完成切到最终快照的瞬间才变空）。改为向下扩展下界后：动态范围 ≥ 30 dB 的素材窗口逐位不变（宽动态零回归）；不足 30 dB 时保证至少 30 dB 的显示量程，稳定列高度可达满高，2–3 dB 的内部起伏只占约 7% 高度，不会被放大成“假层次”；`lo` 钳制在 `SilenceDb`（−100 dB），极端安静素材的窗口也不会落到数字静音以下。
 
 ### 6.7 颜色份额（幂次加权）
 
@@ -338,7 +340,7 @@ share_j = q_j / (q_low + q_mid + q_high)
 | 列率 | 50 列/秒 | 2 帧一列 |
 | 分频 | 200 / 4000 Hz | 低/中/高 |
 | 包络 | attack 60 ms / release 250 ms | 10 ms 帧率 |
-| 高度拉伸 | p5–p99.5，最小 8 dB | 逐曲 |
+| 高度拉伸 | p5–p99.5，最小显示动态范围 30 dB（下界扩展） | 逐曲 |
 | 份额幂次 | 0.8 / 1.1 / 1.4 | 低/中/高 |
 
 三首真实曲目的份额中位数（分频 4 kHz，`p=(0.8,1.1,1.6)` 时）：
@@ -375,7 +377,7 @@ rekordbox 的 `gain = clamp(TARGET/max, FLOOR, CAP)` 是**逐频段把最强处�
 
 **分段方式**：分段单位是**列**，不是文件块。解码按 4096 样本块读入，攒够 2048 样本窗口就推进一帧（hop 441），与一次性分析共用同一套状态（上一帧频段值、包络、累积分位）。这样**完成后的快照**与整曲一次性分析的输出应逐字节一致（§12 有对照测试），不会因为分段引入接缝。
 
-**发布节奏**：每 **5 s 音频**（250 列）发布一次快照，UI 侧节流到 10 Hz；快照里的 `ValidCount` 之前的部分有效，之后不绘制。控件只**追加**新增列的几何（`DrawingGroup.Children.Add`），播放头/遮罩是独立 visual，每 tick 只改这两个。
+**发布节奏**：每 **5 s 音频**（250 列）发布一次快照，UI 侧节流到 10 Hz；快照里的 `ValidCount` 之前的部分有效，之后不绘制。控件只**追加**新增列的几何（`DrawingGroup.Children.Add`），播放头与已播放区是独立 visual，每 tick 只改这两个。
 
 **调度**：分析在 `LoadAsync` 完成、开始播放后 **300–500 ms** 才启动，避免与首帧解码抢 IO；线程 `BelowNormal`；每段结束 `await Task.Yield()` 让出，播放解码优先。切歌/停止时取消 CTS，已算部分丢弃（不写半截缓存）。
 
@@ -384,7 +386,7 @@ rekordbox 的 `gain = clamp(TARGET/max, FLOOR, CAP)` 是**逐频段把最强处�
 | 时机 | 窗口 | 规则 |
 | --- | --- | --- |
 | 分析中（每次快照） | 固定 −48…0 dB，上限固定为 **0 dBFS**（电平最大值） | 全程不变：已画出的列高度不再变化，波形只向右延伸 |
-| 完成 | 全曲 p5 / p99.5（最小 8 dB，§6.5） | 发布最终快照，控件整体重建一次 |
+| 完成 | 全曲 p5 / p99.5（最小显示动态范围 30 dB，下界扩展，§6.6） | 发布最终快照，控件整体重建一次 |
 
 生成过程中的视觉代价：未完成时上限锁在 0 dBFS，而整曲峰值通常低于它，所以部分波形会显得比最终结果略“矮”，完成瞬间统一拉伸到 p5–p99.5。这是“生成过程零跳动、只收尾归一化”的取舍（owner 反馈：波形不能在渲染过程中变形）。不做逐段增益，理由同 §6.9。
 
@@ -431,7 +433,7 @@ rekordbox 的 `gain = clamp(TARGET/max, FLOOR, CAP)` 是**逐频段把最强处�
 ### 7.3 失效与原子写
 
 - 载入前比较缓存的 `source length/mtime` 与当前文件；不一致 → 忽略并重算；
-- `analyzer version` 变化 → 重算（rekordbox 的 “Add New Analysis Data” 是同一个思路）；
+- `analyzer version` 变化 → 重算（rekordbox 的 “Add New Analysis Data” 是同一个思路）；当前 `AnalyzerVersion = 2`（2026-11-16 由 1 提升，对应“最小显示动态范围 30 dB”的高度窗口改动）：旧 v1 `.wfm` 读取时头部校验失败 → 删除文件 → 后台重新分析并按 v2 写回，无需迁移脚本、也无需用户手动清缓存；EGWV `FormatVersion` 仍为 1（72 字节头与每列 4 字节布局未变），按 72 字节头解析的外部工具不受影响；`FloorDb/CeilingDb` 的数值语义随分析器版本变化，缓存本身已用 analyzer version 区分；
 - 写入：先写 `<final>.tmp`，`Flush` 后 `File.Move(tmp, final, overwrite: true)`；同卷内 Move 是原子的，进程崩溃不会留下半个正式文件；
 - 目录懒创建（首次写入时），不在启动路径上做 IO。
 
@@ -542,7 +544,7 @@ public interface IWaveformService
 | `src/EchoGarage.Infrastructure/Caching/FileWaveformCache.cs` | 新增 |
 | `src/EchoGarage.App/Views/Controls/WaveformSeekBar.cs` | 新增 |
 | `src/EchoGarage.App/Resources/Controls.xaml` | 加控件默认样式 + 切换按钮样式 |
-| `src/EchoGarage.App/Resources/Themes/{Dark,Light}Theme.xaml` | 各加 6 个令牌 |
+| `src/EchoGarage.App/Resources/Themes/*Theme.xaml`（ADR-024 的五套主题） | 每套加 6 个令牌 |
 | `src/EchoGarage.App/Views/MainWindow.xaml` | 进度区加切换按钮与波形控件 |
 | `src/EchoGarage.App/Views/MainWindow.xaml.cs` | 波形手势（与滑块手势分开，互不影响） |
 | `src/EchoGarage.App/ViewModels/MainViewModel.cs` | 模式、Peaks、加载、预览时间 |
@@ -585,12 +587,13 @@ PlayRowAsync → CurrentRow 更新
 Peaks (WaveformPeaks?)
 Position (double, seconds)
 Duration (double, seconds)
-LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrush / HoverBrush / FocusBrush
+LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / FocusBrush
 ```
 
+- 已播放区不走依赖属性：`PlayedOpacity` 是控件内部常量 `0.26`（原覆盖色令牌 `PlayedOverlayBrush` 已在 2026-11-16 删除，见 §5.3）；
 - 交互事件：`SeekStarted`、`SeekPreview`、`SeekCommitted`、`SeekCancelled`（均带 `WaveformSeekEventArgs(double Seconds)`）；
 - 默认样式在 `Controls.xaml`，画刷全部 `DynamicResource`；
-- `OnRender` 顺序：轨道底 → 三层波形 → 已播放遮罩 → 播放头 → 悬停线 → 焦点框；
+- `OnRender` 顺序：轨道底 → 三层波形（已播放区整体 26% 不透明度）→ 播放头 → 悬停线 → 焦点框；
 - `Clip` 到 2 px 圆角矩形，避免首尾像素越界；
 - 不继承 `Control`，避免模板开销；键盘焦点用 `Focusable=true` + `IsKeyboardFocusWithin`。
 
@@ -598,7 +601,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 - 缓存的键：设备像素宽高、`dpiScale`、`Peaks.ColumnCount`、`Peaks.FloorDb/CeilingDb`（容差 0.01 dB）与已取用的 `ValidCount`；
 - 每个频段一个 `GeometryGroup`，内部按设备像素列存放**冻结的 `RectangleGeometry`**；颜色由画刷在 `OnRender` 时给出，**画刷/主题变化不需要重建几何**；
-- 位置每 200 ms 变化时**不重建几何**，只 `InvalidateVisual()` 重画遮罩、播放头与悬停线；
+- 位置每 200 ms 变化时**不重建几何**，只 `InvalidateVisual()` 重画已播放区、播放头与悬停线；
 - 尺寸 / DPI / 列数 / 归一化窗口变化 → 清空重建（完成时窗口切换会触发一次，见 §9.7）。
 
 ### 9.3 像素对齐
@@ -620,7 +623,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 ### 9.5 播放头与已播放区
 
 - 播放头 `x = Position/Duration × W`，1.5 设备像素宽，`WaveformPlayheadBrush`；
-- 已播放区 `[0, x)` 以 26% 不透明度绘制三色带（`PushOpacity`），未播放区 100%；删除原遮罩方案（ADR-015-A1，2026-11-16）；
+- 已播放区 `[0, x)` 以 26% 不透明度绘制三色带（`PushOpacity(PlayedOpacity)`，常量 `0.26`），未播放区 100%；不做颜色混合（2026-11-16 并入原 ADR-015-A1）；
 - 播放头到达右端时钳制在 `W-1`，避免画到控件外；
 - 位置更新频率沿用 200 ms（5 Hz）。在 3 分钟/900 px 下每 tick 移动 6 px，肉眼可见轻微跳动；P2 可选：波形模式下把定时器降到 100 ms，或在控件内做 200 ms 线性插值。
 
@@ -647,7 +650,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 ### 10.2 点击与拖动
 
-复用滑块手势的经验（KB-007）：`AddHandler(PreviewMouseLeftButtonDown/Move/Up, handledEventsToo: true)` + `CaptureMouse`，但语义按波形调整：
+复用滑块手势的经验（KB-001）：`AddHandler(PreviewMouseLeftButtonDown/Move/Up, handledEventsToo: true)` + `CaptureMouse`，但语义按波形调整：
 
 | 事件 | 行为 |
 | --- | --- |
@@ -717,11 +720,11 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 
 | 目标 | 用例 |
 | --- | --- |
-| `WaveformMath` | dB 分位拉伸：最小 8 dB 生效；常数信号不除零；静音列高度 0 |
+| `WaveformMath` | dB 分位拉伸：最小显示动态范围 30 dB 生效（窄动态向下扩展下界、宽动态窗口不变、`lo` 钳制 `SilenceDb`）；常数信号不除零；静音列高度 0 |
 | 份额 | `low+mid+high == 255` 恒成立；三频段 RMS 相等时按幂次得约 103/84/68（低频更宽，不是 1/3）；单频段为 0 时不出现负值；静音列为 85/85/85 |
 | 包络 | attack 上升快于 release 下降；阶跃输入的稳态误差 < 1% |
 | 聚合 | p80 正确；单列段；空段取最近列；加权份额归一化 |
-| 缓存 | 往返一致；截断文件 → null；magic 错误 → null；版本不符 → null；stamp 不符 → null；写入后无 `.tmp` 残留 |
+| 缓存 | 往返一致；截断文件 → null；magic 错误 → null；`FormatVersion` 不符 → null；analyzer version 落后（v1 缓存）→ 拒绝并删除、随后重算并按当前版本写回；stamp 不符 → null；写入后无 `.tmp` 残留 |
 | 分析器 | 生成 100 Hz / 1 kHz / 8 kHz 正弦 WAV，对应频段份额 > 0.9；幅度加倍 → 高度单调增；静音 → 全 0 |
 | 分块一致性 | 同一文件分块分析与整曲分析，归一化后逐字节相同；渐进快照的窗口恒为 −48…0 dB 且已发布列高度逐列不变（`Analyze_ProgressSnapshots_KeepFixedWindowUntilComplete`）；完成时只做一次整曲归一化 |
 | 进度 | `ValidCount` 单调不减且 ≤ `ColumnCount`；最终 `IsComplete`；取消后不再回调 |
@@ -797,6 +800,8 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 6. **切换按钮形态**（实施中追加）：进度区左端 30 px、仅图标，观感与顺序/随机按钮一致；只靠图标区分形态，不做“已启用”底色（§5.5）。
 7. **波形高度**（实施中追加）：填满传输条可用高度（约 63 px，最小 28 px），不固定 28 px（§5.5）。
 8. **归一化策略**（实施中追加）：渐进期间锁死 −48…0 dB（上限 0 dBFS），完成时做一次整曲 p5 / p99.5 归一化；替代原“最多两次窗口切换”方案（§6.10）。
+9. **已播放区不透明度**（2026-11-16，并入原 ADR-015-A1）：未播放区 100%，已播放区整体 26% 不透明度；删除覆盖色令牌 `WaveformPlayedOverlayBrush`（§5.3 / §9.5）。
+10. **高度窗口下界**（2026-11-16，并入原 ADR-015-A2）：最小**显示**动态范围 30 dB，只向下放宽 `lo`、不抬高 `hi`；`AnalyzerVersion` 升至 2、旧 `.wfm` 自动重算（§6.6 / §7.3）。
 
 ### 15.2 遗留问题（不阻塞验收）
 
@@ -818,13 +823,17 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayedOverlayBrush / PlayheadBrus
 - Mixxx 波形渲染源码目录：<https://github.com/mixxxdj/mixxx/tree/main/src/waveform>
 - Mixxx bug 1268299（高频段被不成比例放大）：<https://bugs.launchpad.net/mixxx/+bug/1268299>
 - BBC audiowaveform issue #210（扫频实测 rekordbox 分频）：<https://github.com/bbc/audiowaveform/issues/210>
-- 仓库内相关文档：`docs/kb/KB-001-naudio-decode-matrix.md`、`docs/kb/KB-007-scan-read-style-and-seek-input.md`、`docs/adr/ADR-010-metadata-cache-invalidation.md`
+- 仓库内相关文档：`docs/kb/KB-001-naudio-decode-matrix.md`、`docs/adr/ADR-010-metadata-cache-invalidation.md`
 
 ## 17. 修订记录
 
-| 日期 | 变更 | 触发 |
+| 日期 | 原文件 | 主要变更 |
 | --- | --- | --- |
-| 2026-11-14 | 批准并实施 P0 / P1（`af9ddf2`） | owner 批准 |
-| 2026-11-14 | 切换按钮改为 30 px 仅图标、与顺序/随机按钮同一观感；波形高度改为填满传输条（§0、§5.5） | owner UI 反馈（`51107d6`） |
-| 2026-11-14 | 渐进归一化窗口锁死 −48…0 dB（上限 0 dBFS），完成时一次整曲归一化；删除前缀窗口切换（§0.9、§6.10、§9.7、§12.1） | owner 反馈“生成过程中波形会变形”（`d187305`） |
+| 2026-11-14 | ADR-015（本文） | 批准并实施 P0 / P1（`af9ddf2`） |
+| 2026-11-14 | ADR-015（本文） | 切换按钮改为 30 px 仅图标、与顺序/随机按钮同一观感；波形高度改为填满传输条（§0、§5.5） |
+| 2026-11-14 | ADR-015（本文） | 渐进归一化窗口锁死 −48…0 dB（上限 0 dBFS），完成时一次整曲归一化；删除前缀窗口切换（§0.9、§6.10、§9.7、§12.1） |
+| 2026-11-16 | 原 ADR-015-A1（已并入本文） | 已播放区改为按区域 clip + `PushOpacity(0.26)` 直接绘制三色带，未播放区 100%；删除 `WaveformPlayedOverlayBrush` 令牌与 `PlayedOverlayBrush` 依赖属性；三色带配色随 ADR-024 五套主题重定（§5.3 / §5.4 / §9.1 / §9.5 / §15.1） |
+| 2026-11-16 | 原 ADR-015-A2（已并入本文） | 高度窗口改为只向下放宽下界：`MinimumStretchDb` 8.0 → 30.0；`AnalyzerVersion` 1 → 2，旧 v1 `.wfm` 读取时失效并重算，EGWV `FormatVersion` 保持 1（§6.6 / §6.8 / §6.10 / §7.3 / §12.1 / §15.1） |
+
+> 原 ADR-015-A1、ADR-015-A2 的正文已并入本文，对应文件已从 `docs/adr/` 移除，编号作为追溯信息保留。
 

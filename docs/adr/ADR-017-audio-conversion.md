@@ -1,8 +1,17 @@
-# ADR-017：音频转换（编码转换）功能设计提案
+# ADR-017：音频转换（编码转换）
 
-- 状态：已批准（Accepted，2026-11-14，owner）；已实现（2026-11-14）
+- 状态：已批准（Accepted，2026-11-14，owner）；已实现（2026-11-14）；2026-11-19 由 ADR-028 修订（见下）
 - 日期：2026-11-14
-- 相关：ADR-013（列表行次要信息）、ADR-014（schema v3 缓存修复，已批准）、ADR-016（搜索 / 快捷键 / 播放模式）
+- 相关：ADR-013（列表行次要信息）、ADR-014（schema v3 缓存修复，已批准）、ADR-016（搜索 / 快捷键 / 播放模式）、
+  ADR-028（响度分析与调整，修订本 ADR 的转换请求模型）
+
+> **2026-11-19 修订（ADR-028，owner 已批准）**：本 ADR 的 `ConversionRequest` 已扩展两个可选参数
+> `GainDb`（默认 0；线性增益 dB，仅非 0 时经 `GainSampleProvider` 包装，保证旧调用逐位不变）与
+> `EnableDither`（默认 false；16-bit 输出启用 TPDF dither），用于 ADR-028 的响度调整输出。
+> 另新增 SSRC 重采样前导延迟补偿：`SsrcLatencyProbe` 运行时探测延迟、`PcmWavWriter.TrimToFrames(path,
+> maxFrames, skipFrames)` 裁剪，WDL 回退路径不裁剪（见 ADR-028 §3.6.2）。
+> 本文 §2 的请求模型与 §8 的转换链路按 2026-11-14 文本保留，未逐一回填上述字段；字段与语义以 ADR-028 为准。
+> 格式 / 预设 / 外部编码器等决策不变。
 
 ## 背景
 

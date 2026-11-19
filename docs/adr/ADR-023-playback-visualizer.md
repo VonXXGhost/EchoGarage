@@ -1,8 +1,8 @@
-# ADR-023：右栏「播放可视化」（第一阶段：分段频谱图）
+# ADR-023：右栏「播放可视化」（分段频谱图 + 渲染帧率上限）
 
-- 状态：已批准并完成实现（Accepted，2026-11-15，owner；2026-11-15 实现完成并发布 Release 验收版本）
+- 状态：**Accepted**（2026-11-15，owner；2026-11-15 实现完成并发布 Release 验收版本；2026-11-16 并入原 ADR-023-A1）
 - 日期：2026-11-15
-- 相关：ADR-009（WASAPI 音频管线）、ADR-012（测试播放静音）、ADR-015（波形进度条：渲染范式与参数风格）、KB-006（主题令牌）
+- 相关：ADR-009（WASAPI 音频管线）、ADR-012（测试播放静音）、ADR-015（波形进度条：渲染范式与参数风格）、ADR-024（五套主题）、KB-006（主题令牌）、KB-006（主题令牌映射）
 
 ## 0. 决策摘要
 
@@ -21,6 +21,8 @@
 6. 渲染用自定义 `FrameworkElement` + `OnRender`，所有颜色来自主题令牌；
    实测默认参数（32 段 / FFT 4096）下渲染帧率 140.2 FPS、每帧 OnRender 0.17 ms；
    最坏配置（96 段 / FFT 8192）142.0 FPS、0.21 ms，均无丢帧，远高于 60 FPS 红线。
+7. **渲染帧率上限可配置**（30 / 60 / 120 / 144 / 180 / 不限制，默认**不限制**）：节流在真实分析帧之前整帧跳过，
+   `dt` 仍取真实经过时间，因此“弹道速度与帧率无关”的语义不变（2026-11-16，并入原 ADR-023-A1）。
 
 ## 1. 背景与问题
 
@@ -45,6 +47,7 @@ owner 要求：
   设置页改动立即生效。
 - 稳定 ≥60 FPS；窗口被遮挡 / 最小化时不燃烧 CPU。
 - 可开关：不需要可视化时可以选择「关闭」。
+- 渲染帧率上限：可在 30 / 60 / 120 / 144 / 180 / 不限制之间切换，默认不限制（保持原行为），在设置页可改、即时生效、随配置持久化。
 
 ### 2.2 非目标（第一阶段）
 
@@ -63,7 +66,7 @@ owner 要求：
 - `ScrollViewer` 用无限高度测量内容，`StackPanel` 的 `*` 行拿不到「剩余高度」；
   要让可视化占满剩余空间，必须让内容 Grid 的 `MinHeight` 绑定 `ScrollViewer.ViewportHeight`。
 - 自定义渲染已有成熟范式（ADR-015 `WaveformSeekBar`）：设备像素对齐、 Brush 依赖属性 + 主题令牌、
-  按缓存键重建几何。主题字典（`Resources/Themes/{Dark,Light}Theme.xaml`）目前没有渐变刷。
+  按缓存键重建几何。主题字典（ADR-024 的五套 `Resources/Themes/*Theme.xaml`）目前没有渐变刷。
 - 设置持久化：`AppSettings` 的嵌套设置类（`NetworkSettings` / `WebTagSettings`）都有
   `static Normalize`，`JsonSettingsService.Normalize` 在 Load / Save / Export / Import 四条路径上统一兜底。
 - 测试工程只引用 Core + Infrastructure（不引用 App），因此纯计算与数据源可测，控件不可测。
@@ -116,8 +119,10 @@ owner 的参考图：40 根实心竖条、竖直渐变（底部深蓝 → 顶部
 
 ```
 AppSettings
-└─ Visualization: VisualizationSettings        // 新增（Normalize 兜底）
-   ├─ Kind: VisualizerKind { None, Spectrum }   // 默认 Spectrum
+└─ Visualization: VisualizationSettings              // 新增（Normalize 兜底）
+   ├─ Kind: VisualizerKind { None, Spectrum }        // 默认 Spectrum
+   ├─ FrameRateLimit: VisualizerFrameRate            // 渲染帧率上限，默认 Unlimited
+   │    { Unlimited = 0, Fps30 = 30, Fps60 = 60, Fps120 = 120, Fps144 = 144, Fps180 = 180 }
    └─ Spectrum: SpectrumSettings
       ├─ BandCount = 32            （8…96）
       ├─ FftSize = 4096            （1024 / 2048 / 4096 / 8192）
@@ -139,6 +144,13 @@ AppSettings
 - `SpectrumFrame` 是一帧的渲染输入：`Levels[]` / `Peaks[]`（0..1，NaN = 不画峰值）/ `FrameId` / `IsSilent`。
 - 设置升级兼容：老 `settings.json` 没有 `visualization` 字段时按默认值补全并写回；
   越界值由 `Normalize` 钳制，未知枚举回退为 `Spectrum`。
+- **帧率上限（2026-11-16，并入原 ADR-023-A1）**：`FrameRateLimit` 挂在 `VisualizationSettings` 而不是
+  `SpectrumSettings`——限制的是**渲染循环**，不是频谱分析参数；阶段二的其它可视化形态可复用同一上限。
+  枚举数值即 FPS（`Unlimited = 0`），渲染层只需要一个整数上限；`Normalize` 用 `!Enum.IsDefined` 回退
+  `Unlimited`（手改成 `"frameRateLimit": 42` 不会产生负间隔 / 不节流），绑定层
+  `VisualizerFrameRateExtensions.ToFps()` 对未定义值返回 0（双保险）。序列化兼容：`JsonDefaults` 注册了
+  `JsonStringEnumConverter`，落盘为 `"frameRateLimit": "Fps60"`；旧配置缺该字段 → 默认 `Unlimited`；
+  旧程序读到该字段会当未知属性忽略，回滚无迁移成本。
 
 ## 6. 算法与口径
 
@@ -152,6 +164,11 @@ UI 渲染帧：取最新 N 个样本 → 周期 Hann 窗 → FFT → 频段聚�
 
 - 音频线程只做算术与一次 `Volatile.Write` 写指针：不分配、不加锁、不阻塞。
 - UI 线程取「最新 FFT 长度的样本」：丢帧只会跳过错过的片段，不会累积延迟。
+- **帧率上限节流（2026-11-16，并入原 ADR-023-A1）**：`SpectrumView` 在真实分析帧之前做整帧跳过——距上次
+  分析帧不足 `FrameRateTolerance / 上限` 秒（`FrameRateTolerance = 0.95`）就 `return`，既不调用 `NextFrame`
+  也不 `InvalidateVisual`；被跳过的 tick **不推进** `_lastRenderingTime`，下一个真实分析帧的 `dt` 仍是真实
+  经过时间。`Source` / `Options` / `FrameRateLimit` 变化时调用 `ResetFrameTiming()` 重置计时，切换后下一
+  tick 立即出帧；窗口被遮挡 / 最小化时 `CompositionTarget.Rendering` 本身不出帧，节流不改变该行为。
 - 超过 150 ms 没有新样本（暂停 / 停止 / 输出被释放）按静音喂给弹道，柱体会自然落下去。
 
 ### 6.2 FFT 与幅度标定
@@ -180,6 +197,9 @@ UI 渲染帧：取最新 N 个样本 → 周期 Hann 窗 → FFT → 频段聚�
 - 峰值：`peak = max(level, peak)` 并重置保持计时；保持期（默认 800 ms）结束后按 `PeakFallDbPerSecond` 下落；
 - 输出统一归一化 `Normalize(db, floor, ceiling)` → 0..1。
 - 所有速度用 **dB/s × dt**，与帧率无关（单测：60 帧 @1/60 s 与一次 1 s 的衰减结果一致）。
+- 帧率上限节流不改变上述口径：分析帧变稀疏，但 `dt` 仍取真实 `RenderingTime` 差（**不是** `1 / 上限`），
+  所以释放速度、峰值保持时长与“不限制”时一致；`SpectrumAnalyzer.NextFrame` 内部把 `dt` 钳制在
+  `[0.001, 0.5]` 秒，极端卡顿恢复时也不会把弹道推进到异常状态（并入原 ADR-023-A1 §2.3）。
 
 ### 6.6 参数表（集中在此，便于调参与单测）
 
@@ -228,7 +248,7 @@ UI 渲染帧：取最新 N 个样本 → 周期 Hann 窗 → FFT → 频段聚�
 - 频率标签从低频往高频贪心放置，左对齐到柱体左边界，按实测文字宽度跳字，末尾夹紧到控件内。
 - 宽度切换（240…520 列宽）时按 DPI 重新吸附设备像素；`RenderOptions.EdgeMode = Aliased` 保证柱边锐利。
 - 颜色全部走主题令牌：`SpectrumBarBottomBrush` / `SpectrumBarTopBrush` / `SpectrumPeakBrush` /
-  `SpectrumGridBrush` / `SpectrumLabelBrush`，深色与浅色两套字典各定义一次，控件通过 `Controls.xaml`
+  `SpectrumGridBrush` / `SpectrumLabelBrush`，ADR-024 的五套主题字典各定义一次，控件通过 `Controls.xaml`
   的样式绑定到依赖属性（`DynamicResource`），切换主题即时生效。
 
 ## 9. 性能实测
@@ -248,6 +268,25 @@ UI 渲染帧：取最新 N 个样本 → 周期 Hann 窗 → FFT → 频段聚�
 - 画笔 / 渐变刷按主题令牌与 DPI 缓存，渲染路径里没有每帧 new（几何本身每帧重建，量级可忽略）。
 - 窗口被遮挡 / 最小化时 WPF 停止出帧：分析随之停摆，CPU 占用回落到空闲水平。
 
+### 9.1 帧率上限档位（2026-11-16，并入原 ADR-023-A1）
+
+默认 `Unlimited` 时上表的 139–142 FPS 即现状基线。设上限后，实际帧率由“能否在合成 tick 上出帧”决定：
+间隔判定为 `0.95 / L` 秒，于是每 `m = max(1, ceil(0.95 · R / L))` 个 tick 分析一次、实际帧率 `R / m`
+（`R` = 显示器刷新率、`L` = 设置的上限）。
+
+| 显示器 | 30 档 | 60 档 | 120 档 | 144 档 | 180 档 |
+| --- | --- | --- | --- | --- | --- |
+| 60 Hz | 30 | 60 | 60 | 60 | 60 |
+| 120 Hz | 30 | 60 | 120 | 120 | 120 |
+| 144 Hz | 28.8 | 48 | 72 | 144 | 144 |
+| 165 Hz | 27.5 | 55 | 82.5 | 82.5 | 165 |
+| 180 Hz | 30 | 60 | 90 | 90 | 180 |
+| 240 Hz | 30 | 60 | 120 | 120 | 120 |
+
+上限是**天花板**而不是精确帧率（144 Hz 屏选 60 → 约 48 FPS）；`0.95` 容差让 `L` 为 `R` 的整数分频
+（含 `L = R`）时能整除，避免 144 Hz 选 144 因 `RenderingTime` 抖动掉到 72。设置页提示文案明确
+“实际帧率还受显示器刷新率限制”。代价：30 FPS 时约 33 ms 的瞬态峰值可能落在两次分析之间，默认不限制时不存在。
+
 ## 10. 面板布局
 
 ```
@@ -266,10 +305,15 @@ Border（右栏，1px 左边框，PanelBackgroundBrush）
 ## 11. 设置页
 
 - 段落「播放可视化」插在「音频输出」与「快捷键」之间，沿用既有段落 / 行模板（90 px 标签列、ComboBox + Tag）。
-- 行：可视化方式、分段数、FFT 大小、频率范围（两个 ComboBox）、频段聚合、显示下限、频谱斜率、
+- 行：可视化方式、帧率上限、分段数、FFT 大小、频率范围（两个 ComboBox）、频段聚合、显示下限、频谱斜率、
   释放速度、峰值保持（开关 + ComboBox）、刻度（网格 / 频率标签两个开关）、「恢复默认参数」。
 - 与其它设置一致：改动即存（`SaveSettings()` → 800 ms 防抖写盘），并立即 `RefreshVisualizer()`
   让引擎与控件参数生效；非法值由 `Normalize` 回填。
+- 「帧率上限」ComboBox 以枚举名作 Tag，链路为
+  `ApplyVisualizer → Normalize → PopulateVisualizer → RefreshVisualizer → SaveSettings`；
+  `MainViewModel.VisualizerFrameRateLimit` 把枚举换算成整数绑定到 `SpectrumView.FrameRateLimit`，
+  `OnFrameRateLimitChanged` 重置计时、下一 tick 按新上限出帧。「恢复默认参数」把上限恢复为不限制
+  （2026-11-16，并入原 ADR-023-A1）。
 
 ## 12. 诊断与验收
 
@@ -288,7 +332,11 @@ analyzerAvg=0.184 ms analyzerMax=5.502 ms rate=48000Hz bands=40
 ```
 
 - `renderFrames` / `fps` 是实际绘制帧率，`ticks` / `tickFps` 是 WPF 渲染 tick 速率；
-  两者相等即无丢帧（用于区分「渲染慢」与「tick 变少」）。
+  不设上限时两者相等即无丢帧（用于区分「渲染慢」与「tick 变少」）。设了帧率上限后 `fps` 只统计真实
+  绘制帧、`tickFps` 仍含被跳过的 tick，因此 **`tickFps > fps` 就是“帧率上限生效”的直接证据**；
+  `analyzerFrames` 节流后等于实际分析帧数（2026-11-16，并入原 ADR-023-A1 §2.4）。
+- 诊断行目前未输出设置值：`src/EchoGarage.App/App.xaml.cs` 的 `Visualizer diagnostic:` 字符串拼接不在
+  2026-11-16 的改动范围内；后续若在其后追加 `frameRateLimit=<值>` 字段，在此登记。
 - 退出时 `ShutdownAsync` 还会记一行 `Spectrum stats:`（帧数、平均 / 最大分析耗时、采样率、段数）。
 - 自动化验收时按 ADR-012 把 `settings.json` 的 `Volume` 设为 0（抽头在音量前，画面不受影响）。
 - 注意：诊断开关的文件参数**不能**加进 `FileArgumentParser` 的 skipNext 名单 ——
@@ -303,13 +351,17 @@ analyzerAvg=0.184 ms analyzerMax=5.502 ms rate=48000Hz bands=40
 - `SpectrumProcessorTests`：四种 FFT 点数的幅度标定（−6.02 dBFS）、斜率增益逐段比对、Rms 白噪平坦性 vs Peak 倾斜、
   静音下限与 `LastFrameSilent`、直流不抬高最低段、超长输入取最新样本；
 - `VisualizationSettingsTests`：默认值、逐字段钳制、未知枚举回退、深拷贝、快照不可变、经 `settings.json` 往返、
-  越界 JSON 在 Load 时被修复。
+  越界 JSON 在 Load 时被修复；2026-11-16 扩充（并入原 ADR-023-A1 §3.1）：默认 `FrameRateLimit == Unlimited`
+  且 `ToFps() == 0`、未知枚举 `(VisualizerFrameRate)42 → Unlimited`、六个合法档位逐一映射 0/30/60/120/144/180、
+  `Fps144` 深拷贝、`settings.json` 往返、坏 JSON `"frameRateLimit": 42` 在 Load 时修复。
+- WPF 渲染层节流不做自动化单测（需要真实合成时钟），手工验收见 §9.1 与 §12 的诊断口径。
 
-全量测试：472 项通过（含既有 439 项），0 失败。
+全量测试：2026-11-15 为 472 项通过（含既有 439 项）、0 失败；2026-11-16 为 584 项通过、0 失败。
 
 ## 14. 分阶段路线
 
-- **阶段一（本 ADR，已完成）**：面板精简 + 分段频谱图 + 参数设置 + 诊断开关 + 单测。
+- **阶段一（本 ADR，已完成）**：面板精简 + 分段频谱图 + 参数设置 + 诊断开关 + 单测；
+  2026-11-16 追加渲染帧率上限（30 / 60 / 120 / 144 / 180 / 不限制，默认不限制，见 §9.1）。
 - 阶段二（未排期）：更多可视化形态（LED 分段柱、波形 / 示波器），在 `VisualizerKind` 上扩展枚举与渲染分支；
   若大窗口下出现布局抖动，把 `SpectrumView` 的 `OnRender` 换成 `DrawingVisual` 宿主（只触发渲染失效）。
 - 阶段三（未排期）：可视化区域高度可拖拽、全屏可视化窗口、配色预设。
@@ -323,6 +375,16 @@ analyzerAvg=0.184 ms analyzerMax=5.502 ms rate=48000Hz bands=40
 | `Frame` 每帧克隆两个数组 | 每帧约 640 B，40 帧/秒量级可忽略；如成为问题可改成双缓冲复用 |
 | 窄面板下分段偏细 | 分段数可调（8…96），默认 32 段 |
 | 静音 / 音量 0 时抽头仍在工作 | 抽头在音量之前，属于设计选择（也是 ADR-012 验收所需） |
+| 高刷屏档位取整，实际帧率低于所选值（144 Hz 选 60 → 约 48） | 上限语义 = 天花板；设置页提示 + §9.1 表格说明，避免验收误判 |
+| 30 FPS 下瞬态峰值可能被跳过 | 视觉可接受；默认不限制不受影响，需要更灵敏可提高分析频率（另立决策） |
+| 节流后诊断 `fps` 变小被误读为性能问题 | `tickFps` 仍在，两者之差即节流；后续可在诊断行加 `frameRateLimit` 字段 |
+| 远程桌面 / 驱动刷新率低于档位时实际帧率更低 | 同“取整”语义：上限是天花板，不是保证值 |
+| 错误 / 未知枚举值 | 三层兜底：`Normalize` 回退、`ToFps()` 回退 0、DP 默认 0 |
+| 新增档位遗漏设置项 | ComboBox 以枚举名 Tag 驱动（`ReadEnumTag`），新增档位需同时加枚举与选项 |
+
+**回滚**（2026-11-16，并入原 ADR-023-A1）：删除 `VisualizerFrameRate` / `FrameRateLimit` / `ToFps()` /
+`FrameRateTolerance` / DP 与绑定 / 设置行与读取代码及对应测试即可；`settings.json` 中的 `frameRateLimit`
+会被旧代码当作未知属性忽略，不需要迁移或清理配置。
 
 ## 16. 备选方案（已否决）
 
@@ -331,9 +393,22 @@ analyzerAvg=0.184 ms analyzerMax=5.502 ms rate=48000Hz bands=40
 - **WASAPI loopback 采集**：多一条链路、独占模式不可用、有漂移，否决。
 - **`WriteableBitmap` 逐像素绘制**：仅 LED 像素风格才需要，实心柱状用几何更快更清晰，否决。
 - **每段一个 `Rectangle` + 数据绑定**：128 个矩形 @30 FPS 就吃约 30% CPU，否决。
+- **只提供“性能模式”布尔（固定 30 FPS）**：无法满足 60 / 120 / 144 档位需求，否决。
+- **用 `DispatcherTimer` 独立驱动分析 / 绘制**：计时器与合成时钟不同步，帧间抖动、额外延迟，
+  且仍需 `InvalidateVisual`，否决。
+- **在分析器内部“每 N 帧才 FFT”**：绘制仍每 tick 发生，省不了绘制开销，还会让诊断口径混乱，否决。
+- **把 dt 固定成 `1 / 上限`**：破坏 §6.5 的“速度 = dB/s × dt、与帧率无关”，释放与峰值保持变慢，否决。
+- **用 `RenderOptions.ProcessRenderMode` 降级软件渲染**：画面质量受损且不解决持续渲染，否决。
+- **依赖“关闭可视化”（`VisualizerKind.None`）**：已有选项，但用户想要“开着但省资源”，否决。
 
 ## 17. 修订记录
 
-- 2026-11-15：初稿（阶段一实现完成，附实测帧率与测试结果），待 owner 批准后移入 `docs/adr/` 并更新 `ADR-index.md`。
+- 2026-11-15：初稿（阶段一实现完成，附实测帧率与测试结果）。
 - 2026-11-15：按 owner 反馈调整默认参数（32 段 / −50 dBFS 下限 / 45 dB/s 释放），移除设置页底部的「当前参数摘要」行；性能表按新默认值重测。
-- 2026-11-15：owner 批准（Accepted），移入 `docs/adr/` 并更新 `ADR-index.md`。
+- 2026-11-15：owner 批准（Accepted），归档至 `docs/adr/` 并更新 `ADR-index.md`。
+- 2026-11-16：**原 ADR-023-A1（已并入本文）**——新增渲染帧率上限 30 / 60 / 120 / 144 / 180 / 不限制，默认不限制；
+  节流放在真实分析帧之前整帧跳过、`dt` 保持真实经过时间；新增 `VisualizerFrameRate` 枚举、`ToFps()`、
+  `SpectrumView.FrameRateLimit` 依赖属性、设置页「帧率上限」行、§9.1 取整表与诊断口径（§0 / §5 / §6.1 / §6.5 /
+  §9.1 / §11 / §12 / §13 / §15）。
+
+> 原 ADR-023-A1 的正文已并入本文，对应文件已从 `docs/adr/` 移除，编号作为追溯信息保留。

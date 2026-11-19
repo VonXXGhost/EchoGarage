@@ -47,7 +47,7 @@ public static class WaveformMath
     /// <summary>
     /// 最终快照的最小显示动态范围（dB）：素材自身的 p5–p99.5 不足该值时，把下界向下扩展
     /// （而不是抬高上界，见 <see cref="StretchWindow"/>）。取 30 dB 让窄动态 / 恒定电平素材的
-    /// 非静音列仍有明显高度；下界不会低于 <see cref="SilenceDb"/>（ADR-015-A2）。
+    /// 非静音列仍有明显高度；下界不会低于 <see cref="SilenceDb"/>（见 ADR-015（A2 修订））。
     /// </summary>
     public const double MinimumStretchDb = 30.0;
 
@@ -190,7 +190,7 @@ public static class WaveformMath
     /// 由非静音列的 dB 集合计算逐曲拉伸窗口：lo = p5、hi = p99.5；若 hi − lo 不足
     /// <see cref="MinimumStretchDb"/>，把 lo 向下扩展到 hi − MinimumStretchDb（且不低于
     /// <see cref="SilenceDb"/>），hi 保持不变。旧实现改为抬高 hi，会让恒定电平素材（p5 ≈ p99.5）
-    /// 的所有列都落在窗口下界、高度归零，波形看起来是空的（ADR-015-A2）。
+    /// 的所有列都落在窗口下界、高度归零，波形看起来是空的（见 ADR-015（A2 修订））。
     /// 集合为空（整曲静音）时返回 [−100, −70]，高度全为 0，窗口只用于占位。
     /// </summary>
     public static (double FloorDb, double CeilingDb) StretchWindow(ReadOnlySpan<double> nonSilentDecibels)

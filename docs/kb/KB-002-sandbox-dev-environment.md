@@ -1,7 +1,7 @@
 # KB-002：受限开发环境（DSH 沙箱）下的构建与测试
 
-- 状态：已批准（Accepted，2026-11-09，owner）
-- 日期：2026-11-09
+- 状态：Accepted（2026-11-09 批准）
+- 日期：2026-11-09（2026-11-19 校对过示例路径与测试计数）
 - 环境：DSH（DeepSeek Harness）Windows 主机，workspace-write 文件策略
 
 ## 现象与解决
@@ -36,7 +36,7 @@ dotnet build tests/EchoGarage.Tests
 解决：设置 `TEMP` / `TMP` 到工作区内目录后还原，或清理 `%TEMP%\NuGetScratch\lock` 并结束残留 `dotnet` 进程。
 
 ```powershell
-$env:TEMP='G:\Project\echo-garage\.tmp'; $env:TMP=$env:TEMP
+$env:TEMP='<repo>\.tmp'; $env:TMP=$env:TEMP
 dotnet restore EchoGarage.sln
 ```
 
@@ -67,7 +67,7 @@ DSH 的 `diagnose-windows-sandbox-acl` 技能命令可诊断并修复：给当�
 解决：给应用设置 `ECHOGARAGE_DATA_DIR` 指向工作区内目录再启动，例如：
 
 ```powershell
-$env:ECHOGARAGE_DATA_DIR = 'G:\Project\echo-garage\.testdata'
+$env:ECHOGARAGE_DATA_DIR = '<repo>\artifacts\.testdata'
 .\artifacts\publish\win-x64\EchoGarage.exe
 ```
 
@@ -88,7 +88,8 @@ $env:ECHOGARAGE_DATA_DIR = 'G:\Project\echo-garage\.testdata'
 应用 / 测试进程里抛 `UnauthorizedAccessException`，而同一会话的 PowerShell 可以写。
 
 影响：文件关联的“真实注册表”集成测试会自动跳过（`Assert.Skip`）；文件关联的键路径逻辑用内存
-`FakeRegistryStore` 做了完整覆盖（62 个测试中的 8 个），仍可发现路径 / 值写错的问题。
+`FakeRegistryStore` 做了完整覆盖，仍可发现路径 / 值写错的问题（“62 个测试中的 8 个”为 2026-11-09
+的项目快照，测试总数此后已增长）。
 
 建议：发布后由 owner 在普通桌面会话点一次“注册为默认播放器”，确认资源管理器中出现 EchoGarage。
 

@@ -11,7 +11,7 @@ public enum VisualizerKind
 }
 
 /// <summary>
-/// 播放可视化渲染的帧率上限（ADR-023 A1）。数值即节流后的目标 FPS，<see cref="Unlimited"/> 为 0。
+/// 播放可视化渲染的帧率上限（ADR-023（A1 修订））。数值即节流后的目标 FPS，<see cref="Unlimited"/> 为 0。
 /// 上限只是天花板：实际帧率还受显示器刷新率与 WPF 渲染 tick 的取整限制。
 /// </summary>
 public enum VisualizerFrameRate
@@ -146,7 +146,7 @@ public sealed class VisualizationSettings
     public VisualizerKind Kind { get; set; } = VisualizerKind.Spectrum;
 
     /// <summary>
-    /// 渲染帧率上限（ADR-023 A1）。默认不限制，保持加入该选项前的行为；
+    /// 渲染帧率上限（ADR-023（A1 修订））。默认不限制，保持加入该选项前的行为；
     /// 挂在可视化级别而不是 <see cref="SpectrumSettings"/> 上，因为限制的是渲染循环而不是频谱分析参数，
     /// 后续其它可视化形态可以复用同一个上限。
     /// </summary>

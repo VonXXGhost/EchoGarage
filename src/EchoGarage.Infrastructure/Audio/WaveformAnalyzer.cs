@@ -15,7 +15,7 @@ public sealed class WaveformAnalyzer : IWaveformAnalyzer
 {
     /// <summary>
     /// 算法版本；EGWV 头里记录它，版本变化即触发重算。v2：最终高度窗口的最小显示动态范围
-    /// 放宽到 30 dB 且改为向下扩展下界（ADR-015-A2，旧 v1 缓存自动失效并重算）。
+    /// 放宽到 30 dB 且改为向下扩展下界，见 ADR-015（A2 修订）；旧 v1 缓存自动失效并重算。
     /// </summary>
     public const int AnalyzerVersion = 2;
 

@@ -19,7 +19,7 @@ public partial class TagPropertiesWindow : ThemedWindow
 {
     private const string MultiValueText = "<多值>";
 
-    /// <summary>支持从媒体库候选值补全的字段（ADR-027）；其余字段保持纯手动输入。</summary>
+    /// <summary>支持从媒体库候选值补全的字段（ADR-025（候选值））；其余字段保持纯手动输入。</summary>
     private static readonly string[] SuggestionFieldKeys =
     [
         TagFieldKeys.Artist,
@@ -122,7 +122,7 @@ public partial class TagPropertiesWindow : ThemedWindow
     /// 快捷规范化只改变当前编辑框里的文本，保存时仍按“只提交被修改字段”的规则处理。
     /// </param>
     /// <param name="tagSuggestions">
-    /// 媒体库标签候选值服务（ADR-027）；为 null 时不提供自动补全（诊断/截图与单元测试无需数据库）。
+    /// 媒体库标签候选值服务（ADR-025（候选值））；为 null 时不提供自动补全（诊断/截图与单元测试无需数据库）。
     /// </param>
     public TagPropertiesWindow(
         IReadOnlyList<Track> tracks,
@@ -403,7 +403,7 @@ public partial class TagPropertiesWindow : ThemedWindow
     }
 
     // =====================================================================
-    // 标签补全候选（ADR-027）：只对艺术家 / 专辑艺术家 / 作曲家 / 流派生效。
+    // 标签补全候选（ADR-025（候选值））：只对艺术家 / 专辑艺术家 / 作曲家 / 流派生效。
     // 候选值来自媒体库缓存，异步加载一次；之后在内存里按输入前缀/包含匹配。
     // =====================================================================
 
