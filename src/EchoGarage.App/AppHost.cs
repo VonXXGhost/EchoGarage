@@ -42,6 +42,7 @@ public sealed class AppHost : IAsyncDisposable
         PlaylistRepository = new SqlitePlaylistRepository(Database, Logger);
         TagService = new TagLibTagService(Logger);
         Converter = new AudioConverter(TagService, Logger, Paths);
+        Loudness = new LoudnessAnalyzer(Logger);
         Scanner = new LibraryScanner(LibraryRepository, TagService, Logger);
         Watcher = new LibraryFileWatcher(Logger);
         // 播放可视化数据源（ADR-023）：播放器把解码后的样本喂给它，右栏控件按渲染帧拉取。
@@ -67,6 +68,8 @@ public sealed class AppHost : IAsyncDisposable
     public IPlaylistRepository PlaylistRepository { get; }
     public ITagService TagService { get; }
     public IAudioConverter Converter { get; }
+    /// <summary>EBU R128 / BS.1770 响度测量（ADR-028）；计算与调整共用。</summary>
+    public ILoudnessAnalyzer Loudness { get; }
     public ILibraryScanner Scanner { get; }
     public IFileWatcherService Watcher { get; }
     public IAudioPlayer Player { get; }

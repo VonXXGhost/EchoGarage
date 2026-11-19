@@ -69,6 +69,9 @@ public sealed class AppSettings
     /// <summary>Explicit encoder/tool paths; empty means auto-detect from tools\ or PATH.</summary>
     public ConversionEncoderPaths Encoders { get; set; } = new();
 
+    /// <summary>响度调整窗口打开时填入的默认目标积分响度（LUFS），默认 -10.0，范围 -60.0…0.0。</summary>
+    public double LoudnessDefaultTargetLufs { get; set; } = -10.0;
+
     /// <summary>Extensions the user last chose in the file-association dialog (never auto-registered).</summary>
     public List<string> AssociationExtensions { get; set; } = [];
 

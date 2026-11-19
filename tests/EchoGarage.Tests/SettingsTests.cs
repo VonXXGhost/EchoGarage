@@ -82,6 +82,55 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_DefaultsLoudnessTargetToMinusTen()
+    {
+        await _settings.LoadAsync();
+
+        Assert.Equal(-10.0, _settings.Current.LoudnessDefaultTargetLufs, 3);
+    }
+
+    [Fact]
+    public async Task Save_ClampsAndRoundsLoudnessDefaultTarget()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.LoudnessDefaultTargetLufs = -200;
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+        Assert.Equal(-60.0, reloaded.Current.LoudnessDefaultTargetLufs, 3);
+
+        reloaded.Current.LoudnessDefaultTargetLufs = 4392.6;
+        await reloaded.SaveAsync();
+
+        var reloadedAgain = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloadedAgain.LoadAsync();
+        Assert.Equal(0.0, reloadedAgain.Current.LoudnessDefaultTargetLufs, 3);
+
+        reloadedAgain.Current.LoudnessDefaultTargetLufs = -11.26;
+        await reloadedAgain.SaveAsync();
+
+        var reloadedRounded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloadedRounded.LoadAsync();
+        Assert.Equal(-11.3, reloadedRounded.Current.LoudnessDefaultTargetLufs, 3);
+    }
+
+    [Fact]
+    public async Task Load_MissingLoudnessTargetDefaultsToMinusTen()
+    {
+        await _settings.LoadAsync();
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        Assert.True(node.Remove("loudnessDefaultTargetLufs"));
+        await File.WriteAllTextAsync(_paths.SettingsFile, node.ToJsonString());
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(-10.0, reloaded.Current.LoudnessDefaultTargetLufs, 3);
+    }
+
+    [Fact]
     public async Task ExportAndImport_RoundTripsConfigurationOnly()
     {
         await _settings.LoadAsync();

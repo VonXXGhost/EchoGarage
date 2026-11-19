@@ -5,6 +5,7 @@ using EchoGarage.Infrastructure.Configuration;
 using EchoGarage.Infrastructure.Conversion;
 using EchoGarage.Infrastructure.Logging;
 using EchoGarage.Infrastructure.Tagging;
+using NAudio.Wave;
 
 namespace EchoGarage.Tests;
 
@@ -128,6 +129,70 @@ public sealed class ConversionPipelineTests
     }
 
     [Fact]
+    public async Task Convert_WavToWav_ResamplesWithSsrc_PreservesAudioAtStart()
+    {
+        var ssrcPath = TestTools.ResolveTool("ssrc.exe");
+        if (ssrcPath is null)
+        {
+            Assert.Skip("tools\\ssrc.exe is not available.");
+        }
+
+        using var workspace = new TempWorkspace();
+        var paths = new AppPaths(workspace.Combine("state"));
+        paths.EnsureCreated();
+        var logger = new FileLogger(paths);
+        // 96 kHz -> 48 kHz exercises the downsample path whose SSRC latency is largest.
+        var source = TestAudio.CreateWav(
+            workspace.Combine("source.wav"),
+            seconds: 1,
+            sampleRate: 96000,
+            frequency: 440);
+
+        var preset = new ConversionPreset
+        {
+            Name = "wav-48k",
+            Format = ConversionFormat.Wav,
+            BitDepth = ConversionBitDepth.Pcm16,
+            Resample = true,
+            TargetSampleRate = 48000,
+            FileNameTemplate = "%title%",
+            CopyTags = false
+        };
+
+        var (result, outputPath) = await ConvertAsync(
+            paths,
+            logger,
+            workspace,
+            source,
+            preset,
+            new ConversionEncoderPaths { SsrcPath = ssrcPath });
+
+        Assert.True(result.Success, result.Error);
+        var samples = ReadMonoSamples(outputPath);
+        // The expected output length must not include SSRC's leading/trailing padding.
+        Assert.Equal(48000, samples.Length);
+
+        // Regression: before latency compensation the first ~0.34 s were SSRC padding
+        // and the 440 Hz tone only started afterwards.
+        var window = samples.Take(4800).ToArray();
+        var rms = Math.Sqrt(window.Sum(sample => sample * sample) / window.Length);
+        Assert.InRange(rms, 0.12, 0.22);
+
+        // The retained window must be phase-aligned with the original 440 Hz tone.
+        double xy = 0, xx = 0, yy = 0;
+        for (var n = 0; n < window.Length; n++)
+        {
+            var expected = Math.Sin(2 * Math.PI * 440 * n / 48000.0);
+            xy += window[n] * expected;
+            xx += window[n] * window[n];
+            yy += expected * expected;
+        }
+
+        var correlation = xy / Math.Sqrt(xx * yy);
+        Assert.True(correlation > 0.9, $"expected a phase-aligned 440 Hz tone, correlation was {correlation:0.###}.");
+    }
+
+    [Fact]
     public async Task Convert_FlacToWav_DecodesMediaFoundationSource()
     {
         var flacPath = TestTools.ResolveTool("flac.exe");
@@ -198,6 +263,24 @@ public sealed class ConversionPipelineTests
             progress: null);
 
         return (result, outputPath);
+    }
+
+    private static float[] ReadMonoSamples(string path)
+    {
+        using var reader = new WaveFileReader(path);
+        var provider = reader.ToSampleProvider();
+        var buffer = new float[4096];
+        var samples = new List<float>();
+        int read;
+        while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (var i = 0; i < read; i++)
+            {
+                samples.Add(buffer[i]);
+            }
+        }
+
+        return samples.ToArray();
     }
 
     private static void WriteTags(IAppLogger logger, string path)

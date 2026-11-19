@@ -594,6 +594,32 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Loudness adjustment default target -->
+                    <TextBlock Text="响度调整" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="默认目标响度" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <DockPanel Grid.Column="1">
+                                    <TextBlock DockPanel.Dock="Right" Text="LUFS" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0" />
+                                    <TextBox x:Name="LoudnessTargetBox" Height="28" MaxWidth="140"
+                                             HorizontalAlignment="Left" LostFocus="OnLoudnessTargetLostFocus"
+                                             ToolTip="响度调整窗口打开时填入的目标积分响度（-60.0 … 0.0 LUFS）" />
+                                </DockPanel>
+                            </Grid>
+                            <TextBlock Text="仅影响「响度调整」窗口打开时的目标初始值，默认 -10.0 LUFS；实际调整仍以窗口内输入为准。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="90,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Tag normalization rules (ADR-025) -->
                     <TextBlock Text="标签规范化" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"

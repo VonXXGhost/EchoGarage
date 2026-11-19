@@ -137,6 +137,13 @@ public sealed class JsonSettingsService : ISettingsService
         settings.TagNormalizationRules = TagNormalization.NormalizeRules(settings.TagNormalizationRules, _logger);
         settings.ConversionPresets = ConversionPresetFactory.NormalizeAll(settings.ConversionPresets, settings.Hotkeys, _logger);
         settings.Encoders = ConversionPresetFactory.NormalizeEncoders(settings.Encoders);
+        if (!double.IsFinite(settings.LoudnessDefaultTargetLufs))
+        {
+            settings.LoudnessDefaultTargetLufs = -10.0;
+        }
+
+        settings.LoudnessDefaultTargetLufs = Math.Round(
+            Math.Clamp(settings.LoudnessDefaultTargetLufs, -60.0, 0.0), 1, MidpointRounding.AwayFromZero);
         settings.Network = NetworkSettings.Normalize(settings.Network);
         settings.WebTags = WebTagSettings.Normalize(settings.WebTags);
         settings.Visualization = VisualizationSettings.Normalize(settings.Visualization);

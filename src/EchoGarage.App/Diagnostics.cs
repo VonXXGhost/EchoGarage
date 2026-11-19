@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -21,6 +22,7 @@ internal static class Diagnostics
     {
         Directory.CreateDirectory(directory);
         var vm = main.ViewModel;
+        LogTrackMenuItems(host, main);
 
         await CaptureWindowAsync(new TextInputWindow("新建播放列表", "播放列表名称", "新播放列表"), directory, "dialog-input.png", main);
 
@@ -86,7 +88,31 @@ internal static class Diagnostics
             main);
         await CaptureWindowAsync(new FieldGuideWindow(), directory, "dialog-field-guide.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
+        var settingsFilesWindow = new SettingsWindow(host, vm);
+        settingsFilesWindow.SelectPage("Files");
+        await CaptureWindowAsync(settingsFilesWindow, directory, "dialog-settings-files.png", main);
         var dialogs = new DialogService(main, host);
+
+        // 响度计算 / 调整（ADR-028）：实例化窗口即可验证 XAML 解析与布局，
+        // 调整窗口会自动开始分析，截图后会关闭（取消分析）。
+        var scanRows = vm.Tracks.Take(3).Select(row => new LoudnessScanRowViewModel(row.Track)).ToList();
+        if (scanRows.Count > 0)
+        {
+            await CaptureWindowAsync(new LoudnessScanWindow(scanRows), directory, "dialog-loudness-scan.png", main);
+        }
+
+        var adjustmentTrack = vm.Tracks.Select(row => row.Track).FirstOrDefault(track => File.Exists(track.Path));
+        if (adjustmentTrack is not null)
+        {
+            var adjustWindow = new LoudnessAdjustWindow(host, dialogs, adjustmentTrack);
+            await CaptureWindowAsync(
+                adjustWindow,
+                directory,
+                "dialog-loudness-adjust.png",
+                main,
+                delayMs: 7000);
+        }
+
         await CaptureWindowAsync(
             new ConversionSettingsWindow(host.Settings.Current.ConversionPresets, dialogs),
             directory,
@@ -101,7 +127,31 @@ internal static class Diagnostics
         host.Logger.Info($"Diagnostic screenshots written to {directory}.");
     }
 
-    private static async Task CaptureWindowAsync(Window window, string directory, string fileName, Window owner)
+    /// <summary>确认歌曲右键菜单包含 ADR-028 新增的响度计算 / 调整项（菜单打开逻辑见 MainWindow）。</summary>
+    private static void LogTrackMenuItems(AppHost host, MainWindow main)
+    {
+        if (main.TryFindResource("TrackMenu") is not ContextMenu menu)
+        {
+            host.Logger.Warn("Diagnostics: TrackMenu resource not found.");
+            return;
+        }
+
+        var headers = menu.Items.OfType<MenuItem>()
+            .Select(item => item.Header as string)
+            .Where(header => !string.IsNullOrWhiteSpace(header))
+            .ToList();
+        host.Logger.Info("Diagnostics: track menu items = " + string.Join(" | ", headers));
+
+        foreach (var required in new[] { "响度计算…", "响度调整…" })
+        {
+            if (!headers.Contains(required))
+            {
+                host.Logger.Warn($"Diagnostics: track menu item missing = {required}");
+            }
+        }
+    }
+
+    private static async Task CaptureWindowAsync(Window window, string directory, string fileName, Window owner, int delayMs = 450)
     {
         try
         {
@@ -110,7 +160,7 @@ internal static class Diagnostics
             window.ShowInTaskbar = false;
             window.Show();
             await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-            await Task.Delay(450);
+            await Task.Delay(delayMs);
             SaveVisual(window, Path.Combine(directory, fileName), (int)window.ActualWidth, (int)window.ActualHeight);
         }
         catch (Exception ex)

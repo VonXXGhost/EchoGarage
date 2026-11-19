@@ -73,11 +73,30 @@ public static class EncoderCommandLine
 
     public static IReadOnlyList<string> BuildSsrcArgs(ConversionPreset preset, string inputWav, string outputFile, int bits)
     {
+        return BuildSsrcArgs(
+            Math.Max(0, preset.TargetSampleRate),
+            preset.ResampleProfile,
+            inputWav,
+            outputFile,
+            bits);
+    }
+
+    /// <summary>
+    /// Builds SSRC arguments for an explicit rate/profile pair. Used by the latency probe
+    /// so it can measure the resampler delay without constructing a full preset.
+    /// </summary>
+    public static IReadOnlyList<string> BuildSsrcArgs(
+        int targetSampleRate,
+        ConversionResampleProfile profile,
+        string inputWav,
+        string outputFile,
+        int bits)
+    {
         return
         [
-            "--rate", Math.Max(0, preset.TargetSampleRate).ToString(CultureInfo.InvariantCulture),
+            "--rate", Math.Max(0, targetSampleRate).ToString(CultureInfo.InvariantCulture),
             "--bits", Math.Clamp(bits, 16, 24).ToString(CultureInfo.InvariantCulture),
-            "--profile", preset.ResampleProfile switch
+            "--profile", profile switch
             {
                 ConversionResampleProfile.Standard => "standard",
                 ConversionResampleProfile.Insane => "insane",

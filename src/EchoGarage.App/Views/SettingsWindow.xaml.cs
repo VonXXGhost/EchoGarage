@@ -87,11 +87,26 @@ public partial class SettingsWindow : ThemedWindow
         RefreshFolders();
         PopulateHotkeys();
         PopulateEncoders();
+        PopulateLoudnessSettings();
         UpdateAssociationStatus();
         PopulateWebTagSettings();
         PopulateVisualizer();
         PopulateTagNormalizationRules();
         SelectDefaultSettingsPage();
+    }
+
+    /// <summary>诊断截图用：按导航 Tag 选中设置页（Appearance/Playback/Hotkeys/Library/Files/Network/About）。</summary>
+    public void SelectPage(string tag)
+    {
+        foreach (var item in SettingsNav.Items)
+        {
+            if (item is ListBoxItem { Tag: string itemTag } &&
+                string.Equals(itemTag, tag, StringComparison.Ordinal))
+            {
+                SettingsNav.SelectedItem = item;
+                return;
+            }
+        }
     }
 
     /// <summary>默认选中左侧导航的第一项（外观）。</summary>
@@ -411,6 +426,36 @@ public partial class SettingsWindow : ThemedWindow
         }
 
         _host.Settings.Current.Encoders.NeroAacPath = path;
+        SaveSettings();
+    }
+
+    /// <summary>响度调整窗口的默认目标响度（-60.0 … 0.0 LUFS，默认 -10.0）。</summary>
+    private void PopulateLoudnessSettings()
+    {
+        LoudnessTargetBox.Text = _host.Settings.Current.LoudnessDefaultTargetLufs.ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
+    private void OnLoudnessTargetLostFocus(object sender, RoutedEventArgs e) => SaveLoudnessTarget();
+
+    private void SaveLoudnessTarget()
+    {
+        var current = _host.Settings.Current.LoudnessDefaultTargetLufs;
+        var text = LoudnessTargetBox.Text.Trim();
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ||
+            !double.IsFinite(value))
+        {
+            LoudnessTargetBox.Text = current.ToString("0.0", CultureInfo.InvariantCulture);
+            return;
+        }
+
+        value = Math.Round(Math.Clamp(value, -60.0, 0.0), 1, MidpointRounding.AwayFromZero);
+        LoudnessTargetBox.Text = value.ToString("0.0", CultureInfo.InvariantCulture);
+        if (Math.Abs(value - current) < 0.0001)
+        {
+            return;
+        }
+
+        _host.Settings.Current.LoudnessDefaultTargetLufs = value;
         SaveSettings();
     }
 

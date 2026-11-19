@@ -2,6 +2,7 @@ using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
 using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Configuration;
+using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
 namespace EchoGarage.Infrastructure.Conversion;
@@ -73,16 +74,26 @@ public sealed class AudioConverter : IAudioConverter
 
             Report(ConversionStage.Decoding, 0.1);
             var decoded = MediaDecoder.Open(sourcePath);
+            // ADR-028 §3.6：响度调整的线性增益在解码之后、重采样/写中间 WAV 之前施加。
+            // GainDb = 0 时不包装，保证旧调用（4 参 ConversionRequest）行为逐位不变。
+            ISampleProvider decodedProvider = request.GainDb == 0.0
+                ? decoded.Provider
+                : new GainSampleProvider(decoded.Provider, request.GainDb);
             var intermediateWav = Path.Combine(tempDirectory, "decoded.wav");
             // 有损格式的降采样由调用方在转换前询问用户（ConversionCoordinator），这里只执行预设自己的要求。
             var effectivePreset = preset;
             try
             {
-                var sourceSampleRate = decoded.Provider.WaveFormat.SampleRate;
+                var sourceSampleRate = decodedProvider.WaveFormat.SampleRate;
                 var sourceBits = decoded.SourceBitsPerSample > 0
                     ? decoded.SourceBitsPerSample
                     : ProbeBitsPerSample(sourcePath);
                 var intermediateBits = ResolveBitDepth(effectivePreset, sourceBits);
+                // ADR-028 §3.6.1：只有 16-bit 无损输出（Flac/WAV）才加 TPDF dither，
+                // 24-bit、32f 与有损格式（编码器自己处理量化）都不加。
+                var enableDither = request.EnableDither &&
+                    intermediateBits <= 16 &&
+                    effectivePreset.Format is ConversionFormat.Flac or ConversionFormat.Wav;
 
                 if (effectivePreset.Resample &&
                     effectivePreset.TargetSampleRate > 0 &&
@@ -96,12 +107,13 @@ public sealed class AudioConverter : IAudioConverter
 
                     Report(ConversionStage.Resampling, 0.25);
                     var resampled = await ResampleAsync(
-                        decoded.Provider,
+                        decodedProvider,
                         effectivePreset,
                         intermediateBits,
                         ssrcPath,
                         tempDirectory,
                         sourcePath,
+                        enableDither,
                         cancellationToken).ConfigureAwait(false);
                     intermediateWav = resampled.Path;
                     warning = AppendWarning(warning, resampled.Warning);
@@ -109,7 +121,12 @@ public sealed class AudioConverter : IAudioConverter
                 else
                 {
                     Report(ConversionStage.Resampling, 0.3);
-                    PcmWavWriter.Write(decoded.Provider, intermediateWav, intermediateBits, cancellationToken);
+                    PcmWavWriter.Write(
+                        decodedProvider,
+                        intermediateWav,
+                        intermediateBits,
+                        cancellationToken,
+                        enableDither);
                 }
             }
             finally
@@ -258,40 +275,93 @@ public sealed class AudioConverter : IAudioConverter
     }
 
     private async Task<ResampleOutcome> ResampleAsync(
-        NAudio.Wave.ISampleProvider source,
+        ISampleProvider source,
         ConversionPreset preset,
         int bitDepth,
         string? ssrcPath,
         string tempDirectory,
         string sourcePath,
+        bool enableDither,
         CancellationToken cancellationToken)
     {
         var resampledPath = Path.Combine(tempDirectory, "resampled.wav");
         if (ssrcPath is not null)
         {
             var preResamplePath = Path.Combine(tempDirectory, "pre-resample.wav");
-            var preResampleFrames = PcmWavWriter.Write(source, preResamplePath, bitDepth, cancellationToken);
+            // SSRC 只接受整数 PCM；16-bit 目标在第一次量化（pre-resample）时就加 dither。
+            var preResampleFrames = PcmWavWriter.Write(
+                source,
+                preResamplePath,
+                bitDepth,
+                cancellationToken,
+                enableDither);
 
             var arguments = EncoderCommandLine.BuildSsrcArgs(preset, preResamplePath, resampledPath, bitDepth);
             _logger.Debug($"Conversion resample: {EncoderCommandLine.FormatCommandLine(ssrcPath, arguments)}");
             var toolResult = await _runner.RunAsync(ssrcPath, arguments, cancellationToken).ConfigureAwait(false);
+            var expectedFrames = (long)Math.Round(
+                preResampleFrames * (double)preset.TargetSampleRate / source.WaveFormat.SampleRate,
+                MidpointRounding.AwayFromZero);
             if (toolResult.Succeeded && File.Exists(resampledPath) && new FileInfo(resampledPath).Length > 0)
             {
-                // SSRC flushes its filter tail as trailing silence; trim back to the expected length.
-                var expectedFrames = (long)Math.Round(
-                    preResampleFrames * (double)preset.TargetSampleRate / source.WaveFormat.SampleRate,
-                    MidpointRounding.AwayFromZero);
-                PcmWavWriter.TrimToFrames(resampledPath, expectedFrames);
-                return new ResampleOutcome(resampledPath, null);
+                try
+                {
+                    // SSRC pads the beginning with its linear-phase filter delay and the end
+                    // with its flush tail. Trim both sides to the expected content window.
+                    var latencyFrames = await SsrcLatencyProbe.MeasureAsync(
+                        ssrcPath,
+                        source.WaveFormat.SampleRate,
+                        preset.TargetSampleRate,
+                        preset.ResampleProfile,
+                        tempDirectory,
+                        _runner,
+                        _logger).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    PcmWavWriter.TrimToFrames(resampledPath, expectedFrames, latencyFrames);
+                    _logger.Debug(
+                        $"SSRC resample trimmed {latencyFrames} leading frames and the tail " +
+                        $"to {expectedFrames} frames for {sourcePath}.");
+                    return new ResampleOutcome(resampledPath, null);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    _logger.Warn($"SSRC latency compensation failed for {sourcePath}: {exception.Message}");
+                    ResampleWithWdl(preResamplePath, resampledPath, preset.TargetSampleRate, bitDepth, cancellationToken, enableDither);
+                    return new ResampleOutcome(resampledPath, "SSRC 延迟补偿失败，已回退到内置重采样器。");
+                }
             }
 
             _logger.Warn($"SSRC resampling failed for {sourcePath} (exit {toolResult.ExitCode}): {Truncate(toolResult.StandardError)}");
+            ResampleWithWdl(preResamplePath, resampledPath, preset.TargetSampleRate, bitDepth, cancellationToken, enableDither);
             return new ResampleOutcome(resampledPath, "SSRC 重采样失败，已回退到内置重采样器。");
         }
 
         var resampler = new WdlResamplingSampleProvider(source, preset.TargetSampleRate);
-        PcmWavWriter.Write(resampler, resampledPath, bitDepth, cancellationToken);
+        PcmWavWriter.Write(resampler, resampledPath, bitDepth, cancellationToken, enableDither);
         return new ResampleOutcome(resampledPath, null);
+    }
+
+    /// <summary>
+    /// Resamples the already-quantized intermediate WAV with NAudio's WDL resampler.
+    /// Used as a fallback when SSRC fails or its latency cannot be measured.
+    /// </summary>
+    private static void ResampleWithWdl(
+        string sourcePath,
+        string outputPath,
+        int targetSampleRate,
+        int bitDepth,
+        CancellationToken cancellationToken,
+        bool enableDither)
+    {
+        if (File.Exists(outputPath))
+        {
+            File.Delete(outputPath);
+        }
+
+        using var reader = new WaveFileReader(sourcePath);
+        var provider = reader.ToSampleProvider();
+        var resampler = new WdlResamplingSampleProvider(provider, targetSampleRate);
+        PcmWavWriter.Write(resampler, outputPath, bitDepth, cancellationToken, enableDither);
     }
 
     private static int ResolveBitDepth(ConversionPreset preset, int sourceBitsPerSample)

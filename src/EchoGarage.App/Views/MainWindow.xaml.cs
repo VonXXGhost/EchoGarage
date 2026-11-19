@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly DialogService _dialogs;
     private readonly HotkeyService _hotkeys;
     private readonly ConversionCoordinator _conversion;
+    private readonly LoudnessCoordinator _loudness;
     private readonly Dictionary<DataGridColumn, string> _columnKeys = [];
     private bool _seekInteracting;
     private double _seekTargetSeconds;
@@ -59,6 +60,7 @@ public partial class MainWindow : Window
         _vm = new MainViewModel(host, _dialogs, waveformModeDiagnostics);
         _hotkeys = new HotkeyService(_vm, host.Logger);
         _conversion = new ConversionCoordinator(host, _vm, _dialogs, this);
+        _loudness = new LoudnessCoordinator(host, _vm, _dialogs, this);
         _vm.HotkeysChanged += (_, _) => _hotkeys.Reload();
         _vm.ConversionPresetRequested += (_, presetId) => _ = _conversion.ConvertWithPresetAsync(presetId);
         _vm.LayoutProvider = CaptureLayoutFromGrid;
@@ -637,6 +639,38 @@ public partial class MainWindow : Window
             tagNormalization.IsEnabled = _vm.SelectedRows.Count > 0 || _vm.SelectedRow is not null;
             RebuildTagNormalizationMenu(tagNormalization);
         }
+
+        var loudnessScan = items.FirstOrDefault(item => item.Header as string == "响度计算…");
+        if (loudnessScan is not null)
+        {
+            // 响度计算：选中任意数量（含回退当前行）即可。
+            loudnessScan.IsEnabled = _vm.GetFileOperationTargets().Count > 0;
+        }
+
+        var loudnessAdjust = items.FirstOrDefault(item => item.Header as string == "响度调整…");
+        if (loudnessAdjust is not null)
+        {
+            // 响度调整：一次只处理一个文件。
+            loudnessAdjust.IsEnabled = _vm.GetFileOperationTargets().Count == 1;
+        }
+    }
+
+    // =====================================================================
+    // 响度计算 / 调整（ADR-028）
+    // =====================================================================
+
+    private void OnLoudnessScanClick(object sender, RoutedEventArgs e) => _ = _loudness.ScanSelectedAsync();
+
+    private async void OnLoudnessAdjustClick(object sender, RoutedEventArgs e)
+    {
+        var targets = _vm.GetFileOperationTargets();
+        if (targets.Count != 1)
+        {
+            _dialogs.Info("请先在歌曲列表中选中一首歌曲，再调整响度。", "响度调整");
+            return;
+        }
+
+        await _loudness.AdjustSingleAsync(targets[0].Track);
     }
 
     // =====================================================================

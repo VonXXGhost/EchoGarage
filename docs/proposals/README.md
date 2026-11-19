@@ -98,4 +98,7 @@
   外部播放列表行由 ADR-018 激活刷新处理）。
 - 2026-11-18：owner 批准 `ADR-029` 并归档到 `docs/adr/ADR-029-apple-legacy-cache-invalidation.md`，
   `docs/adr/ADR-index.md` 已更新。
+- 2026-11-19：owner 批准 `ADR-028`（响度计算与响度调整）并归档到 `docs/adr/ADR-028-loudness-analysis-adjustment.md`，
+  `KB-019`（响度测量算法笔记）归档到 `docs/kb/KB-019-loudness-measurement.md`，`docs/adr/ADR-index.md` 已更新
+  （ADR-017 标注由 ADR-028 修订）。
 - 当前状态：**`docs/proposals/` 暂无待批准提案**。

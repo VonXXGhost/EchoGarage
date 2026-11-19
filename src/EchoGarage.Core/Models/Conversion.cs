@@ -140,7 +140,24 @@ public sealed class ConversionEncoderPaths
 }
 
 /// <summary>Everything the converter needs for one file.</summary>
-public sealed record ConversionRequest(string SourcePath, string OutputPath, ConversionPreset Preset, ConversionEncoderPaths Encoders);
+/// <param name="SourcePath">源文件路径。</param>
+/// <param name="OutputPath">输出文件路径。</param>
+/// <param name="Preset">转换预设。</param>
+/// <param name="Encoders">编码器路径覆盖；空表示从 tools\ 或 PATH 自动定位。</param>
+/// <param name="GainDb">
+/// 解码后、重采样/写中间 WAV 前施加的线性增益（dB，ADR-028 §3.6）。默认 0 表示不改变电平；
+/// 峰值安全由调用方用 <see cref="EchoGarage.Core.Services.LoudnessGain"/> 先算好，转换层不隐式限幅。
+/// </param>
+/// <param name="EnableDither">
+/// 目标为 Flac/WAV 且最终位深 16 时是否做 TPDF dither（ADR-028 §3.6.1）；24-bit 与有损格式忽略。
+/// </param>
+public sealed record ConversionRequest(
+    string SourcePath,
+    string OutputPath,
+    ConversionPreset Preset,
+    ConversionEncoderPaths Encoders,
+    double GainDb = 0,
+    bool EnableDither = false);
 
 public sealed record ConversionProgress(
     int ItemIndex,
