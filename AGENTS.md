@@ -66,6 +66,8 @@ dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false
 
 任务交付时，总是编译发布版本提供给用户验收，若用户无明确指定要打包为压缩包，则只需要编译出相关文件即可、不打包。
 
+**发布目录禁止生成运行时数据**：`artifacts/publish/win-x64/` 只放程序与 `tools\`，不得出现 `EchoGarageData`（也不要在其中直接运行发布版 exe 做验证 / 截图 / 冒烟测试）。需要运行发布版时，必须把 `ECHOGARAGE_DATA_DIR` 指向 `artifacts\` 或 `.scratch\` 下的独立数据副本。否则整体复制发布文件覆盖 UAT 时，会带入 / 覆盖用户的 `settings.json` 与媒体库，导致验收环境设置丢失。
+
 ## 4. 编码约定
 
 - 目标框架：`net10.0`（Core）/ `net10.0-windows`（Infrastructure、App、Tests）。启用 nullable 与隐式 using。
