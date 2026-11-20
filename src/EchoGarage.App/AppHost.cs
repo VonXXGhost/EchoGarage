@@ -49,6 +49,8 @@ public sealed class AppHost : IAsyncDisposable
         _spectrumAnalyzer = new SpectrumAnalyzer(Logger);
         Player = new WasapiAudioPlayer(Logger, _spectrumAnalyzer);
         Files = new FileOperationService(Logger);
+        // 文件关联注册结果需要写日志（哪些格式因注册表项只读而只做了 Capabilities 注册）。
+        Associations = new FileAssociationService(logger: Logger);
 
         var webTagHttp = new WebTagHttpClientFactory();
         WebTags = new WebTagService(
@@ -83,7 +85,7 @@ public sealed class AppHost : IAsyncDisposable
     public CoverImageService CoverImages { get; private set; } = null!;
     public IWaveformService Waveforms { get; private set; } = null!;
     public IWaveformCache WaveformCache { get; private set; } = null!;
-    public FileAssociationService Associations { get; } = new();
+    public FileAssociationService Associations { get; }
 
     public AppSettings SettingsSnapshot => Settings.Current;
 

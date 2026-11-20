@@ -373,9 +373,13 @@ public partial class SettingsWindow : ThemedWindow
 
     private void UpdateAssociationStatus()
     {
-        AssociationStatusText.Text = _host.Associations.IsRegistered()
-            ? "已注册为音频文件的候选打开方式（可在上方按钮中调整格式或取消注册）。"
-            : "尚未注册。注册是可选手动操作，启动时不会自动注册。";
+        var state = _host.Associations.GetRegistrationState();
+        var count = state.Count(s => s.Registered || s.OpenWithRegistered);
+        AssociationStatusText.Text = count > 0
+            ? $"已注册为 {count} 种音频格式的候选打开方式（可在上方按钮中调整格式或取消注册）。"
+            : _host.Associations.IsRegistered()
+                ? "检测到残留的注册条目，但未登记任何格式，建议重新打开“文件关联”完成注册。"
+                : "尚未注册。注册是可选手动操作，启动时不会自动注册。";
     }
 
     private void PopulateEncoders()
