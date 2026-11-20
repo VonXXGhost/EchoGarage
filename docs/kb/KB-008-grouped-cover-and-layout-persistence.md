@@ -2,10 +2,12 @@
 
 - 状态：Accepted（原 KB-008 于 2026-11-10、KB-009 于 2026-11-11 获 owner 批准，KB-011/012 于
   2026-11-12 获批准；原 KB-010 于 2026-11-11 起草；
-  2026-11-19 合并原 KB-008/009/010/011/012，**原 KB-009～KB-012 已并入本文**）
+  2026-11-19 合并原 KB-008/009/010/011/012，**原 KB-009～KB-012 已并入本文**；
+  2026-11-20 修订 §5（见 `docs/kb/KB-020-now-playing-cover-crossfade.md`））
 - 日期：2026-11-10（初版）/ 2026-11-19（合并）
 - 关联：ADR-005（播放列表显示格式）、ADR-006（配置与媒体库分离）、ADR-024（主题令牌）、
-  `docs/kb/KB-014-header-pinning-and-toolbar-refresh.md`（表头固定与来源布局记忆）
+  `docs/kb/KB-014-header-pinning-and-toolbar-refresh.md`（表头固定与来源布局记忆）、
+  `docs/kb/KB-020-now-playing-cover-crossfade.md`（“正在播放”封面交叉淡入过渡）
 - 适用范围：`PlaylistViewLayout`、`MainWindow` 列构建 / 分组视图 / 行模板 / 底部进度条与音量区、
   `MainWindow.NowPlaying.cs`（自动居中）、`CoverImageService` / `FileCoverCache`
 
@@ -203,20 +205,24 @@ WPF 分组虚拟化的 GroupItem 容器在回收 / 重新生成时，可能先�
 - 若未来新增其他依赖 `RelativeSource AncestorType=Window` 的模板内绑定，应优先考虑可继承附加属性
   或 `ElementName` 之外的方式，避免同类容器时序问题。
 
-## 5. “正在播放”封面加载态
+## 5. “正在播放”封面过渡态
 
-- 旧行为：切歌后旧封面一直显示到新封面解码完成，容易误以为封面没换。
-- 新行为：
-  - `PlayRowAsync` 一开始就调用 `BeginNowPlayingCoverLoad`：若新曲目路径与当前封面路径不同，
-    立刻 `CurrentCover = null`；随后异步加载 420px 封面。
-  - 版本令牌 `_nowPlayingCoverVersion`：每次切歌/停止自增；慢速解码返回时若版本过期或 `CurrentRow`
-    已变化直接丢弃，不会把旧歌封面盖到新歌上；只有最新请求能清除 `IsNowPlayingCoverLoading`。
-  - 面板左上角新增 `IsNowPlayingCoverLoading` 对应的旋转弧线（Accent 圆弧 + 淡轨道圆，主题令牌着色），
-    使用 `DataTrigger` + Storyboard；淡入延迟 120ms，缓存命中时几乎不闪。
-  - 无封面且有当前歌曲时显示 ♪ 占位符（`ShowCoverPlaceholder`）；停止/清空时封面与加载态一起复位。
-  - 标签编辑刷新当前曲目时也走同一路径（保留旧图直到新图更替，不显示加载动画）。
-- 应用内验证（临时诊断，未提交）：`--play-file A` → 1.8s 后切到 B 并人为延迟封面解码，
-  截图确认旧封面已移除、旋转加载动画可见；日志确认版本丢弃逻辑生效。
+- 旧行为（2026-11-19 之前，已由本次改动取代）：切歌后立即清空旧封面，延迟 120ms 显示旋转加载
+  弧线，新封面解码完成后淡入。理由是旧图残留会让人误以为封面没换，但代价是旧图瞬间消失，
+  出现空白间隙与跳变。
+- 现行为（2026-11-20 起，详见 `docs/kb/KB-020-now-playing-cover-crossfade.md`）：
+  - `BeginNowPlayingCoverLoad` 不再清空 `CurrentCover`：旧封面保留到新封面解码完成，
+    `LoadNowPlayingCoverAsync` 在版本令牌与 `CurrentRow.Path` 校验通过后才替换，过期结果丢弃。
+  - 右栏封面使用 `CrossFadeImage`（`Views/Controls/CrossFadeImage.cs`）：两层 `Image`，
+    旧图在下、新图 0→1 淡入 200ms（`QuadraticEase`/`EaseOut`）；新曲无封面时旧图 200ms 淡出
+    露出 ♪ 占位符；快速连切时先快进上一次过渡再开始新过渡，避免叠影。
+  - 旋转加载弧线只在 `ShowCoverLoadingSpinner`（= `IsNowPlayingCoverLoading && CurrentCover is null`）
+    为 true 时显示，即只有“没有旧图可显示”的首图加载才转圈；120ms 淡入延迟保留，缓存命中时
+    基本不闪。
+  - ♪ 占位符位于封面下层，不遮挡过渡中的图；`Stop()` 立即清空版本并让当前图 200ms 淡出。
+  - 标签编辑刷新当前曲目也走同一路径；若封面未变化、加载到位图引用相同，视图不会触发过渡。
+- 应用内验证（临时诊断，未提交）：截图逐帧拟合 alpha 为线性混合（RMS ≈ 0.4/255），
+  alpha 在约 200ms 内从 0 到 1，无空白帧与转圈帧。
 
 ## 6. 滚动条滑块最小可视高度（MinThumbTrack）
 

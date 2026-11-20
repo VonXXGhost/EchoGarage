@@ -379,8 +379,10 @@
         </DataTemplate>
 
         <!-- ================= Now-playing cover spinner ================= -->
-        <!-- Rotating accent arc shown while the large cover decodes. The fade-in delay
-             hides the spinner for fast (cached) loads so it never flashes. -->
+        <!-- Rotating accent arc shown only while the large cover decodes and no previous artwork
+             can stay on screen; when old art exists it is kept and crossfaded into the new one
+             (CrossFadeImage), so the spinner must not cover it. The fade-in delay also hides the
+             spinner for fast (cached) loads so it never flashes. -->
         <Style x:Key="NowPlayingCoverSpinner" TargetType="Grid">
             <Setter Property="Visibility" Value="Collapsed" />
             <Setter Property="Opacity" Value="0" />
@@ -391,7 +393,7 @@
                 </Setter.Value>
             </Setter>
             <Style.Triggers>
-                <DataTrigger Binding="{Binding IsNowPlayingCoverLoading}" Value="True">
+                <DataTrigger Binding="{Binding ShowCoverLoadingSpinner}" Value="True">
                     <Setter Property="Visibility" Value="Visible" />
                     <DataTrigger.EnterActions>
                         <BeginStoryboard x:Name="CoverSpinnerStoryboard">
@@ -955,11 +957,13 @@
                                     AutomationProperties.AutomationId="NowPlayingCover"
                                     MouseLeftButtonDown="OnNowPlayingCoverMouseLeftButtonDown">
                                 <Grid>
-                                    <Image Source="{Binding CurrentCover}" Stretch="Uniform"
-                                           RenderOptions.BitmapScalingMode="HighQuality" />
+                                    <!-- 占位符放在封面下层：新封面淡入时把它逐渐盖住，旧封面淡出时再逐渐露出。
+                                         切歌过渡由 CrossFadeImage 完成（保留旧图 + 新图交叉淡入），不再先清空旧图；
+                                         转圈只在没有旧封面可显示时出现（ShowCoverLoadingSpinner）。 -->
                                     <TextBlock Text="♪" FontSize="54" Foreground="{DynamicResource CoverNoteBrush}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Visibility="{Binding ShowCoverPlaceholder, Converter={StaticResource BoolToVisibility}}" />
+                                    <controls:CrossFadeImage Source="{Binding CurrentCover}" />
                                     <Grid Width="52" Height="52" HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Style="{StaticResource NowPlayingCoverSpinner}">
                                         <Ellipse Width="52" Height="52" Stroke="{DynamicResource CoverNoteBrush}"

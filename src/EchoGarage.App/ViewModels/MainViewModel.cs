@@ -71,7 +71,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     // Monotonic token so a slow cover decode cannot overwrite a newer track's artwork.
     private int _nowPlayingCoverVersion;
-    private string? _currentCoverPath;
 
     /// <summary>Subtitle for the current source without any search filter applied.</summary>
     private string _basePlaylistSubtitle = string.Empty;
@@ -231,14 +230,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>True while the large now-playing cover is being loaded for the panel.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCoverPlaceholder))]
+    [NotifyPropertyChangedFor(nameof(ShowCoverLoadingSpinner))]
     private bool _isNowPlayingCoverLoading;
 
     /// <summary>Shows the note placeholder when a track is playing but no artwork exists.</summary>
     public bool ShowCoverPlaceholder =>
         HasCurrentTrack && !IsNowPlayingCoverLoading && CurrentCover is null;
 
-    partial void OnCurrentCoverChanged(System.Windows.Media.Imaging.BitmapSource? value) =>
+    /// <summary>
+    /// 只在“加载中且没有旧封面可显示”时转圈。切歌时旧封面会保留到新图解码完成并交叉淡入，
+    /// 若在旧封面上叠一个转圈反而更跳，因此有旧图时不显示。
+    /// </summary>
+    public bool ShowCoverLoadingSpinner => IsNowPlayingCoverLoading && CurrentCover is null;
+
+    partial void OnCurrentCoverChanged(System.Windows.Media.Imaging.BitmapSource? value)
+    {
         OnPropertyChanged(nameof(ShowCoverPlaceholder));
+        OnPropertyChanged(nameof(ShowCoverLoadingSpinner));
+    }
 
     [ObservableProperty]
     private string _playlistTitle = "媒体库";
@@ -1106,7 +1115,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // The row was rebuilt (for example after a metadata repair scan), so refresh
             // the now-playing panel from the new track data instead of the stale row.
             UpdateNowPlayingMetadata(row);
-            BeginNowPlayingCoverLoad(tracks[playingIndex], keepExistingCover: true);
+            BeginNowPlayingCoverLoad(tracks[playingIndex]);
         }
 
         // Let the overlay render after the background row build.
@@ -2003,7 +2012,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CurrentInfo = string.Empty;
         // Invalidate any in-flight cover decode and drop the artwork right away.
         _nowPlayingCoverVersion++;
-        _currentCoverPath = null;
         IsNowPlayingCoverLoading = false;
         CurrentCover = null;
         OnPropertyChanged(nameof(HasCurrentTrack));
@@ -2032,24 +2040,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Starts loading the now-playing cover. The previous track's artwork is removed
-    /// immediately, so switching songs never shows the old cover while the new one decodes.
+    /// 开始加载「正在播放」面板的大封面。这里刻意不立即清空 CurrentCover：旧封面会留在画面上，
+    /// 直到新封面解码完成由视图交叉淡入（CrossFadeImage），切歌因此不会闪白或硬切。
+    /// 新曲目没有封面时，加载完成会把 CurrentCover 置空，视图再淡出旧图露出占位符。
     /// </summary>
-    private void BeginNowPlayingCoverLoad(Track track, bool keepExistingCover = false)
+    private void BeginNowPlayingCoverLoad(Track track)
     {
         var version = ++_nowPlayingCoverVersion;
-        var isSameTrack = string.Equals(_currentCoverPath, track.Path, StringComparison.OrdinalIgnoreCase);
-        if (!keepExistingCover && !isSameTrack)
-        {
-            CurrentCover = null;
-            _currentCoverPath = null;
-        }
-
-        if (!keepExistingCover || CurrentCover is null)
-        {
-            IsNowPlayingCoverLoading = true;
-        }
-
+        // 有旧封面时转圈会被 ShowCoverLoadingSpinner 隐藏，这里照常置位以覆盖首图尚无封面的情况。
+        IsNowPlayingCoverLoading = true;
         _ = LoadNowPlayingCoverAsync(track, version);
     }
 
@@ -2068,7 +2067,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             CurrentCover = image;
-            _currentCoverPath = image is null ? null : track.Path;
             _host.Logger.Debug($"Now playing cover loaded: {track.Path} ({(image is null ? "none" : "ok")})");
         }
         catch (Exception ex)
