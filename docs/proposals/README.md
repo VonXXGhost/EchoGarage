@@ -11,6 +11,7 @@
 
 ## 当前状态
 
-- `ADR-030-file-association-tolerant-registration.md`：文件关联注册的容错与 Windows 11 候选来源（修订 ADR-008 §3），2026-11-20 提交，待 owner 批准。
+当前没有待批准的提案。2026-11-21 批准的提案已分别并入 `docs/adr/ADR-030-…`、`docs/adr/ADR-003-files-are-truth.md`、
+`docs/adr/ADR-015-waveform-seekbar.md` 与 `docs/kb/KB-008-grouped-cover-and-layout-persistence.md`。
 
 历史提案的批准 / 撤回记录见 `docs/adr/ADR-index.md` 文末的“批准记录”，本文件不再逐条重复。

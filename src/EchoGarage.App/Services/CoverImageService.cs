@@ -18,16 +18,35 @@ namespace EchoGarage.App.Services;
 /// </summary>
 public sealed class CoverImageService : IDisposable
 {
-    private const int MemoryCacheLimit = 300;
+    /// <summary>内存缓存的硬上限：1 GB（owner 规范，2026-11-21）。</summary>
+    public const long MemoryCacheByteLimit = 1024L * 1024 * 1024;
+
+    /// <summary>
+    /// 条目数上限。真正限制内存的是 <see cref="MemoryCacheByteLimit"/>；这里只防止
+    /// “大量极小条目”把链表撑得过长（每条约 100 字节开销）。
+    /// </summary>
+    private const int MemoryCacheEntryLimit = 512;
 
     private readonly ICoverCache _cache;
     private readonly IAppLogger _logger;
     private readonly ConcurrentDictionary<string, BitmapSource?> _images = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Lazy<Task<BitmapSource?>>> _inFlight = new(StringComparer.Ordinal);
-    private readonly LinkedList<string> _lru = new();
+    private readonly CoverCacheBudget _budget = new(MemoryCacheByteLimit, MemoryCacheEntryLimit);
     private readonly object _lruGate = new();
     private readonly SemaphoreSlim _concurrency = new(3, 3);
     private bool _disposed;
+
+    /// <summary>内存缓存的当前条目数与估算占用（诊断 / 设置界面用）。</summary>
+    public (int Entries, long Bytes) MemoryCacheStats
+    {
+        get
+        {
+            lock (_lruGate)
+            {
+                return (_budget.Count, _budget.Bytes);
+            }
+        }
+    }
 
     public CoverImageService(ICoverCache cache, IAppLogger logger)
     {
@@ -41,7 +60,7 @@ public sealed class CoverImageService : IDisposable
         _inFlight.Clear();
         lock (_lruGate)
         {
-            _lru.Clear();
+            _budget.Clear();
         }
     }
 
@@ -55,6 +74,12 @@ public sealed class CoverImageService : IDisposable
         foreach (var key in _images.Keys.Where(k => k.EndsWith("|" + coverKey, StringComparison.Ordinal)).ToList())
         {
             _images.TryRemove(key, out _);
+
+            // 同步摘除 LRU 节点，否则账本里会堆积已经没有对应图片的僵尸条目。
+            lock (_lruGate)
+            {
+                _budget.Remove(key);
+            }
         }
     }
 
@@ -192,32 +217,19 @@ public sealed class CoverImageService : IDisposable
 
     private void Remember(string key, BitmapSource? image)
     {
+        var bytes = EstimateBytes(image);
         _images[key] = image;
-        Touch(key);
 
-        while (true)
+        List<string> evicted;
+        lock (_lruGate)
         {
-            string? toRemove = null;
-            lock (_lruGate)
-            {
-                if (_lru.Count <= MemoryCacheLimit)
-                {
-                    break;
-                }
+            _budget.Add(key, bytes);
+            evicted = _budget.Trim();
+        }
 
-                toRemove = _lru.First?.Value;
-                if (toRemove is not null)
-                {
-                    _lru.RemoveFirst();
-                }
-            }
-
-            if (toRemove is null)
-            {
-                break;
-            }
-
-            _images.TryRemove(toRemove, out _);
+        foreach (var stale in evicted)
+        {
+            _images.TryRemove(stale, out _);
         }
     }
 
@@ -225,15 +237,31 @@ public sealed class CoverImageService : IDisposable
     {
         lock (_lruGate)
         {
-            var node = _lru.Find(key);
-            if (node is not null)
-            {
-                _lru.Remove(node);
-            }
-
-            _lru.AddLast(key);
+            _budget.Touch(key);
         }
     }
+
+    /// <summary>
+    /// 估算一张位图在非托管内存里的占用（WPF 的像素缓冲区不在 GC 堆上，必须自己记账）。
+    /// </summary>
+    private static long EstimateBytes(BitmapSource? image)
+    {
+        if (image is null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var stride = ((long)image.PixelWidth * image.Format.BitsPerPixel + 7) / 8;
+            return stride * image.PixelHeight + 96;
+        }
+        catch
+        {
+            return 4096;
+        }
+    }
+
 
     public void Dispose()
     {

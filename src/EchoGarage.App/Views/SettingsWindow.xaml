@@ -549,7 +549,24 @@
                                     <ComboBoxItem Content="不限制" Tag="0" />
                                 </ComboBox>
                             </Grid>
-                            <TextBlock Text="超过上限时删除最久未使用的波形；不限制会让 Waveforms 目录随听歌量增长。"
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="封面缓存上限" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <ComboBox x:Name="CoverLimitBox" Grid.Column="1" Width="160"
+                                          SelectionChanged="OnCoverLimitChanged">
+                                    <ComboBoxItem Content="256 MB" Tag="256" />
+                                    <ComboBoxItem Content="512 MB" Tag="512" />
+                                    <ComboBoxItem Content="1024 MB" Tag="1024" />
+                                    <ComboBoxItem Content="2048 MB（默认）" Tag="2048" />
+                                    <ComboBoxItem Content="4096 MB" Tag="4096" />
+                                    <ComboBoxItem Content="不限制" Tag="0" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock Text="超过上限时删除最久未使用的封面 / 波形；不限制会让缓存目录随听歌量增长。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
                                        TextWrapping="Wrap" />
                             <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />

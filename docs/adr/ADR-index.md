@@ -13,7 +13,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | --- | --- | --- | --- | --- |
 | [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09（2026-11-16 修订主题条目） | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题，v0.1 为五套（ADR-024）：纯净极简白（默认）、温润纸感白、极简冰青白、午夜黑胶、深海蓝灰 |
 | [ADR-002](ADR-002-layered-architecture.md) | 分层架构与组合根 | Accepted | 2026-11-09 | Core / Infrastructure / App 单向依赖，能力经接口暴露，AppHost 统一装配 |
-| [ADR-003](ADR-003-files-are-truth.md) | 文件即真相——标签、封面与元数据缓存 | Accepted | 2026-11-09 | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数等软件状态除外；封面缓存键由 `CoverKeyFactory` 生成 |
+| [ADR-003](ADR-003-files-are-truth.md) | 文件即真相——标签、封面与元数据缓存 | Accepted | 2026-11-09（2026-11-21 补充容量上限） | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数等软件状态除外；封面缓存键由 `CoverKeyFactory` 生成；封面缓存内存上限 1 GB（字节 LRU）+ 磁盘上限默认 2 GB，解码尺寸随 DPI |
 | [ADR-004](ADR-004-playlist-model.md) | 播放列表模型（普通 / 智能 / 默认） | Accepted | 2026-11-09 | 普通列表存显式条目，智能列表存条件；默认列表由外部打开覆盖；媒体库外条目由 ADR-018 刷新 |
 | [ADR-005](ADR-005-playlist-view-layouts.md) | 每个播放列表独立的显示布局与预设 | Accepted | 2026-11-09 | 每个播放列表独立记忆列显示 / 宽度 / 顺序 / 排序，全局预设可复用；排序列只需能映射到 `ColumnCatalog`，允许隐藏列排序 |
 | [ADR-006](ADR-006-settings-vs-library.md) | 配置与媒体库分离、缓存目录可配置 | Accepted | 2026-11-09 | `settings.json` 与 `library.db` 分离；默认便携到 exe 旁 `EchoGarageData`；导出配置不含媒体库内容 |
@@ -24,7 +24,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-012](ADR-012-test-playback-volume.md) | 测试运行时的输出音量 | Accepted | 2026-11-12 | 实际运行并播放音频的测试必须先静音 / 调到最低音量（音量相关测试除外），并使用独立数据目录副本 |
 | [ADR-013](ADR-013-secondary-row-info-and-composer.md) | 列表行次要信息与作曲家标签 | Accepted | 2026-11-14 | 每列可选次行复合格式（20 个占位符，默认关闭、填格式自动启用）；Composer 标签贯通文件 / 缓存 / 编辑；SQLite schema v2（v3 / v4 见 ADR-014）；两行渲染 |
 | [ADR-014](ADR-014-cache-repair-migrations.md) | 缓存修复迁移：schema v3 回填作曲家 / schema v4 Apple 音轨号自愈 | Accepted | 2026-11-14（2026-11-18 并入 schema v4，原 ADR-029） | 统一以 `DurationMs <= 0` = 缓存失效：schema v3 把 `FolderId IS NOT NULL` 的旧行清零回填 Composer；schema v4 把 `.m4a/.mp4/.m4b` 且 `TrackNumber = 0` 的行清零，重读旧式 Apple 音轨号 |
-| [ADR-015](ADR-015-waveform-seekbar.md) | 播放进度条的波形视图（Waveform Seek Bar） | Accepted | 2026-11-14（2026-11-16 并入原 ADR-015-A1 / A2） | 进度条可切整曲三频段波形：三层堆叠、动态范围窗口只向下放宽（`MinimumStretchDb` 30 dB）、已播放区 26% 不透明度、50 列/秒 EGWV 缓存 + LRU、按段渐进渲染、点击 / 拖动跳转 |
+| [ADR-015](ADR-015-waveform-seekbar.md) | 播放进度条的波形视图（Waveform Seek Bar） | Accepted | 2026-11-14（2026-11-16 并入原 ADR-015-A1 / A2；2026-11-21 修订几何与已播放区绘制） | 进度条可切整曲三频段波形：三层堆叠、动态范围窗口只向下放宽（`MinimumStretchDb` 30 dB）、已播放区 26% 观感（单遍绘制 + 轨道底色覆盖）、每频段一条阶梯折线 `StreamGeometry`、50 列/秒 EGWV 缓存 + LRU、点击 / 拖动跳转 |
 | [ADR-016](ADR-016-search-hotkeys-playback-mode.md) | 列表搜索、可配置与全局快捷键、播放模式、年份原文显示、媒体键、播放列表管理与单曲循环 | Accepted | 2026-11-14（2026-11-19 并入原 ADR-026） | 列宽拖拽即时落盘；内联搜索 + Ctrl+F 高级搜索；快捷键可配置且可选全局注册；播放模式三态（顺序 / 随机 / 单曲循环）；年份保留原文 `YearText`（不落库）；媒体键默认控制播放；媒体库 / 播放列表导航右键管理 |
 | [ADR-017](ADR-017-audio-conversion.md) | 音频转换（编码转换） | Accepted | 2026-11-14（2026-11-19 由 ADR-028 修订） | 预设驱动的转换器：格式 / 输出位置 / 文件名模板 / 高质量重采样 / 标签复制，右键与快捷键触发；响度增益与 SSRC 延迟补偿见 ADR-028 |
 | [ADR-018](ADR-018-track-metadata-refresh.md) | 播放列表外部文件的标签缓存刷新策略 | Accepted | 2026-11-14 | 外部文件缓存行按 `FileSize` + `ModifiedAtUtc` 比对，窗口激活 / 切换来源时后台刷新标签，不阻塞列表加载 |
@@ -36,6 +36,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-024](ADR-024-multi-theme-system.md) | 五套主题体系与单配置切换 | Accepted | 2026-11-16 | ThemeKind 五值（PureStudio 默认）+ ThemeCatalog 单一来源；5 个主题字典各 57 个令牌；`视图 → 主题` 中文二级菜单 + 设置页下拉；ThemeKindJsonConverter 兼容旧 Light/Dark；移除旧两主题字典 |
 | [ADR-025](ADR-025-tag-normalization-rules.md) | 标签编辑辅助：规范化正则规则与候选值 | Accepted | 2026-11-16（2026-11-19 并入原 ADR-027） | 可配置正则规则批量规范化标签（默认「移除专辑名 EP/Single 后缀」「ISO 日期时间 → 日期」，1 s 超时）；艺术家 / 专辑艺术家 / 作曲家 / 流派候选值从 `library.db` 聚合，前缀 / 包含匹配，不读文件 |
 | [ADR-028](ADR-028-loudness-analysis-adjustment.md) | 响度计算与响度调整（LUFS / LRA / True Peak） | Accepted | 2026-11-18（2026-11-19 批准） | 自研纯 C# 流式响度引擎（BS.1770-5 / EBU R128）：右键多选「响度计算」扫描窗口（不缓存、不写 tag）；单文件「响度调整」只做线性增益输出新文件，目标默认 -10.0 LUFS（设置页可配置）、无损 -1.0 / 有损 -2.0 dBTP 天花板、16-bit TPDF dither；修订 ADR-017 并连带修复 SSRC 重采样前导延迟 |
+| [ADR-030](ADR-030-file-association-tolerant-registration.md) | 文件关联注册的容错与 Windows 11 候选来源 | Accepted | 2026-11-21（修订 ADR-008 §3） | 逐个扩展名容错注册（单条失败不再中止整批）、按格式回报结果、注册表异常写日志；候选来源补充 Windows 11 的 `UserChoice` / `OpenWithProgids` 判定 |
 
 ## 相关长期知识（KB）
 
@@ -46,7 +47,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 - [KB-003](../kb/KB-003-wpf-dark-theme-pitfalls.md) WPF 深色主题实现中的坑
 - [KB-004](../kb/KB-004-performance-baseline.md) 性能基线与列表切换优化（并入原 KB-016 列表切换增量渲染）
 - [KB-006](../kb/KB-006-theme-system.md) 主题系统与五主题令牌手册（附两主题历史；并入原 KB-015 令牌清单）
-- [KB-008](../kb/KB-008-grouped-cover-and-layout-persistence.md) 分组列表布局与封面 / 滚动交互（并入原 KB-009、KB-010、KB-011、KB-012）
+- [KB-008](../kb/KB-008-grouped-cover-and-layout-persistence.md) 分组列表布局与封面 / 滚动交互（并入原 KB-009、KB-010、KB-011、KB-012；2026-11-21 补充 §3.5 分组封面可见窗口上限、§4.5 按 DPI 解码）
 - [KB-014](../kb/KB-014-header-pinning-and-toolbar-refresh.md) 表头固定、来源布局记忆与顶栏 / 图标（并入原 KB-013）
 - [KB-017](../kb/KB-017-cover-viewer.md) 封面大图浏览窗口（双击「正在播放」封面放大）
 - [KB-018](../kb/KB-018-tag-normalization-ui.md) 标签规范化 UI（设置页规则管理 / 右键批量 / 标签属性窗口快捷处理）
@@ -67,3 +68,4 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 - 2026-11-18：批准 ADR-029（schema v4 Apple 旧式音轨号缓存自愈）。
 - 2026-11-19：批准 ADR-028（响度计算与调整）与 KB-019；同日按 owner 要求做文档整理：合并修订案（见页首说明）、精简提案区、更新 README / AGENTS 与界面截图。
 - 2026-11-20：批准 KB-020（“正在播放”封面交叉淡入过渡），并据此修订 KB-008 §5。
+- 2026-11-21：批准 ADR-030（文件关联容错注册，修订 ADR-008 §3）、ADR-003 补充（封面缓存内存 1 GB / 磁盘 2 GB 上限）与 ADR-015 修订（4K 波形几何与已播放区单遍绘制），以及 KB-008 §3.5 / §4.5 补充；同日完成 4K/160 Hz 波形帧率修复（10.0 → 148.7 fps）与分组滚动内存回归修复（3,011 → 341 MB）。

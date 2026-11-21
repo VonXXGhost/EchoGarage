@@ -159,6 +159,7 @@ public static class FileArgumentParser
         }
 
         var skipNext = false;
+        var skipPositionalUntilSwitch = false;
         foreach (var arg in args)
         {
             if (string.IsNullOrWhiteSpace(arg))
@@ -174,10 +175,17 @@ public static class FileArgumentParser
 
             if (arg.StartsWith("--", StringComparison.Ordinal))
             {
+                // --visualizer 后面跟 2–3 个位置参数（音频、截图、可选秒数），它们都不是“启动时打开的文件”。
+                skipPositionalUntilSwitch = string.Equals(arg, "--visualizer", StringComparison.OrdinalIgnoreCase);
                 skipNext = string.Equals(arg, "--screenshot", StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(arg, "--screenshot-all", StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(arg, "--play-file", StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(arg, "--seek-seconds", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (skipPositionalUntilSwitch)
+            {
                 continue;
             }
 

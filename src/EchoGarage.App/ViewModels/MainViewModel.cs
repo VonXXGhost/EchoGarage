@@ -390,6 +390,53 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsGroupedViewActive =>
         GroupByAlbum && PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn);
 
+    /// <summary>列表行封面模板里的显示边长（DIP），与 MainWindow.xaml 的 Cell.Cover 保持一致。</summary>
+    private const double RowCoverDisplaySize = 24;
+
+    /// <summary>
+    /// 同时挂在界面上的相册组封面数量上限。每组封面约 (96 DIP × DPI)² × 4 字节，
+    /// 视口附近一般 10–30 组；超出部分立即摘掉，让内存只跟“能看到的内容”有关，
+    /// 而不是跟“滚过多少组”有关（2026-11-21：1604 组各留一张 512px 图 = 1.6 GB）。
+    /// </summary>
+    private const int VisibleGroupCoverLimit = 512;
+
+    /// <summary>回收时一次裁到的目标数量，避免“每滚动一格就重建一次布局”。</summary>
+    private const int VisibleGroupCoverTrimTarget = 384;
+
+    private readonly LinkedList<TrackRowViewModel> _visibleGroupCovers = new();
+    private readonly Dictionary<TrackRowViewModel, LinkedListNode<TrackRowViewModel>> _visibleGroupCoverNodes = new();
+    private readonly object _visibleGroupCoverGate = new();
+    private System.Windows.Threading.DispatcherTimer? _groupCoverTrimTimer;
+
+    private double _dpiScale = 1.0;
+
+    /// <summary>
+    /// 列表所在窗口的 DPI 比例，由主窗口在 Loaded / DpiChanged 时写入。封面按“显示尺寸 × DPI”
+    /// 解码，避免 4K/150% 下把 96 DIP 的相册封面解码成 512 px（约 12 倍的像素浪费）。
+    /// </summary>
+    public double DpiScale
+    {
+        get => _dpiScale;
+        set
+        {
+            var clamped = Math.Clamp(value, 0.5, 4.0);
+            if (Math.Abs(clamped - _dpiScale) < 0.001)
+            {
+                return;
+            }
+
+            _dpiScale = clamped;
+        }
+    }
+
+    /// <summary>列表行封面的解码宽度（像素）。行封面模板只有 24 DIP 见方。</summary>
+    public int RowCoverDecodeWidth =>
+        Math.Clamp((int)Math.Ceiling(RowCoverDisplaySize * DpiScale), 32, 256);
+
+    /// <summary>相册组封面的解码宽度（像素），跟随 <see cref="GroupCoverSize"/> 与 DPI。</summary>
+    public int GroupCoverDecodeWidth =>
+        Math.Clamp((int)Math.Ceiling(GroupCoverSize * DpiScale), 64, 640);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStatusHint))]
     private string _statusMessage = "就绪";
@@ -1140,6 +1187,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // One Reset instead of Clear() + N×Add(): every intermediate notification made both
             // collection views (and the DataGrid) re-run their sorting/filtering/regeneration work.
             Tracks.ReplaceAll(rows);
+            ResetVisibleGroupCovers();
             _tracksVersion++;
             replaceAllMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
 
@@ -1209,6 +1257,27 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             $"viewRefresh={viewRefreshMilliseconds - filterMilliseconds:F1}ms, " +
             $"columns={layoutChangedMilliseconds - viewRefreshMilliseconds:F1}ms, " +
             $"total={switchStopwatch.Elapsed.TotalMilliseconds:F1}ms");
+
+        LogCoverMemory("list switch");
+    }
+
+    /// <summary>
+    /// 把封面内存账本写进日志：缓存条目 / 估算占用 / 当前挂在界面上的相册组封面数。
+    /// 排查“滚动越久内存越高”时看这一行就能分清是缓存没上限，还是界面上的引用没释放。
+    /// </summary>
+    private void LogCoverMemory(string stage)
+    {
+        var stats = _host.CoverImages.MemoryCacheStats;
+        int visibleGroups;
+        lock (_visibleGroupCoverGate)
+        {
+            visibleGroups = _visibleGroupCoverNodes.Count;
+        }
+
+        _host.Logger.Debug(
+            $"Cover memory ({stage}): cache={stats.Entries} entries / {stats.Bytes / 1024.0 / 1024.0:F1} MB " +
+            $"(limit {CoverImageService.MemoryCacheByteLimit / 1024 / 1024} MB), " +
+            $"groupCovers={visibleGroups}/{VisibleGroupCoverLimit}");
     }
 
     private static string BuildSubtitle(SourceNodeViewModel source, int count)
@@ -2103,15 +2172,97 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             var image = await _host.CoverImages.GetAsync(new CoverRequest(track.Path, track.CoverKey,
-                track.ModifiedAtUtc, track.FileSize), 512);
+                track.ModifiedAtUtc, track.FileSize), GroupCoverDecodeWidth);
             if (image is not null)
             {
                 row.GroupCoverImage = image;
+                TrackVisibleGroupCover(row);
             }
         }
         catch (Exception ex)
         {
             _host.Logger.Debug($"Group cover failed for {track.Path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 只保留最近显示过的 <see cref="VisibleGroupCoverLimit"/> 组封面：WPF 的组容器在
+    /// “滚动离开视口”时既不会触发 IsVisibleChanged(false) 也不会 Unloaded（组虚拟化只作用于
+    /// 组内条目），所以释放必须由这里按“最近使用”主动做。
+    /// </summary>
+    private void TrackVisibleGroupCover(TrackRowViewModel row)
+    {
+        bool needTrim;
+        lock (_visibleGroupCoverGate)
+        {
+            if (_visibleGroupCoverNodes.TryGetValue(row, out var existing))
+            {
+                _visibleGroupCovers.Remove(existing);
+                _visibleGroupCoverNodes.Remove(row);
+            }
+
+            _visibleGroupCoverNodes[row] = _visibleGroupCovers.AddLast(row);
+            needTrim = _visibleGroupCovers.Count > VisibleGroupCoverLimit;
+        }
+
+        if (needTrim)
+        {
+            ScheduleGroupCoverTrim();
+        }
+    }
+
+    /// <summary>
+    /// 回收按“滚动停下之后再批量做”：列表会把上千个相册组一起实例化，逐条摘图会不断
+    /// 触发整表重新测量（实测每次滚动 2 s 以上），批量 + 去抖只付出一次布局代价。
+    /// </summary>
+    private void ScheduleGroupCoverTrim()
+    {
+        _groupCoverTrimTimer ??= new System.Windows.Threading.DispatcherTimer(
+            TimeSpan.FromMilliseconds(400),
+            System.Windows.Threading.DispatcherPriority.Background,
+            (_, _) => TrimVisibleGroupCovers(),
+            System.Windows.Threading.Dispatcher.CurrentDispatcher);
+        _groupCoverTrimTimer.Stop();
+        _groupCoverTrimTimer.Start();
+    }
+
+    private void TrimVisibleGroupCovers()
+    {
+        _groupCoverTrimTimer?.Stop();
+
+        List<TrackRowViewModel>? stale = null;
+        lock (_visibleGroupCoverGate)
+        {
+            while (_visibleGroupCovers.Count > VisibleGroupCoverTrimTarget && _visibleGroupCovers.First is { } oldest)
+            {
+                _visibleGroupCovers.RemoveFirst();
+                _visibleGroupCoverNodes.Remove(oldest.Value);
+                (stale ??= new List<TrackRowViewModel>()).Add(oldest.Value);
+            }
+        }
+
+        if (stale is null)
+        {
+            return;
+        }
+
+        foreach (var row in stale)
+        {
+            row.GroupCoverImage = null;
+        }
+
+        // 回收之后打一行账本：滚动结束时的真实占用比“列表切换那一刻”更有参考价值。
+        LogCoverMemory("group cover trim");
+    }
+
+    /// <summary>列表内容整体更换时调用：旧行已经不再显示，清掉“最近显示”的记录即可。</summary>
+    private void ResetVisibleGroupCovers()
+    {
+        _groupCoverTrimTimer?.Stop();
+        lock (_visibleGroupCoverGate)
+        {
+            _visibleGroupCovers.Clear();
+            _visibleGroupCoverNodes.Clear();
         }
     }
 
@@ -2131,7 +2282,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             var image = await _host.CoverImages.GetAsync(new CoverRequest(track.Path, track.CoverKey,
-                track.ModifiedAtUtc, track.FileSize), 128);
+                track.ModifiedAtUtc, track.FileSize), RowCoverDecodeWidth);
             if (image is not null)
             {
                 row.CoverImage = image;

@@ -73,6 +73,7 @@ public partial class SettingsWindow : ThemedWindow
         CacheDirBox.Text = settings.CacheDirectory;
         _loadingCache = true;
         WaveformLimitBox.SelectedIndex = CacheLimitToIndex(settings.WaveformCacheLimitMb);
+        CoverLimitBox.SelectedIndex = CoverCacheLimitToIndex(settings.CoverCacheLimitMb);
         _loadingCache = false;
         RefreshFileDestinationList();
         LibrarySummaryText.Text = vm_LibrarySummary();
@@ -995,6 +996,33 @@ public partial class SettingsWindow : ThemedWindow
             ? "波形缓存上限：不限制。"
             : $"波形缓存上限：{megabytes} MB，超出后自动删除最久未使用的波形。";
     }
+
+    private void OnCoverLimitChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingCache || CoverLimitBox.SelectedItem is not ComboBoxItem { Tag: string tag } ||
+            !int.TryParse(tag, out var megabytes))
+        {
+            return;
+        }
+
+        _host.Settings.Current.CoverCacheLimitMb = megabytes;
+        SaveSettings();
+        // 立刻按新上限收缩一次，用户不用等下次听歌才发现磁盘没变小。
+        _host.TrimCoverCache();
+        CacheStatusText.Text = megabytes <= 0
+            ? "封面缓存上限：不限制。"
+            : $"封面缓存上限：{megabytes} MB，超出后自动删除最久未使用的封面。";
+    }
+
+    private static int CoverCacheLimitToIndex(int megabytes) => megabytes switch
+    {
+        <= 0 => 5,
+        <= 256 => 0,
+        <= 512 => 1,
+        <= 1024 => 2,
+        <= 2048 => 3,
+        _ => 4
+    };
 
     private static int CacheLimitToIndex(int megabytes) => megabytes switch
     {

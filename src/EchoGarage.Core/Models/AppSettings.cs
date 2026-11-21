@@ -46,6 +46,9 @@ public sealed class AppSettings
 
     /// <summary>波形缓存上限（MB）；0 表示不限。ADR-015 §7.5。</summary>
     public int WaveformCacheLimitMb { get; set; } = 256;
+
+    /// <summary>封面缓存目录上限（MB）；0 表示不限。超出后按最后写入时间删除最旧的封面。</summary>
+    public int CoverCacheLimitMb { get; set; } = 2048;
     public bool ShowAlbumPanel { get; set; } = true;
     public bool RestoreLastPlaylist { get; set; } = true;
     public long? LastPlaylistId { get; set; }

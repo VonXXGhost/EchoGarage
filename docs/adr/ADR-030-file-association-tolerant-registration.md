@@ -1,6 +1,6 @@
 # ADR-030：文件关联注册的容错与 Windows 11 候选来源（修订 ADR-008 §3）
 
-- 状态：Proposed（待 owner 批准）
+- 状态：已批准（Accepted，2026-11-21，owner）
 - 日期：2026-11-20
 - 相关：[ADR-008](ADR-008-single-instance-default-player.md)（单实例与默认播放器行为，本提案修订其第 3 条「注册为默认播放器」的实现细节与结果语义）、KB-002（受限开发环境下的构建与测试）
 - 涉及代码：`src/EchoGarage.Infrastructure/Windows/FileAssociationService.cs`、`FileAssociationResult.cs`、`IRegistryStore.cs`、`src/EchoGarage.App/Views/FileAssociationWindow.xaml(.cs)`、`src/EchoGarage.App/Views/SettingsWindow.xaml.cs`、`src/EchoGarage.App/AppHost.cs`、`tests/EchoGarage.Tests/FileAssociationTests.cs`

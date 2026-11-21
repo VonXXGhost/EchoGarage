@@ -191,6 +191,8 @@ public partial class MainWindow : Window
         Loaded -= OnLoaded;
         try
         {
+            ApplyDpiScale();
+            DpiChanged += (_, _) => ApplyDpiScale();
             await _vm.InitializeAsync();
             ApplyLayout();
 
@@ -203,6 +205,16 @@ public partial class MainWindow : Window
             _host.Logger.Error("Main window initialization failed", ex);
             _vm.SetStatus($"初始化失败：{ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 封面按“显示尺寸 × DPI”解码：4K/150% 下相册组封面只有 96 DIP（144 px），
+    /// 固定解码到 512 px 会让每组多占约 1 MB 非托管内存。
+    /// </summary>
+    private void ApplyDpiScale()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        _vm.DpiScale = dpi.DpiScaleX;
     }
 
     /// <summary>

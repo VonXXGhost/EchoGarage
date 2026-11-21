@@ -20,6 +20,9 @@ public sealed class FileCoverCache : ICoverCache
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private string _coversDirectory;
 
+    /// <summary>裁剪后保留的比例：删到上限的 90%，避免每次启动都为几 MB 反复扫描。</summary>
+    private const double TrimTargetRatio = 0.9;
+
     public FileCoverCache(string coversDirectory, IAppLogger logger)
     {
         _coversDirectory = coversDirectory;
@@ -28,6 +31,9 @@ public sealed class FileCoverCache : ICoverCache
     }
 
     public string CoversDirectory => _coversDirectory;
+
+    /// <summary>封面缓存目录的容量上限（MB）；0 表示不限制。与波形缓存同一套 LRU 规则。</summary>
+    public int LimitMb { get; set; } = 2048;
 
     public string? Resolve(string? coverKey)
     {
@@ -193,6 +199,104 @@ public sealed class FileCoverCache : ICoverCache
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 按 <see cref="LimitMb"/> 裁剪封面缓存：按最后写入时间从旧到新删除，删到上限的 90%。
+    /// 同时删除对应的 <c>.stamp</c> / <c>.none</c> 伴生文件，避免留下指向已删封面的标记。
+    /// </summary>
+    public async Task<int> TrimAsync(CancellationToken cancellationToken = default)
+    {
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var removed = await Task.Run(() => TrimToLimit(cancellationToken), cancellationToken).ConfigureAwait(false);
+            if (removed > 0)
+            {
+                _logger.Info($"封面缓存已按上限裁剪 files={removed} limitMb={LimitMb}");
+            }
+
+            return removed;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warn($"封面缓存裁剪失败 directory={_coversDirectory} error={exception.Message}");
+            return 0;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    private int TrimToLimit(CancellationToken cancellationToken)
+    {
+        if (LimitMb <= 0 || !Directory.Exists(_coversDirectory))
+        {
+            return 0;
+        }
+
+        var limitBytes = (long)LimitMb * 1024 * 1024;
+        var files = new List<FileInfo>();
+        long total = 0;
+        foreach (var path in Directory.EnumerateFiles(_coversDirectory))
+        {
+            var extension = System.IO.Path.GetExtension(path);
+            if (!SupportedCoverExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                var info = new FileInfo(path);
+                files.Add(info);
+                total += info.Length;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _logger.Debug($"封面缓存统计失败 path={path} error={exception.Message}");
+            }
+        }
+
+        if (total <= limitBytes)
+        {
+            return 0;
+        }
+
+        var target = (long)(limitBytes * TrimTargetRatio);
+        var removed = 0;
+        foreach (var file in files.OrderBy(info => info.LastWriteTimeUtc))
+        {
+            if (total <= target)
+            {
+                break;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var key = System.IO.Path.GetFileNameWithoutExtension(file.FullName);
+                var length = file.Length;
+                file.Delete();
+                total -= length;
+                removed++;
+
+                // 伴生标记必须一起删：否则 .stamp 会指向一个不存在的封面，.none 会挡住重新提取。
+                TryDelete(System.IO.Path.Combine(_coversDirectory, key + ".stamp"));
+                TryDelete(System.IO.Path.Combine(_coversDirectory, key + ".none"));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _logger.Debug($"封面缓存 LRU 删除失败 path={file.FullName} error={exception.Message}");
+            }
+        }
+
+        return removed;
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)

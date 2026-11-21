@@ -149,6 +149,28 @@ DataGrid 不支持单元格跨行，无法做出“封面纵向覆盖整个专�
   请求完成后按可见顺序逐步补齐，离开可见区域的容器会释放大封面（见 3.3 第 1 条）。
 - 内存负缓存只记录“确认没有封面”的专辑，瞬时提取/解码失败不会被永久记住（见 3.3 第 2 条）。
 
+### 3.5 分组封面的“可见窗口”上限（2026-11-21 补充）
+
+owner 反馈「滚动浏览媒体库时内存与磁盘占用持续增长」：4000 行 / 1604 个专辑组的分组列表滚动 40 秒后
+工作集到 3,011 MB。`dotnet-gcdump` 显示 GC 堆只有 54 MB —— 增长全在 `BitmapSource` 的 WIC 原生像素
+缓冲里，被仍存活的托管引用钉住。
+
+根因：分组虚拟化**不销毁** `GroupItem` 容器。组头滚出视口时 `IsVisibleChanged(false)` / `Unloaded` /
+`DataContextChanged` 都不触发（滚动 60 秒的临时计数器实测 `requests=14900, releases=0, live=1604`），
+§3.3 第 1 条依赖的事件释放路径在分组视图下实际不生效，1604 张 512 px 封面因此永久驻留。
+
+补充规则（`MainViewModel`）：
+
+1. `LoadGroupCoverAsync` 成功后把该行登记进“可见分组封面窗口”（按访问顺序）；
+2. 超过 `VisibleGroupCoverLimit = 512` 时，用 400 ms 去抖的 `DispatcherTimer` 批量回收到
+   `VisibleGroupCoverTrimTarget = 384`，只把 `GroupCoverImage` 置空（位图仍在 `CoverImageService` 的
+   字节 LRU 里，滚回视口时直接命中，不重新解码）；
+3. 列表切换（`Tracks.ReplaceAll`）后清空窗口登记，避免跨列表的陈旧引用；
+4. 日志记录 `Cover memory (...): cache={n} entries / {MB} MB (limit 1024 MB), groupCovers={n}/512`。
+
+实测（4K / 150%）：40 秒滚动 3,011 MB → 341 MB；20 次 UIA 滚动 1,773.6 MB → 335.9 MB；滚动吞吐不变
+（43.9 s → 43.5 s / 20 次）。局限：快速拖到列表末尾时，旧封面可能保留到去抖触发为止（≤400 ms）。
+
 ## 4. 分组封面尺寸绑定加固（“巨大封面”）
 
 ### 4.1 现象
@@ -204,6 +226,16 @@ WPF 分组虚拟化的 GroupItem 容器在回收 / 重新生成时，可能先�
   若再次出现，日志中的 `Album group cover size was not applied` 会给出实际宽度、期望值与分组名。
 - 若未来新增其他依赖 `RelativeSource AncestorType=Window` 的模板内绑定，应优先考虑可继承附加属性
   或 `ElementName` 之外的方式，避免同类容器时序问题。
+
+### 4.5 解码尺寸按 DPI 而非固定像素（2026-11-21 补充）
+
+- 列表行封面显示 24 DIP、分组封面 `groupCoverSize` DIP，但解码宽度曾固定为 128 / 512 px：150% 缩放下
+  分别是显示尺寸的 5.3 倍与 3.5 倍，纯属浪费内存与解码时间；
+- 现在解码宽度 = 显示尺寸 × `DpiScale`（`MainWindow.ApplyDpiScale()` 在 `Loaded` 与 `DpiChanged` 时写入
+  `MainViewModel.DpiScale`），行夹在 32–256 px、分组封面夹在 64–640 px；
+- 150% 缩放 + `groupCoverSize = 96` 时分组封面解码 144 px（原 512 px），像素量约为原来的 8%；
+- 同一封面在列表行 / 分组头 / “正在播放”三处仍按各自尺寸各缓存一份（内存键含解码宽度）：共用一张
+  大图反而更费内存，这是有意取舍。
 
 ## 5. “正在播放”封面过渡态
 

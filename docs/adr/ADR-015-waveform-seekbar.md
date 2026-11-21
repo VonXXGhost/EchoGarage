@@ -600,9 +600,9 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / Focu
 ### 9.2 几何缓存
 
 - 缓存的键：设备像素宽高、`dpiScale`、`Peaks.ColumnCount`、`Peaks.FloorDb/CeilingDb`（容差 0.01 dB）与已取用的 `ValidCount`；
-- 每个频段一个 `GeometryGroup`，内部按设备像素列存放**冻结的 `RectangleGeometry`**；颜色由画刷在 `OnRender` 时给出，**画刷/主题变化不需要重建几何**；
+- 每个频段一条**合并后的 `StreamGeometry` 阶梯折线**（一条闭合 figure：底边从左到右、顶边从右到左，竖直台阶连接相邻列），顶点约 4×列数；颜色由画刷在 `OnRender` 时给出，**画刷/主题变化不需要重建几何**；
 - 位置每 200 ms 变化时**不重建几何**，只 `InvalidateVisual()` 重画已播放区、播放头与悬停线；
-- 尺寸 / DPI / 列数 / 归一化窗口变化 → 清空重建（完成时窗口切换会触发一次，见 §9.7）。
+- 尺寸 / DPI / 列数 / 归一化窗口变化，或 `ValidCount` 增大 → **整层重建**（4K 下 ~3862 列 < 2 ms，分析期间每秒数次，可接受）。
 
 ### 9.3 像素对齐
 
@@ -623,7 +623,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / Focu
 ### 9.5 播放头与已播放区
 
 - 播放头 `x = Position/Duration × W`，1.5 设备像素宽，`WaveformPlayheadBrush`；
-- 已播放区 `[0, x)` 以 26% 不透明度绘制三色带（`PushOpacity(PlayedOpacity)`，常量 `0.26`），未播放区 100%；不做颜色混合（2026-11-16 并入原 ADR-015-A1）；
+- 已播放区 `[0, x)`：先按 100% 不透明度画完整三色带，再用轨道底色 `WaveformTrackBackgroundBrush` 以 `1 - PlayedOpacity`（74%）覆盖该区域。结果与“三色带在 26% 不透明度下叠在轨道底上”逐像素等价（轨道底在五套主题中均为不透明纯色），但只画一遍几何（2026-11-21 修订；原做法是 `PushClip` + `PushOpacity(0.26)` 再画一遍，4K 下每次合成要处理约 23,000 个矩形 figure，只有 10 fps）；
 - 播放头到达右端时钳制在 `W-1`，避免画到控件外；
 - 位置更新频率沿用 200 ms（5 Hz）。在 3 分钟/900 px 下每 tick 移动 6 px，肉眼可见轻微跳动；P2 可选：波形模式下把定时器降到 100 ms，或在控件内做 200 ms 线性插值。
 
@@ -634,10 +634,10 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / Focu
 
 ### 9.7 渐进渲染
 
-- 控件比较新旧 `Peaks`：`ValidCount` 增大且归一化窗口未变 → 只对新增的尾部设备像素列建几何并 `Children.Add`（从上一段末列 -1 开始重叠；重叠处是同色不透明矩形，视觉无差别）；`ValidCount` 变小、窗口变化、尺寸 / DPI / 列数变化 → 整体重建；
+- 控件比较新旧 `Peaks`：`ValidCount` 增大且归一化窗口未变、`ValidCount` 变小、窗口变化、尺寸 / DPI / 列数变化 → 均**整层重建**（一次性 `Open()` 写完整条阶梯折线后 `Freeze()`；4K 下 < 2 ms，分析期间每秒数次，可接受；不再保留“只追加尾部”的增量路径）；
 - 未分析区域画轨道底 + 2 px 基线，前缘 1 px 竖线（`TextMuted` 45%），不用转圈/闪烁；
 - 渐进快照的归一化窗口恒定（§6.10），因此分析过程**只追加、零重排**；唯一的整体重建发生在完成时（窗口切到全曲 p5 / p99.5），≤5 ms；
-- 追加的几何 `Freeze()`；P1 直接在 UI 线程追加（250 列 <1 ms），P2 若单段变大再考虑后台构建。
+- 重建的几何 `Freeze()`；P1 直接在 UI 线程重建（4K 下 < 2 ms），P2 若变慢再考虑后台构建。
 
 ## 10. 交互设计
 
@@ -708,6 +708,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / Focu
 | 缓存命中 | ≤ 10 ms | 40 KB 顺序读 |
 | 几何构建 | ≤ 5 ms | 900 列 × 3 层，仅在尺寸/曲目变化时 |
 | 每 tick 重绘 | ≤ 1 ms | 5 次 draw call |
+| 4K 主屏每合成 | ≤ 7 ms | 3862×2110 窗口、波形可见、频谱动画中：实测 148.7 fps（≈6.8 ms/合成） |
 | 内存 | ≤ 100 KB/曲 | 4 个 byte[] + 几何 |
 | 启动影响 | 0 | 无启动路径改动 |
 | 切歌影响 | 0（UI） | 分析在后台，播放不等它 |
@@ -748,6 +749,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / Focu
 - 日志 `Waveform analyzed ... ms=`；
 - 首次播放的“可听见开始”不晚于当前基线（不因分析延后）；
 - 拖动时 UI 不掉帧（目测 + `--screenshot` 辅助）。
+- 4K / 160 Hz 主屏 + 150% 缩放，波形与频谱同时动：`--visualizer` 采样帧率应 ≥ 140 fps（本机 Release 实测 148.7 fps，波形不可见时 157.2 fps）。
 
 ## 13. 分阶段实施
 
@@ -833,6 +835,7 @@ LowBrush / MidBrush / HighBrush / TrackBrush / PlayheadBrush / HoverBrush / Focu
 | 2026-11-14 | ADR-015（本文） | 切换按钮改为 30 px 仅图标、与顺序/随机按钮同一观感；波形高度改为填满传输条（§0、§5.5） |
 | 2026-11-14 | ADR-015（本文） | 渐进归一化窗口锁死 −48…0 dB（上限 0 dBFS），完成时一次整曲归一化；删除前缀窗口切换（§0.9、§6.10、§9.7、§12.1） |
 | 2026-11-16 | 原 ADR-015-A1（已并入本文） | 已播放区改为按区域 clip + `PushOpacity(0.26)` 直接绘制三色带，未播放区 100%；删除 `WaveformPlayedOverlayBrush` 令牌与 `PlayedOverlayBrush` 依赖属性；三色带配色随 ADR-024 五套主题重定（§5.3 / §5.4 / §9.1 / §9.5 / §15.1） |
+| 2026-11-21 | ADR-015（本文） | 4K / 160 Hz 帧率修复：波形几何由“每设备像素列一个 `RectangleGeometry`”改为每频段一条合并的阶梯折线 `StreamGeometry`；已播放区改为单遍绘制 + 轨道底色 74% 覆盖；渐进渲染改为整层重建（§9.2 / §9.5 / §9.7 / §11 / §12.3） |
 | 2026-11-16 | 原 ADR-015-A2（已并入本文） | 高度窗口改为只向下放宽下界：`MinimumStretchDb` 8.0 → 30.0；`AnalyzerVersion` 1 → 2，旧 v1 `.wfm` 读取时失效并重算，EGWV `FormatVersion` 保持 1（§6.6 / §6.8 / §6.10 / §7.3 / §12.1 / §15.1） |
 
 > 原 ADR-015-A1、ADR-015-A2 的正文已并入本文，对应文件已从 `docs/adr/` 移除，编号作为追溯信息保留。

@@ -29,6 +29,7 @@ public sealed class AppHost : IAsyncDisposable
     private readonly SpectrumAnalyzer _spectrumAnalyzer;
     private bool _shutdown;
     private FileWaveformCache? _waveformCacheImpl;
+    private FileCoverCache? _coverCacheImpl;
 
     public AppHost(AppPaths? paths = null)
     {
@@ -100,7 +101,12 @@ public sealed class AppHost : IAsyncDisposable
 
         AudioConverter.CleanupStaleTempFolders(Paths, Logger);
 
-        Covers = new FileCoverCache(Settings.Current.CacheDirectory, Logger);
+        var coverCache = new FileCoverCache(Settings.Current.CacheDirectory, Logger)
+        {
+            LimitMb = Math.Max(0, Settings.Current.CoverCacheLimitMb),
+        };
+        _coverCacheImpl = coverCache;
+        Covers = coverCache;
         CoverImages = new CoverImageService(Covers, Logger);
 
         var waveformCache = new FileWaveformCache(
@@ -156,6 +162,7 @@ public sealed class AppHost : IAsyncDisposable
             }
 
             TrimWaveformCache();
+            TrimCoverCache();
 
             Logger.Info($"Warmup finished in {stopwatch.ElapsedMilliseconds} ms.");
         });
@@ -186,6 +193,34 @@ public sealed class AppHost : IAsyncDisposable
             catch (Exception ex)
             {
                 Logger.Warn($"Waveform cache trim failed: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// 应用封面缓存上限并在后台裁剪。启动预热与设置里改动上限时各调一次。
+    /// </summary>
+    public void TrimCoverCache()
+    {
+        if (_coverCacheImpl is not { } cache)
+        {
+            return;
+        }
+
+        cache.LimitMb = Math.Max(0, Settings.Current.CoverCacheLimitMb);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var removed = await cache.TrimAsync();
+                if (removed > 0)
+                {
+                    Logger.Info($"Cover cache trimmed: removed {removed} file(s), limit {cache.LimitMb} MB.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Cover cache trim failed: {ex.Message}");
             }
         });
     }
