@@ -20,6 +20,9 @@ public partial class MainWindow
 
     private bool _centerCurrentRowPending;
 
+    /// <summary>右侧列表的封面补加载是否已排队（滚动事件很密，合并成一次 dispatcher 回调）。</summary>
+    private bool _nowPlayingCoverLoadQueued;
+
     /// <summary>已打开的封面浏览窗口（非模态、由主窗口拥有）；同一时间只保留一个实例。</summary>
     private CoverViewerWindow? _coverViewer;
 
@@ -386,6 +389,128 @@ public partial class MainWindow
         _coverViewer = viewer;
         _host.Logger.Debug($"Cover viewer opened for '{_vm.CurrentRow?.Track.Path ?? "unknown"}'.");
         viewer.Show();
+    }
+
+    /// <summary>
+    /// 「正在播放」页右侧列表的行容器生成后按需加载缩略图。这里不做 Unloaded 时的清理：
+    /// 行对象与播放列表页共用，清掉封面会让切回列表页时短暂变空（列表页的行自己会清理）。
+    /// </summary>
+    private void OnNowPlayingPageItemLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is ListViewItem { DataContext: TrackRowViewModel row })
+        {
+            _ = _vm.LoadRowCoverAsync(row);
+        }
+    }
+
+    /// <summary>
+    /// 列表使用 Recycling 虚拟化，滚动时容器被复用、Loaded 不会再次触发；已滑出并复用回来的
+    /// 行因此拿不到缩略图。滚动 / 容器生成状态变化时合并成一次回调，补加载当前已实化的行。
+    /// </summary>
+    private void OnNowPlayingPageListScrollChanged(object? sender, ScrollChangedEventArgs e) =>
+        QueueVisibleNowPlayingCoverLoad();
+
+    private void OnNowPlayingPageListGeneratorStatusChanged(object? sender, EventArgs e)
+    {
+        if (NowPlayingPageList.ItemContainerGenerator.Status == GeneratorStatus.ContainersGenerated)
+        {
+            QueueVisibleNowPlayingCoverLoad();
+        }
+    }
+
+    private void QueueVisibleNowPlayingCoverLoad()
+    {
+        if (!_vm.IsNowPlayingPageActive || _nowPlayingCoverLoadQueued)
+        {
+            return;
+        }
+
+        _nowPlayingCoverLoadQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            _nowPlayingCoverLoadQueued = false;
+            LoadVisibleNowPlayingCovers();
+        }));
+    }
+
+    /// <summary>对右侧列表当前已实化（在视口内）的行补加载缩略图。</summary>
+    private void LoadVisibleNowPlayingCovers()
+    {
+        if (!_vm.IsNowPlayingPageActive)
+        {
+            return;
+        }
+
+        if (FindDescendant<VirtualizingStackPanel>(NowPlayingPageList) is not { } panel)
+        {
+            return;
+        }
+
+        for (var i = 0; i < panel.Children.Count; i++)
+        {
+            if (panel.Children[i] is ListViewItem { DataContext: TrackRowViewModel row } &&
+                row.CoverImage is null)
+            {
+                _ = _vm.LoadRowCoverAsync(row);
+            }
+        }
+    }
+
+    /// <summary>双击「正在播放」页右侧列表的一行即播放该曲目。</summary>
+    private void OnNowPlayingPageListDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (NowPlayingPageList.SelectedItem is TrackRowViewModel row)
+        {
+            e.Handled = true;
+            _ = _vm.PlayRowCommand.ExecuteAsync(row);
+        }
+    }
+
+    /// <summary>把「正在播放」页右侧列表的当前播放行滚动到视口中央。</summary>
+    private void OnNowPlayingLocateClick(object sender, RoutedEventArgs e) => CenterNowPlayingListRow();
+
+    /// <summary>
+    /// 「正在播放」页的标签属性入口只针对当前播放曲目，避免误用播放列表页的多选状态。
+    /// </summary>
+    private void OnNowPlayingEditTagsClick(object sender, RoutedEventArgs e)
+    {
+        _ = _vm.EditCurrentTrackTagsAsync();
+    }
+
+    private void OnNowPlayingPageSizeChanged(object sender, SizeChangedEventArgs e) =>
+        ApplyNowPlayingPageMetrics(e.NewSize);
+
+    /// <summary>
+    /// 「正在播放」页在窄 / 矮窗口下按可用尺寸收放封面、标题与频谱，避免布局被裁切。
+    /// 尺寸以页面实际 DIP 布局尺寸为准（不依赖屏幕 DPI）：宽窗口用 300 封面（设计稿尺寸），
+    /// 窄窗口退到 250、矮窗口退到 210 并缩小标题；标签卡片始终跟随是否在播放。
+    /// </summary>
+    private void ApplyNowPlayingPageMetrics(Size size)
+    {
+        if (size.Width <= 0 || size.Height <= 0)
+        {
+            return;
+        }
+
+        var narrow = size.Width < 1240;
+        var shortHeight = size.Height < 560;
+        // 低于 520 DIP 时标签卡片（约 200 DIP）会把频谱挤到视口外，优先保证封面与频谱可见。
+        var hideTagCard = size.Height < 520;
+        var cover = shortHeight ? 210 : narrow ? 250 : 300;
+
+        NowPlayingCoverFrame.Width = cover;
+        NowPlayingCoverFrame.Height = cover;
+        NowPlayingCoverFramePlaceholder.Width = cover;
+        NowPlayingCoverFramePlaceholder.Height = cover;
+
+        NowPlayingPageTitle.FontSize = shortHeight ? 22 : narrow ? 25 : 30;
+        NowPlayingTagCardHost.Visibility = _vm.HasCurrentTrack && !hideTagCard
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        NowPlayingVizCard.MinHeight = shortHeight ? 60 : 120;
+
+        _host.Logger.Debug(
+            $"Now-playing page metrics: size={size.Width:F0}x{size.Height:F0}, cover={cover}, vizMin={NowPlayingVizCard.MinHeight}, tagCard={NowPlayingTagCardHost.Visibility}");
     }
 
     private void OnCoverViewerClosed(object? sender, EventArgs e)

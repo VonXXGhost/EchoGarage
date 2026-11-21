@@ -22,6 +22,81 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <svc:SecondaryTextConverter x:Key="SecondaryTextConverter" />
 
+        <!-- 「播放列表 / 正在播放」顶部 TAB：外观对应设计稿的 view-switcher。 -->
+        <Style x:Key="PageTabButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="TabRoot" CornerRadius="6" Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabRoot" Property="Background"
+                                        Value="{DynamicResource RowHoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 「正在播放」页标签卡片：字段名 / 字段值。 -->
+        <Style x:Key="TagFieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+        <Style x:Key="TagFieldValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <!-- 「正在播放」页右侧播放列表行：无边框卡片，播放中按主题高亮。 -->
+        <Style x:Key="NowPlayingSidebarItem" TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <EventSetter Event="Loaded" Handler="OnNowPlayingPageItemLoaded" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="RowRoot" Background="{TemplateBinding Background}" CornerRadius="7"
+                                Padding="8,6" SnapsToDevicePixels="True">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RowRoot" Property="Background"
+                                        Value="{DynamicResource RowHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="RowRoot" Property="Background"
+                                        Value="{DynamicResource RowSelectedBrush}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                <Setter TargetName="RowRoot" Property="Background"
+                                        Value="{DynamicResource PlayingRowBrush}" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Optional second line under a cell's primary text. The style trigger collapses the
              line when the column has no secondary format or the track value renders empty. -->
         <Style x:Key="SecondaryCellText" TargetType="TextBlock">
@@ -512,6 +587,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -563,7 +639,44 @@
                     </MenuItem>
                 </Menu>
 
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- 页面切换（设计稿顶部 TAB）：播放列表 / 正在播放。 -->
+                <Border Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0"
+                        Background="{DynamicResource PanelAltBackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Padding="3">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="☰ 播放列表" Command="{Binding ShowPlaylistPageCommand}"
+                                AutomationProperties.AutomationId="PlaylistPageTab">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource PageTabButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsNowPlayingPageActive}" Value="False">
+                                            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="♪ 正在播放" Command="{Binding ShowNowPlayingPageCommand}"
+                                AutomationProperties.AutomationId="NowPlayingPageTab">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource PageTabButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsNowPlayingPageActive}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="输出" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"
                                Margin="0,0,6,0" FontSize="12" />
                     <ComboBox Width="250" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
@@ -586,7 +699,8 @@
 
             <!-- Sidebar -->
             <Border Grid.Column="0" Background="{DynamicResource SidebarBackgroundBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0"
+                    Visibility="{Binding IsNowPlayingPageActive, Converter={StaticResource InverseBoolToVisibility}}">
                 <Grid x:Name="SidebarRoot">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
@@ -636,8 +750,9 @@
                 </Grid>
             </Border>
 
-            <!-- Track list -->
-            <Grid Grid.Column="1" Background="{DynamicResource MainBackgroundBrush}">
+            <!-- Track list page（原来的播放列表页；「正在播放」页激活时整页隐藏） -->
+            <Grid x:Name="PlaylistPageRoot" Grid.Column="1" Background="{DynamicResource MainBackgroundBrush}"
+                  Visibility="{Binding IsNowPlayingPageActive, Converter={StaticResource InverseBoolToVisibility}}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -930,10 +1045,338 @@
                 </Grid>
             </Grid>
 
+            <!-- ===================== 正在播放页 ===================== -->
+            <!-- 与播放列表页平行的一页（顶部 TAB 切换）：左侧封面 + 元数据 + 可视化，右侧为
+                 与播放列表页顺序一致的当前播放列表（不分组、不支持拖拽排序）。左侧资料库
+                 面板与右侧专辑面板在本页激活时收起。背景柔光由当前封面实时取色。 -->
+            <Grid x:Name="NowPlayingPageRoot" Grid.Column="1"
+                  SizeChanged="OnNowPlayingPageSizeChanged"
+                  Visibility="{Binding IsNowPlayingPageActive, Converter={StaticResource BoolToVisibility}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="420" />
+                    <ColumnDefinition Width="344" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：封面 + 元数据 + 频谱 -->
+                <Grid Grid.Column="0" Background="{DynamicResource WindowBackgroundBrush}">
+                    <controls:CoverGlow PrimaryColor="{Binding NowPlayingGlowPrimary}"
+                                         SecondaryColor="{Binding NowPlayingGlowSecondary}"
+                                         PrimaryOpacity="{DynamicResource NowPlayingGlowPrimaryAlpha}"
+                                         SecondaryOpacity="{DynamicResource NowPlayingGlowSecondaryAlpha}" />
+                    <Grid Margin="28,24,28,18">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 封面：双击打开大图浏览（与专辑面板的交互一致）。 -->
+                            <Border x:Name="NowPlayingCoverFrame" Grid.Column="0" Width="300" Height="300" CornerRadius="8"
+                                    Background="{DynamicResource CoverBoxBrush}"
+                                    BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
+                                    ClipToBounds="True" VerticalAlignment="Top" Cursor="Hand"
+                                    ToolTip="双击放大浏览封面"
+                                    AutomationProperties.AutomationId="NowPlayingPageCover"
+                                    MouseLeftButtonDown="OnNowPlayingCoverMouseLeftButtonDown"
+                                    Visibility="{Binding HasCurrentTrack, Converter={StaticResource BoolToVisibility}}">
+                                <Grid>
+                                    <TextBlock Text="♪" FontSize="54" Foreground="{DynamicResource CoverNoteBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding ShowCoverPlaceholder, Converter={StaticResource BoolToVisibility}}" />
+                                    <controls:CrossFadeImage Source="{Binding CurrentCover}" />
+                                    <Grid Width="52" Height="52" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Style="{StaticResource NowPlayingCoverSpinner}">
+                                        <Ellipse Width="52" Height="52" Stroke="{DynamicResource CoverNoteBrush}"
+                                                 StrokeThickness="3" Opacity="0.35" />
+                                        <Path Stroke="{DynamicResource AccentBrush}" StrokeThickness="3"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                              Data="M 26,4 A 22,22 0 1 1 4,26" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <!-- 未播放时保持同样尺寸的占位，避免页面布局跳动。 -->
+                            <Border x:Name="NowPlayingCoverFramePlaceholder" Grid.Column="0" Width="300" Height="300" CornerRadius="8"
+                                    Background="{DynamicResource CoverPlaceholderBrush}"
+                                    BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
+                                    Visibility="{Binding HasCurrentTrack, Converter={StaticResource InverseBoolToVisibility}}">
+                                <TextBlock Text="♪" FontSize="54" Foreground="{DynamicResource EmptyGlyphBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+
+                            <Grid Grid.Column="1" Margin="32,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock x:Name="NowPlayingPageTitle" Text="{Binding CurrentTitle}"
+                                                   FontSize="30" FontWeight="Bold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxHeight="78" />
+                                        <TextBlock FontSize="15" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   Margin="0,6,0,0" TextTrimming="CharacterEllipsis">
+                                            <Run Text="{Binding CurrentSubtitle, Mode=OneWay}" />
+                                            <Run Text="  ·  " Foreground="{DynamicResource TextMutedBrush}" />
+                                            <Run Text="{Binding CurrentInfo, Mode=OneWay}" />
+                                        </TextBlock>
+                                        <WrapPanel Margin="0,12,0,0">
+                                            <Border Background="{DynamicResource AccentSoftBrush}"
+                                                    BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                                                    CornerRadius="6" Padding="8,2" Margin="0,0,7,6">
+                                                <TextBlock Text="{Binding NowPlayingGenre}" FontSize="11.5"
+                                                           Foreground="{DynamicResource AccentBrush}" />
+                                            </Border>
+                                            <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                    CornerRadius="6" Padding="8,2" Margin="0,0,7,6">
+                                                <TextBlock Text="{Binding NowPlayingYear}" FontSize="11.5"
+                                                           FontFamily="{StaticResource MonoFont}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            </Border>
+                                            <Border Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                    CornerRadius="6" Padding="8,2" Margin="0,0,7,6">
+                                                <TextBlock Text="{Binding NowPlayingFormatText}" FontSize="11.5"
+                                                           FontFamily="{StaticResource MonoFont}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            </Border>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="✎ 标签属性" VerticalAlignment="Top"
+                                            Style="{StaticResource FlatButton}" Margin="12,0,0,0"
+                                            IsEnabled="{Binding HasCurrentTrack}"
+                                            Click="OnNowPlayingEditTagsClick" />
+                                </Grid>
+
+                                <!-- 标签卡片：字段名 / 值三列排布，最后一行是文件路径。
+                                     窗口高度不足时由代码隐藏整张卡片，优先保证封面与频谱的高度。 -->
+                                <Grid x:Name="NowPlayingTagCardHost" Grid.Row="1">
+                                <Border Margin="0,16,0,0" CornerRadius="10"
+                                        Background="{DynamicResource PanelBackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                        Padding="16,13,16,13">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,18,11">
+                                            <TextBlock Text="专辑艺术家" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingAlbumArtist}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,18,11">
+                                            <TextBlock Text="作曲家" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingComposer}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,11">
+                                            <TextBlock Text="流派" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingGenre}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,18,11">
+                                            <TextBlock Text="年份" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingYear}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,18,11">
+                                            <TextBlock Text="音轨号" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingTrackNumber}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,11">
+                                            <TextBlock Text="碟片号" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingDiscNumber}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,18,0">
+                                            <TextBlock Text="编码器" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingCodec}" Style="{StaticResource TagFieldValue}"
+                                                       FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="2">
+                                            <TextBlock Text="备注" Style="{StaticResource TagFieldLabel}" />
+                                            <TextBlock Text="{Binding NowPlayingComment}" Style="{StaticResource TagFieldValue}" />
+                                        </StackPanel>
+
+                                        <Border Grid.Row="3" Grid.ColumnSpan="3" Margin="0,11,0,0" Padding="0,8,0,0"
+                                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+                                            <TextBlock Text="{Binding NowPlayingPath}" FontSize="11.5"
+                                                       FontFamily="{StaticResource MonoFont}"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding NowPlayingPath}" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+
+                        <!-- 频谱可视化：复用现有 SpectrumView（与专辑面板共用同一个数据源；隐藏时不渲染）。 -->
+                        <Border x:Name="NowPlayingVizCard" Grid.Row="1" Margin="0,18,0,0" CornerRadius="12" MinHeight="120"
+                                Background="{DynamicResource PanelBackgroundBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="12,10,12,8"
+                                Visibility="{Binding ShowVisualizer, Converter={StaticResource BoolToVisibility}}">
+                            <controls:SpectrumView x:Name="NowPlayingPageSpectrum"
+                                                   Source="{Binding Spectrum}"
+                                                   Options="{Binding SpectrumOptions}"
+                                                   FrameRateLimit="{Binding VisualizerFrameRateLimit}"
+                                                   AutomationProperties.AutomationId="NowPlayingPageSpectrum" />
+                        </Border>
+                    </Grid>
+                </Grid>
+
+                <!-- 右：当前播放列表（顺序与播放列表页一致，不分组，不可拖拽排序） -->
+                <Border Grid.Column="1" Background="{DynamicResource SidebarBackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
+                    <Grid Margin="12,12,12,10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="2,0,2,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding PlaylistTitle}" FontSize="14" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="正在播放的列表" FontSize="10.5"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,0" />
+                            </StackPanel>
+                            <Border Grid.Column="1" VerticalAlignment="Center" Margin="8,0,6,0"
+                                    Background="{DynamicResource PanelAltBackgroundBrush}" CornerRadius="99" Padding="7,2">
+                                <TextBlock Text="{Binding NowPlayingPlaylistCountText}" FontSize="11"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </Border>
+                            <Button Grid.Column="2" Content="◎" Style="{StaticResource ToolbarButton}"
+                                    Width="26" Padding="0" ToolTip="定位到正在播放的歌曲"
+                                    Click="OnNowPlayingLocateClick"
+                                    AutomationProperties.AutomationId="NowPlayingLocateButton" />
+                        </Grid>
+
+                        <ListView x:Name="NowPlayingPageList" Grid.Row="1"
+                                  AutomationProperties.AutomationId="NowPlayingPageList"
+                                  ItemsSource="{Binding NowPlayingPlaylistRows}"
+                                  ItemContainerStyle="{StaticResource NowPlayingSidebarItem}"
+                                  Background="Transparent" BorderThickness="0" Padding="0"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  VirtualizingPanel.CacheLength="2"
+                                  MouseDoubleClick="OnNowPlayingPageListDoubleClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="22" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 序号；播放中的行改为 ♪ 强调色。 -->
+                                        <TextBlock Grid.Column="0" Text="{Binding IndexDisplay}" FontSize="9.5"
+                                                   FontFamily="{StaticResource MonoFont}"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Grid.Column="0" Text="♪" FontSize="11"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <Border Grid.Column="1" Width="36" Height="36" CornerRadius="5"
+                                                Margin="0,0,10,0"
+                                                Background="{DynamicResource CoverPlaceholderBrush}"
+                                                BorderBrush="{DynamicResource CoverStrokeBrush}" BorderThickness="1"
+                                                ClipToBounds="True">
+                                            <Image Source="{Binding CoverImage}" Stretch="Uniform"
+                                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontSize="12.5" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource PlayingTitleBrush}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock FontSize="10.5" Foreground="{DynamicResource TextMutedBrush}"
+                                                       Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
+                                                <Run Text="{Binding Artist, Mode=OneWay}" />
+                                                <Run Text=" · " />
+                                                <Run Text="{Binding Album, Mode=OneWay}" />
+                                            </TextBlock>
+                                        </StackPanel>
+
+                                        <TextBlock Grid.Column="3" Text="{Binding DurationText}" FontSize="11"
+                                                   FontFamily="{StaticResource MonoFont}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   Margin="8,0,0,0"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+            </Grid>
+
             <!-- Album panel -->
             <Border Grid.Column="2" Background="{DynamicResource PanelBackgroundBrush}"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0"
-                    Visibility="{Binding ShowAlbumPanel, Converter={StaticResource BoolToVisibility}}">
+                    Visibility="{Binding ShowPlaylistAlbumPanel, Converter={StaticResource BoolToVisibility}}">
                 <ScrollViewer x:Name="NowPlayingScroll" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled" Padding="18,16,18,18">
                     <!-- MinHeight 绑视口高度：内容不足一屏时 Grid 撑满面板，星号行才能拿到“剩余空间”；
@@ -1005,14 +1448,17 @@
                  the content column, so it resizes the column before it and the column it sits in.
                  (PreviousAndNext needs a column on both sides; on the last column it silently
                  does nothing, which is why the right panel could not be dragged.) -->
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+            <GridSplitter x:Name="SidebarSplitterCtl" Grid.Column="1" Width="6" HorizontalAlignment="Left"
+                          VerticalAlignment="Stretch"
                           ResizeDirection="Columns" ResizeBehavior="PreviousAndCurrent" Cursor="SizeWE"
                           Background="Transparent" AutomationProperties.AutomationId="SidebarSplitter"
+                          Visibility="{Binding IsNowPlayingPageActive, Converter={StaticResource InverseBoolToVisibility}}"
                           ToolTip="拖拽调整左侧面板宽度" />
-            <GridSplitter Grid.Column="2" Width="6" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+            <GridSplitter x:Name="AlbumPanelSplitterCtl" Grid.Column="2" Width="6" HorizontalAlignment="Left"
+                          VerticalAlignment="Stretch"
                           ResizeDirection="Columns" ResizeBehavior="PreviousAndCurrent" Cursor="SizeWE"
                           Background="Transparent" AutomationProperties.AutomationId="AlbumPanelSplitter"
-                          Visibility="{Binding ShowAlbumPanel, Converter={StaticResource BoolToVisibility}}"
+                          Visibility="{Binding ShowPlaylistAlbumPanel, Converter={StaticResource BoolToVisibility}}"
                           ToolTip="拖拽调整右侧面板宽度" />
         </Grid>
 

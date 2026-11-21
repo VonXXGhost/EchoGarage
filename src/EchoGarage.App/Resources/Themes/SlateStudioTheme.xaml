@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
     <!-- 主题：Slate Studio（深海蓝灰）（由 UI 主题规范定义；所有界面颜色必须引用这里的令牌） -->
 
     <!-- 背景 -->
@@ -74,4 +75,8 @@
     <FontFamily x:Key="UiFont">Microsoft YaHei UI, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas, Cascadia Mono, Microsoft YaHei UI</FontFamily>
     <DropShadowEffect x:Key="PopupShadow" BlurRadius="18" ShadowDepth="4" Opacity="0.5" Color="#000000" />
+
+    <!-- 正在播放页封面柔光：两束径向渐变的峰值不透明度。深色主题需要更高的峰值才看得见。 -->
+    <sys:Double x:Key="NowPlayingGlowPrimaryAlpha">0.28</sys:Double>
+    <sys:Double x:Key="NowPlayingGlowSecondaryAlpha">0.16</sys:Double>
 </ResourceDictionary>

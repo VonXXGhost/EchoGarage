@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Windows.Data;
+using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -249,6 +250,51 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowCoverLoadingSpinner));
     }
 
+    // =====================================================================
+    // 正在播放页：封面柔光 + 标签卡片
+    // =====================================================================
+
+    private const string EmptyTagText = "—";
+
+    /// <summary>「正在播放」页背景柔光的主色（自当前封面实时取色）。</summary>
+    [ObservableProperty]
+    private Color _nowPlayingGlowPrimary = Colors.Transparent;
+
+    /// <summary>「正在播放」页背景柔光的次色（自当前封面实时取色）。</summary>
+    [ObservableProperty]
+    private Color _nowPlayingGlowSecondary = Colors.Transparent;
+
+    [ObservableProperty]
+    private string _nowPlayingAlbumArtist = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingComposer = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingGenre = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingYear = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingTrackNumber = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingDiscNumber = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingCodec = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingComment = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingPath = string.Empty;
+
+    /// <summary>封面下方的格式徽标：编码器 · 码率 / 采样率。</summary>
+    [ObservableProperty]
+    private string _nowPlayingFormatText = EmptyTagText;
+
     [ObservableProperty]
     private string _playlistTitle = "媒体库";
 
@@ -389,6 +435,76 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool IsGroupedViewActive =>
         GroupByAlbum && PlaylistSortPolicy.SupportsAlbumGrouping(CurrentLayout.SortColumn);
+
+    // =====================================================================
+    // 顶部 TAB：播放列表页 / 正在播放页
+    // =====================================================================
+
+    /// <summary>true 时显示「正在播放」页；false 显示原来的播放列表页。本次运行内记忆，不写设置。</summary>
+    [ObservableProperty]
+    private bool _isNowPlayingPageActive;
+
+    public bool IsPlaylistPageActive => !IsNowPlayingPageActive;
+
+    /// <summary>播放列表页右侧的专辑面板；「正在播放」页有自己整页的右侧列表，专辑面板要收起。</summary>
+    public bool ShowPlaylistAlbumPanel => ShowAlbumPanel && !IsNowPlayingPageActive;
+
+    partial void OnIsNowPlayingPageActiveChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPlaylistPageActive));
+        OnPropertyChanged(nameof(ShowPlaylistAlbumPanel));
+        if (value)
+        {
+            RebuildNowPlayingPlaylist();
+        }
+    }
+
+    /// <summary>
+    /// 「正在播放」页右侧列表的数据快照：与播放列表页当前可见顺序（含搜索过滤、不含专辑分组）一致。
+    /// 行对象与播放列表页共享，因此播放指示、封面会随现有绑定自动更新。
+    /// </summary>
+    public IReadOnlyList<TrackRowViewModel> NowPlayingPlaylistRows
+    {
+        get => _nowPlayingPlaylistRows;
+        private set
+        {
+            if (ReferenceEquals(_nowPlayingPlaylistRows, value))
+            {
+                return;
+            }
+
+            _nowPlayingPlaylistRows = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(NowPlayingPlaylistCountText));
+        }
+    }
+
+    private IReadOnlyList<TrackRowViewModel> _nowPlayingPlaylistRows = [];
+
+    /// <summary>「正在播放」页右侧列表头部的数量标签。</summary>
+    public string NowPlayingPlaylistCountText => $"{NowPlayingPlaylistRows.Count:N0} 首";
+
+    /// <summary>
+    /// 按播放列表页当前可见顺序重建「正在播放」页的右侧列表。分组视图开启时使用分组视图的
+    /// 枚举顺序（分组不改变行顺序，只改变呈现），关闭时使用扁平视图顺序。
+    /// </summary>
+    public void RebuildNowPlayingPlaylist()
+    {
+        if (!IsNowPlayingPageActive)
+        {
+            return;
+        }
+
+        var view = IsGroupedViewActive ? (ICollectionView)_groupedTracksView : _tracksView;
+        NowPlayingPlaylistRows = view.Cast<TrackRowViewModel>().ToList();
+    }
+
+    [RelayCommand]
+    private void ShowPlaylistPage() => IsNowPlayingPageActive = false;
+
+    [RelayCommand]
+    private void ShowNowPlayingPage() => IsNowPlayingPageActive = true;
+
 
     /// <summary>列表行封面模板里的显示边长（DIP），与 MainWindow.xaml 的 Cell.Cover 保持一致。</summary>
     private const double RowCoverDisplaySize = 24;
@@ -612,6 +728,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _shuffleOrder = null;
         HasTracks = visible > 0;
         PlaylistSubtitle = BuildFilteredSubtitle(visible);
+        RebuildNowPlayingPlaylist();
     }
 
     private string BuildFilteredSubtitle(int visible)
@@ -1223,6 +1340,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             sortMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
             ApplyFilter();
             filterMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
+            // 新页面右侧列表与当前列表共用同一批行对象，切源后顺序快照必须跟着换。
+            RebuildNowPlayingPlaylist();
         }
         finally
         {
@@ -1327,6 +1446,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         RebuildGroupedView();
+        RebuildNowPlayingPlaylist();
     }
 
     /// <summary>
@@ -1425,6 +1545,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         RebuildGroupedView();
+        RebuildNowPlayingPlaylist();
     }
 
     /// <summary>
@@ -2083,6 +2204,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _nowPlayingCoverVersion++;
         IsNowPlayingCoverLoading = false;
         CurrentCover = null;
+        ClearNowPlayingGlow();
+        ResetNowPlayingPageMetadata();
         OnPropertyChanged(nameof(HasCurrentTrack));
     }
 
@@ -2106,7 +2229,60 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CurrentInfo = string.Join(" · ", parts);
         DurationSeconds = track.DurationMs / 1000.0;
         DurationText = DisplayFormatter.Duration(track.DurationMs);
+
+        // 「正在播放」页的标签卡片与格式徽标。
+        NowPlayingAlbumArtist = TagOrDash(track.AlbumArtist);
+        NowPlayingComposer = TagOrDash(track.Composer);
+        NowPlayingGenre = TagOrDash(track.Genre);
+        NowPlayingYear = track.Year is > 0
+            ? track.Year.Value.ToString(CultureInfo.InvariantCulture)
+            : EmptyTagText;
+        NowPlayingTrackNumber = track.TrackNumber > 0
+            ? track.TrackNumber.ToString(CultureInfo.InvariantCulture)
+            : EmptyTagText;
+        NowPlayingDiscNumber = track.DiscNumber > 0
+            ? track.DiscNumber.ToString(CultureInfo.InvariantCulture)
+            : EmptyTagText;
+        NowPlayingCodec = TagOrDash(track.FormatDisplay);
+        NowPlayingComment = TagOrDash(track.Comment);
+        NowPlayingPath = track.Path;
+        NowPlayingFormatText = BuildFormatBadgeText(track);
     }
+
+    private static string TagOrDash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? EmptyTagText : value.Trim();
+
+    private static string BuildFormatBadgeText(Track track)
+    {
+        var parts = new List<string> { track.FormatDisplay };
+        var bitrate = DisplayFormatter.Bitrate(track.Bitrate);
+        var sampleRate = DisplayFormatter.SampleRate(track.SampleRate);
+        if (!string.IsNullOrEmpty(bitrate))
+        {
+            parts.Add(string.IsNullOrEmpty(sampleRate) ? bitrate : $"{bitrate} / {sampleRate}");
+        }
+        else if (!string.IsNullOrEmpty(sampleRate))
+        {
+            parts.Add(sampleRate);
+        }
+
+        return string.Join(" · ", parts);
+    }
+
+    private void ResetNowPlayingPageMetadata()
+    {
+        NowPlayingAlbumArtist = EmptyTagText;
+        NowPlayingComposer = EmptyTagText;
+        NowPlayingGenre = EmptyTagText;
+        NowPlayingYear = EmptyTagText;
+        NowPlayingTrackNumber = EmptyTagText;
+        NowPlayingDiscNumber = EmptyTagText;
+        NowPlayingCodec = EmptyTagText;
+        NowPlayingComment = EmptyTagText;
+        NowPlayingPath = string.Empty;
+        NowPlayingFormatText = EmptyTagText;
+    }
+
 
     /// <summary>
     /// 开始加载「正在播放」面板的大封面。这里刻意不立即清空 CurrentCover：旧封面会留在画面上，
@@ -2137,6 +2313,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
             CurrentCover = image;
             _host.Logger.Debug($"Now playing cover loaded: {track.Path} ({(image is null ? "none" : "ok")})");
+            if (image is null)
+            {
+                // 无封面时用主题强调色派生柔光，页面不至于变成纯白 / 纯黑。
+                ApplyGlowPalette(_host.NowPlayingGlow.CreateFallback());
+            }
+            else
+            {
+                _ = LoadNowPlayingGlowAsync(image, BuildGlowCacheKey(track), version);
+            }
         }
         catch (Exception ex)
         {
@@ -2150,6 +2335,71 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 IsNowPlayingCoverLoading = false;
             }
         }
+    }
+
+    private static string BuildGlowCacheKey(Track track) =>
+        $"{track.Path}\u0000{track.CoverKey}\u0000{track.ModifiedAtUtc.Ticks}\u0000{track.FileSize}";
+
+    private async Task LoadNowPlayingGlowAsync(System.Windows.Media.Imaging.BitmapSource cover, string cacheKey, int version)
+    {
+        try
+        {
+            var palette = await _host.NowPlayingGlow.CreateAsync(cover, cacheKey);
+            if (version != _nowPlayingCoverVersion)
+            {
+                return;
+            }
+
+            ApplyGlowPalette(palette);
+            _host.Logger.Debug("Now playing glow ready");
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"Now playing glow failed: {ex.Message}");
+        }
+    }
+
+    private void ApplyGlowPalette(CoverPalette palette)
+    {
+        NowPlayingGlowPrimary = Color.FromRgb(palette.Primary.R, palette.Primary.G, palette.Primary.B);
+        NowPlayingGlowSecondary = Color.FromRgb(palette.Secondary.R, palette.Secondary.G, palette.Secondary.B);
+        _host.Logger.Debug(
+            $"Now playing glow palette: primary=#{palette.Primary.R:X2}{palette.Primary.G:X2}{palette.Primary.B:X2}, " +
+            $"secondary=#{palette.Secondary.R:X2}{palette.Secondary.G:X2}{palette.Secondary.B:X2}, fallback={palette.UsedFallback}");
+    }
+
+    private void ClearNowPlayingGlow()
+    {
+        NowPlayingGlowPrimary = Colors.Transparent;
+        NowPlayingGlowSecondary = Colors.Transparent;
+    }
+
+    /// <summary>
+    /// 主题切换后调用。原始取色按封面缓存，命中时只重做主题归一化（亮度/彩度区间），
+    /// 否则按当前封面重新取一次。
+    /// </summary>
+    public void RefreshNowPlayingGlow()
+    {
+        if (CurrentRow?.Track is not { } track)
+        {
+            ClearNowPlayingGlow();
+            return;
+        }
+
+        if (CurrentCover is null)
+        {
+            ApplyGlowPalette(_host.NowPlayingGlow.CreateFallback());
+            return;
+        }
+
+        var cacheKey = BuildGlowCacheKey(track);
+        if (_host.NowPlayingGlow.Remap(cacheKey) is { } remapped)
+        {
+            ApplyGlowPalette(remapped);
+            return;
+        }
+
+        _ = LoadNowPlayingGlowAsync(CurrentCover, cacheKey, _nowPlayingCoverVersion);
     }
 
     /// <summary>
@@ -2512,6 +2762,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnShowAlbumPanelChanged(bool value)
     {
+        OnPropertyChanged(nameof(ShowPlaylistAlbumPanel));
         Settings.ShowAlbumPanel = value;
         QueueSettingsSave();
     }
@@ -3422,6 +3673,35 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _host.Logger.Error("Tag edit failed", ex);
+            _dialogs.Error($"保存标签失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 「正在播放」页的标签属性入口：只编辑当前播放曲目，避免误用播放列表页残留的多选状态。
+    /// </summary>
+    public async Task EditCurrentTrackTagsAsync()
+    {
+        if (CurrentRow is not { } row)
+        {
+            return;
+        }
+
+        var track = row.Track;
+        try
+        {
+            var tags = await Task.Run(() => new List<AudioTagData> { _host.TagService.Read(track.Path) });
+            var edit = _dialogs.EditTags([track], tags);
+            if (edit is null)
+            {
+                return;
+            }
+
+            await ApplyTagEditsAsync([row], tags, [edit], "标签");
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error("Current track tag edit failed", ex);
             _dialogs.Error($"保存标签失败：{ex.Message}");
         }
     }

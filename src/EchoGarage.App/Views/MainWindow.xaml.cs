@@ -37,6 +37,7 @@ public partial class MainWindow : Window
 
     /// <summary>Last user-chosen album-panel width; the column itself collapses to 0 while the panel is hidden.</summary>
     private double _albumPanelWidth = 320;
+    private double _sidebarWidth = 236;
     private bool _closing;
     private DateTime _scrollBurstWindow = DateTime.MinValue;
     private int _scrollBurstEvents;
@@ -80,6 +81,12 @@ public partial class MainWindow : Window
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
         TrackGrid.AddHandler(ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(OnListScrollChanged), handledEventsToo: true);
+        // 「正在播放」页右侧列表是 Recycling 虚拟化：滚动时容器被复用，Loaded 不会再次触发，
+        // 只靠 ItemContainerStyle 的 Loaded 会漏掉滑入视口的行封面。这里监听滚动与容器生成，
+        // 把当前已实化的行统一补一次缩略图。
+        NowPlayingPageList.AddHandler(ScrollViewer.ScrollChangedEvent,
+            new ScrollChangedEventHandler(OnNowPlayingPageListScrollChanged), handledEventsToo: true);
+        NowPlayingPageList.ItemContainerGenerator.StatusChanged += OnNowPlayingPageListGeneratorStatusChanged;
         // DataGrid column resizing is handled by a Thumb inside DataGridColumnHeader; persist
         // the layout as soon as the drag ends so a width change survives switching sources,
         // crashes or an unexpected shutdown instead of waiting for the window to close.
@@ -114,6 +121,8 @@ public partial class MainWindow : Window
     {
         TryEnableDarkTitleBar();
         UpdateThemeMenuChecks();
+        // 柔光的颜色按主题亮度/饱和度重新映射（只重映射缓存里的原始色，不重新取色）。
+        _vm.RefreshNowPlayingGlow();
     }
 
     /// <summary>主题菜单的勾选状态以 ThemeManager.Current 为唯一真相，避免菜单与配置不一致。</summary>
@@ -158,8 +167,64 @@ public partial class MainWindow : Window
                 _albumPanelWidth = Math.Clamp(AlbumPanelColumn.ActualWidth, 240, 520);
             }
 
-            ApplyAlbumPanelWidth(_vm.ShowAlbumPanel);
+            ApplyAlbumPanelWidth(_vm.ShowPlaylistAlbumPanel);
         }
+        else if (e.PropertyName is nameof(MainViewModel.IsNowPlayingPageActive))
+        {
+            ApplyNowPlayingPageChrome();
+        }
+        else if (e.PropertyName is nameof(MainViewModel.HasCurrentTrack))
+        {
+            // 播放 / 停止会切换标签卡片的显隐，需要按当前页尺寸重新评估一次。
+            ApplyNowPlayingPageMetrics(NowPlayingPageRoot.RenderSize);
+        }
+    }
+
+    /// <summary>
+    /// 「正在播放」页激活时收起左侧资料库与右侧专辑面板，让新页面占满整个列表区域；
+    /// 回到播放列表页时恢复用户原来的两栏宽度（不覆盖用户拖拽过的值）。
+    /// </summary>
+    private void ApplyNowPlayingPageChrome()
+    {
+        var nowPlaying = _vm.IsNowPlayingPageActive;
+        if (!nowPlaying && SidebarColumn.Width.Value >= 170)
+        {
+            _sidebarWidth = Math.Clamp(SidebarColumn.Width.Value, 170, 420);
+        }
+
+        SidebarColumn.MinWidth = nowPlaying ? 0 : 170;
+        SidebarColumn.MaxWidth = nowPlaying ? 0 : 420;
+        SidebarColumn.Width = new GridLength(nowPlaying ? 0 : Math.Clamp(_sidebarWidth, 170, 420));
+        ApplyAlbumPanelWidth(_vm.ShowPlaylistAlbumPanel);
+
+        if (nowPlaying)
+        {
+            // 右侧列表的 ItemsSource 在同一轮才刷新；等布局完成后再把当前行滚到视口中央，
+            // 并补一次已实化行的缩略图（虚拟化下 Loaded 只覆盖首次生成的行）。
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                CenterNowPlayingListRow();
+                LoadVisibleNowPlayingCovers();
+            }));
+        }
+    }
+
+    /// <summary>把「正在播放」页右侧列表里的当前播放行滚动到视口中央（复用播放列表页的居中逻辑）。</summary>
+    private void CenterNowPlayingListRow()
+    {
+        if (!_vm.IsNowPlayingPageActive || _vm.CurrentRow is not { } row)
+        {
+            return;
+        }
+
+        if (!NowPlayingPageList.Items.Contains(row))
+        {
+            return;
+        }
+
+        CenterItem(NowPlayingPageList, row,
+            () => NowPlayingPageList.ItemContainerGenerator.ContainerFromItem(row) as FrameworkElement,
+            NowPlayingPageList.ScrollIntoView);
     }
 
     /// <summary>
@@ -274,7 +339,7 @@ public partial class MainWindow : Window
         Top = top;
         SidebarColumn.Width = new GridLength(Math.Clamp(settings.SidebarWidth, 170, 420));
         _albumPanelWidth = Math.Clamp(settings.AlbumPanelWidth, 240, 520);
-        ApplyAlbumPanelWidth(_vm.ShowAlbumPanel);
+        ApplyAlbumPanelWidth(_vm.ShowPlaylistAlbumPanel);
 
         if (settings.WindowMaximized)
         {

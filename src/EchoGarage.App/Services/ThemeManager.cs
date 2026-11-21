@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using EchoGarage.Core.Models;
 
 namespace EchoGarage.App.Services;
@@ -25,6 +26,15 @@ public static class ThemeManager
     public static ThemeKind Current { get; private set; } = ThemeKind.PureStudio;
 
     public static bool IsDark => ThemeCatalog.IsDark(Current);
+
+    /// <summary>
+    /// 当前主题的强调色。封面取色失败（纯黑 / 纯白 / 灰度封面）时用它派生柔光回退色，
+    /// 这样回退色也跟随主题，而不是在代码里写死一个蓝色。
+    /// </summary>
+    public static Color AccentColor =>
+        System.Windows.Application.Current?.TryFindResource("AccentBrush") is SolidColorBrush brush
+            ? brush.Color
+            : Color.FromRgb(0x25, 0x63, 0xEB);
 
     public static event EventHandler<ThemeKind>? ThemeApplied;
 

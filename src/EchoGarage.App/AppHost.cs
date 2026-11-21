@@ -36,6 +36,7 @@ public sealed class AppHost : IAsyncDisposable
         Paths = paths ?? new AppPaths();
         Paths.EnsureCreated();
         Logger = new FileLogger(Paths);
+        NowPlayingGlow = new NowPlayingGlowService(Logger);
         Settings = new JsonSettingsService(Paths, Logger);
         Database = new SqliteDatabase(Paths, Logger);
         LibraryRepository = new SqliteLibraryRepository(Database, Logger);
@@ -84,6 +85,8 @@ public sealed class AppHost : IAsyncDisposable
     public IWebTagService WebTags { get; }
     public ICoverCache? Covers { get; private set; }
     public CoverImageService CoverImages { get; private set; } = null!;
+    /// <summary>「正在播放」页封面柔光取色（按封面缓存键记忆原始主/次色）。</summary>
+    public NowPlayingGlowService NowPlayingGlow { get; }
     public IWaveformService Waveforms { get; private set; } = null!;
     public IWaveformCache WaveformCache { get; private set; } = null!;
     public FileAssociationService Associations { get; }
