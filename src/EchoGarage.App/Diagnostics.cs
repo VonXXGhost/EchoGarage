@@ -88,6 +88,9 @@ internal static class Diagnostics
             main);
         await CaptureWindowAsync(new FieldGuideWindow(), directory, "dialog-field-guide.png", main);
         await CaptureWindowAsync(new SettingsWindow(host, vm), directory, "dialog-settings.png", main);
+        var settingsPlaybackWindow = new SettingsWindow(host, vm);
+        settingsPlaybackWindow.SelectPage("Playback");
+        await CaptureWindowAsync(settingsPlaybackWindow, directory, "dialog-settings-playback.png", main);
         var settingsFilesWindow = new SettingsWindow(host, vm);
         settingsFilesWindow.SelectPage("Files");
         await CaptureWindowAsync(settingsFilesWindow, directory, "dialog-settings-files.png", main);

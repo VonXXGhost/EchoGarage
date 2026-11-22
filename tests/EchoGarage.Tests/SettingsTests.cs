@@ -1,4 +1,5 @@
 using EchoGarage.Core.Models;
+using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Configuration;
 using EchoGarage.Infrastructure.Logging;
 
@@ -485,6 +486,63 @@ public sealed class SettingsTests : IDisposable
         await reloaded.LoadAsync();
 
         Assert.Equal(OutputMode.Shared, reloaded.Current.OutputMode);
+    }
+
+    [Fact]
+    public async Task Save_ClampsVolumeCeilings()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.VolumeCeilings = new OutputVolumeCeilings { Shared = 0.01, Exclusive = 1.5 };
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(OutputVolumeResolver.MinCeiling, reloaded.Current.VolumeCeilings.Shared, 6);
+        Assert.Equal(1.0, reloaded.Current.VolumeCeilings.Exclusive, 6);
+    }
+
+    [Fact]
+    public async Task Save_InvalidVolumeCeilingsFallBackToFullRange()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.VolumeCeilings = new OutputVolumeCeilings
+        {
+            Shared = double.NaN,
+            Exclusive = double.PositiveInfinity,
+        };
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(1.0, reloaded.Current.VolumeCeilings.Shared, 6);
+        Assert.Equal(1.0, reloaded.Current.VolumeCeilings.Exclusive, 6);
+    }
+
+    [Fact]
+    public async Task Save_DeviceVolumes_TrimsClampsAndDropsInvalidEntries()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.DeviceVolumes.Clear();
+        _settings.Current.DeviceVolumes["  {0.0.0.00000000}.{demo-speakers}  "] =
+            new OutputDeviceVolume { Shared = 0.8, Exclusive = -0.5 };
+        _settings.Current.DeviceVolumes["{0.0.0.00000000}.{demo-headphones}"] =
+            new OutputDeviceVolume { Shared = 1.2 };
+        _settings.Current.DeviceVolumes["   "] = new OutputDeviceVolume { Shared = 0.4 };
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(2, reloaded.Current.DeviceVolumes.Count);
+        var speakers = reloaded.Current.DeviceVolumes["{0.0.0.00000000}.{demo-speakers}"];
+        Assert.Equal(0.8, speakers.Shared!.Value, 6);
+        Assert.Equal(0.0, speakers.Exclusive!.Value, 6);
+        // 规范化后的字典忽略大小写，便于按端点 ID（大小写由系统决定）查找。
+        Assert.True(reloaded.Current.DeviceVolumes.ContainsKey(
+            "{0.0.0.00000000}.{DEMO-SPEAKERS}"));
+        Assert.Equal(1.0, reloaded.Current.DeviceVolumes["{0.0.0.00000000}.{demo-headphones}"].Shared!.Value, 6);
     }
 
     public void Dispose() => _workspace.Dispose();

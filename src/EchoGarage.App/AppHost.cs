@@ -2,6 +2,7 @@ using System.Diagnostics;
 using EchoGarage.App.Services;
 using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
+using EchoGarage.Core.Services;
 using EchoGarage.Infrastructure.Audio;
 using EchoGarage.Infrastructure.Caching;
 using EchoGarage.Infrastructure.Configuration;
@@ -132,7 +133,16 @@ public sealed class AppHost : IAsyncDisposable
             analysisStartDelay: TimeSpan.FromMilliseconds(350));
 
         Player.ConfigureOutput(Settings.Current.OutputDeviceId, Settings.Current.OutputMode);
-        Player.Volume = Settings.Current.Volume;
+        // 音量按“设备 + 模式”记忆，实际增益 = 显示音量 × 模式上限（ADR-033）；
+        // 没有记忆时回落到全局 Volume，因此旧配置行为不变。
+        var startupVolume = OutputVolumeResolver.ResolveDisplayVolume(
+            Settings.Current, Settings.Current.OutputDeviceId, Settings.Current.OutputMode);
+        var startupCeiling = OutputVolumeResolver.GetCeiling(Settings.Current, Settings.Current.OutputMode);
+        var startupGain = OutputVolumeResolver.GetEffectiveGain(startupVolume, startupCeiling);
+        Player.Volume = startupGain;
+        Logger.Info(
+            $"Initial output volume: {Math.Round(startupVolume * 100)}% display × " +
+            $"{Math.Round(startupCeiling * 100)}% {Settings.Current.OutputMode} ceiling = gain {startupGain:0.###}.");
         DeviceMonitor.Start();
 
         Logger.Info($"Host initialized in {_lifetime.ElapsedMilliseconds} ms. " +
@@ -278,7 +288,8 @@ public sealed class AppHost : IAsyncDisposable
         _shutdown = true;
         try
         {
-            Settings.Current.Volume = Player.Volume;
+            // 不要用 Player.Volume 覆盖设置：ADR-033 后 Player.Volume 是“显示音量 × 模式上限”
+            // 的实际增益，显示音量已由 MainViewModel 在退出时写回 Settings.Volume。
             if (Settings is JsonSettingsService json)
             {
                 json.SaveImmediately();

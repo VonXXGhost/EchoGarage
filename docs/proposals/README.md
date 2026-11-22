@@ -11,10 +11,11 @@
 
 ## 当前状态
 
-- 当前无待批准提案。
+- 无待批准提案。
 
 2026-11-22 批准的 ADR-032（输出设备热插拔检测与“上次使用的设备”记忆）已移入
-`docs/adr/ADR-032-audio-output-device-hotplug.md`。
+`docs/adr/ADR-032-audio-output-device-hotplug.md`；同日批准的 ADR-033（按输出设备与模式记忆音量、
+按模式设置音量上限）已移入 `docs/adr/ADR-033-output-volume-memory-and-ceiling.md`。
 2026-11-21 批准的提案已分别并入 `docs/adr/ADR-030-…`、`docs/adr/ADR-003-files-are-truth.md`、
 `docs/adr/ADR-015-waveform-seekbar.md` 与 `docs/kb/KB-008-grouped-cover-and-layout-persistence.md`。
 

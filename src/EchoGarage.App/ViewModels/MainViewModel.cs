@@ -37,6 +37,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // 偏好输出设备缺失时只提示一次回退，避免每次刷新重复打扰。
     private bool _fallbackNoticeShown;
     private bool _suppressVolumeSave;
+    private bool _suppressVolumeCeilingSave;
+    /// <summary>当前音量记忆上下文（设备端点 ID + 模式，ADR-033）；变化时才从记忆加载显示音量。</summary>
+    private string? _volumeContextKey;
     private bool _suppressThemeApply;
     private bool _isSeeking;
     private bool _isDisposed;
@@ -132,9 +135,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _host.DeviceMonitor.DevicesChanged += OnAudioDevicesChanged;
 
         ShowAlbumPanel = Settings.ShowAlbumPanel;
-        _suppressVolumeSave = true;
-        Volume = Settings.Volume * 100;
-        _suppressVolumeSave = false;
+        // 音量上限按模式计算：先把模式下拉同步到设置，再做音量初始化，
+        // 否则启动瞬间 CurrentOutputMode 还是默认的共享模式，会按共享上限算一次错误增益。
+        _suppressOutputApply = true;
+        try
+        {
+            OutputModeIndex = Settings.OutputMode == OutputMode.Exclusive ? 1 : 0;
+        }
+        finally
+        {
+            _suppressOutputApply = false;
+        }
+
+        InitializeVolumeState();
         _suppressThemeApply = true;
         ThemeIndex = (int)Settings.Theme;
         _suppressThemeApply = false;
@@ -375,6 +388,26 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public string VolumeText => $"{Math.Round(Volume)}%";
 
     public string MuteToolTip => IsMuted ? "取消静音" : "静音";
+
+    /// <summary>
+    /// 音量滑块的悬停提示：显示当前模式下 100% 对应的上限（ADR-033）。
+    /// </summary>
+    public string VolumeToolTip =>
+        $"音量 {Math.Round(Volume)}% · {CurrentModeText}音量上限 {Math.Round(CurrentVolumeCeiling * 100)}%";
+
+    /// <summary>共享模式的音量上限（百分比 5–100）：音量滑块的 100% 映射到此值。ADR-033。</summary>
+    [ObservableProperty]
+    private double _sharedVolumeCeiling = 100;
+
+    /// <summary>独占模式的音量上限（百分比 5–100）：避免绕过系统音量后输出过高功率。ADR-033。</summary>
+    [ObservableProperty]
+    private double _exclusiveVolumeCeiling = 100;
+
+    private OutputMode CurrentOutputMode => OutputModeIndex == 1 ? OutputMode.Exclusive : OutputMode.Shared;
+
+    private string CurrentModeText => CurrentOutputMode == OutputMode.Exclusive ? "独占模式" : "共享模式";
+
+    private double CurrentVolumeCeiling => OutputVolumeResolver.GetCeiling(Settings, CurrentOutputMode);
 
     /// <summary>Sequential, random or single-track repeat playback; persisted in settings.</summary>
     [ObservableProperty]
@@ -2753,24 +2786,138 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnVolumeChanged(double value)
     {
         OnPropertyChanged(nameof(VolumeText));
+        OnPropertyChanged(nameof(VolumeToolTip));
 
         if (_suppressVolumeSave)
         {
             return;
         }
 
-        var normalized = Math.Clamp(value / 100.0, 0, 1);
-        _host.Player.Volume = IsMuted ? 0 : normalized;
-        Settings.Volume = normalized;
+        // 记住“当前设备 + 当前模式”的显示音量；实际增益还要乘模式上限（ADR-033）。
+        OutputVolumeResolver.Remember(
+            Settings, SelectedDevice?.Id, CurrentOutputMode, Math.Clamp(value / 100.0, 0, 1));
+        ApplyEffectiveVolume();
         QueueSettingsSave();
     }
 
     partial void OnIsMutedChanged(bool value)
     {
-        _host.Player.Volume = value ? 0 : Math.Clamp(Volume / 100.0, 0, 1);
+        ApplyEffectiveVolume();
         OnPropertyChanged(nameof(VolumeText));
         OnPropertyChanged(nameof(MuteToolTip));
     }
+
+    partial void OnSharedVolumeCeilingChanged(double value) =>
+        OnVolumeCeilingChanged(OutputMode.Shared, value);
+
+    partial void OnExclusiveVolumeCeilingChanged(double value) =>
+        OnVolumeCeilingChanged(OutputMode.Exclusive, value);
+
+    private void OnVolumeCeilingChanged(OutputMode mode, double value)
+    {
+        if (_suppressVolumeCeilingSave)
+        {
+            return;
+        }
+
+        Settings.VolumeCeilings ??= new OutputVolumeCeilings();
+        var normalized = OutputVolumeResolver.ClampCeiling(value / 100.0);
+        if (mode == OutputMode.Exclusive)
+        {
+            Settings.VolumeCeilings.Exclusive = normalized;
+        }
+        else
+        {
+            Settings.VolumeCeilings.Shared = normalized;
+        }
+
+        ApplyEffectiveVolume();
+        OnPropertyChanged(nameof(VolumeToolTip));
+        QueueSettingsSave();
+        SetStatus($"{(mode == OutputMode.Exclusive ? "独占" : "共享")}模式音量上限已设为 " +
+                  $"{Math.Round(normalized * 100)}%（音量滑块的 100% 对应此上限）");
+    }
+
+    /// <summary>初始化音量上限与显示音量（ADR-033）；只读设置，不触发保存。</summary>
+    private void InitializeVolumeState()
+    {
+        SyncVolumeCeilingsFromSettings();
+        // 启动时设备列表还没枚举：优先用“记住的偏好设备”查记忆；跟随默认设备时等首次刷新再切换上下文。
+        _volumeContextKey = BuildVolumeContextKey(Settings.OutputDeviceId, Settings.OutputMode);
+        SetDisplayVolume(OutputVolumeResolver.ResolveDisplayVolume(
+            Settings, Settings.OutputDeviceId, Settings.OutputMode));
+        ApplyEffectiveVolume();
+    }
+
+    /// <summary>把设置里的音量上限同步到设置页滑块（百分比）。</summary>
+    private void SyncVolumeCeilingsFromSettings()
+    {
+        _suppressVolumeCeilingSave = true;
+        try
+        {
+            SharedVolumeCeiling =
+                OutputVolumeResolver.ClampCeiling(Settings.VolumeCeilings.Shared) * 100;
+            ExclusiveVolumeCeiling =
+                OutputVolumeResolver.ClampCeiling(Settings.VolumeCeilings.Exclusive) * 100;
+        }
+        finally
+        {
+            _suppressVolumeCeilingSave = false;
+        }
+    }
+
+    /// <summary>
+    /// 设备 / 模式切换后切换音量记忆上下文：只有上下文变化才从记忆重新加载显示音量，
+    /// 避免同一设备的普通刷新把用户正在拖动的音量重置（ADR-033）。
+    /// </summary>
+    private void ApplyVolumeForContext(string? deviceId, OutputMode mode)
+    {
+        var key = BuildVolumeContextKey(deviceId, mode);
+        if (string.Equals(key, _volumeContextKey, StringComparison.OrdinalIgnoreCase))
+        {
+            ApplyEffectiveVolume();
+            return;
+        }
+
+        _volumeContextKey = key;
+        var display = OutputVolumeResolver.ResolveDisplayVolume(Settings, deviceId, mode);
+        SetDisplayVolume(display);
+        ApplyEffectiveVolume();
+        _host.Logger.Info(
+            $"Output volume context switched: device={deviceId ?? "(default)"}, mode={mode}, " +
+            $"display={Math.Round(display * 100)}%, ceiling={Math.Round(CurrentVolumeCeiling * 100)}%, " +
+            $"gain={_host.Player.Volume:0.###}.");
+    }
+
+    private void SetDisplayVolume(double displayVolume)
+    {
+        _suppressVolumeSave = true;
+        try
+        {
+            Volume = Math.Clamp(displayVolume, 0, 1) * 100;
+        }
+        finally
+        {
+            _suppressVolumeSave = false;
+        }
+
+        OnPropertyChanged(nameof(VolumeToolTip));
+    }
+
+    /// <summary>把显示音量 × 当前模式上限写入播放器（静音时写 0）。</summary>
+    private void ApplyEffectiveVolume()
+    {
+        var display = Math.Clamp(Volume / 100.0, 0, 1);
+        var ceiling = CurrentVolumeCeiling;
+        var gain = OutputVolumeResolver.GetEffectiveGain(display, ceiling);
+        _host.Player.Volume = IsMuted ? 0 : gain;
+        _host.Logger.Debug(
+            $"Applied output volume: display={display:0.###} ceiling={ceiling:0.###} " +
+            $"gain={gain:0.###} muted={IsMuted} mode={CurrentOutputMode}.");
+    }
+
+    private static string BuildVolumeContextKey(string? deviceId, OutputMode mode) =>
+        $"{deviceId?.Trim() ?? "(default)"}|{mode}";
 
     [RelayCommand]
     private void ToggleMute() => IsMuted = !IsMuted;
@@ -2856,6 +3003,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // 偏好设备不可用时下发 null = 跟随系统默认；否则按偏好 ID 精确匹配。
         _host.Player.ConfigureOutput(selection.IsPreferredAvailable ? Settings.OutputDeviceId : null, mode);
         OutputDescription = ComposeOutputDescription(selection);
+        // 切换设备 / 模式后应用该设备在该模式下的音量记忆（ADR-033）。
+        ApplyVolumeForContext(selection.Device?.Id, mode);
         if (selection.IsPreferredAvailable)
         {
             _fallbackNoticeShown = false;
@@ -2996,6 +3145,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var selection = OutputDeviceSelector.Select(Devices, Settings.OutputDeviceId);
         _host.Player.ConfigureOutput(selection.IsPreferredAvailable ? Settings.OutputDeviceId : null, mode);
         OutputDescription = ComposeOutputDescription(selection);
+        // 用户显式切换设备 / 模式时切换到对应的音量记忆（ADR-033）。
+        ApplyVolumeForContext(selection.Device?.Id, mode);
         QueueSettingsSave();
         SetStatus($"输出已切换：{selection.Device?.FriendlyName ?? "系统默认"} · {(mode == OutputMode.Exclusive ? "独占" : "共享")}");
     }
@@ -4465,6 +4616,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // 随后的设备刷新才能按导入的偏好设备重新选择。
             Settings.OutputDeviceId = _host.Settings.Current.OutputDeviceId;
             Settings.OutputMode = _host.Settings.Current.OutputMode;
+            Settings.Volume = _host.Settings.Current.Volume;
+            Settings.DeviceVolumes = _host.Settings.Current.DeviceVolumes;
+            Settings.VolumeCeilings = _host.Settings.Current.VolumeCeilings;
+            SyncVolumeCeilingsFromSettings();
+            // 强制接下来的设备刷新按导入的音量记忆重新加载显示音量（ADR-033）。
+            _volumeContextKey = null;
             RefreshDevices();
 
             _suppressThemeApply = true;
@@ -4533,6 +4690,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _watcherTimer.Stop();
         _settingsTimer.Stop();
         PersistCurrentLayout();
+        // 音量在调节时已按“设备 + 模式”即时记忆（ADR-033）；这里只同步全局回落音量。
         Settings.Volume = Math.Clamp(Volume / 100.0, 0, 1);
         Settings.OutputMode = OutputModeIndex == 1 ? OutputMode.Exclusive : OutputMode.Shared;
         // 不在这里写 Settings.OutputDeviceId：下拉框可能展示的是回退后的默认设备，

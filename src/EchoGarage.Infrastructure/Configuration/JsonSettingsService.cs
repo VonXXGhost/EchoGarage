@@ -125,6 +125,10 @@ public sealed class JsonSettingsService : ISettingsService
         }
 
         settings.Volume = Math.Clamp(settings.Volume, 0, 1);
+        settings.VolumeCeilings ??= new OutputVolumeCeilings();
+        settings.VolumeCeilings.Shared = OutputVolumeResolver.ClampCeiling(settings.VolumeCeilings.Shared);
+        settings.VolumeCeilings.Exclusive = OutputVolumeResolver.ClampCeiling(settings.VolumeCeilings.Exclusive);
+        settings.DeviceVolumes = OutputVolumeResolver.NormalizeMemories(settings.DeviceVolumes, _logger);
         // 记住的输出设备 ID：空白视为“跟随系统默认”，避免导入的脏数据让播放器去查空设备。
         settings.OutputDeviceId = string.IsNullOrWhiteSpace(settings.OutputDeviceId)
             ? null

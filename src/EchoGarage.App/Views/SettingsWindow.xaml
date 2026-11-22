@@ -147,6 +147,40 @@
                             <TextBlock Text="独占模式绕过系统混音器，可减少处理环节；其他程序将无法同时播放声音。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                        Margin="90,6,0,0" />
+
+                            <TextBlock Text="音量上限（按模式）" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="90,14,0,0" />
+                            <Grid Margin="90,6,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="共享模式" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+                                <Slider Grid.Row="0" Grid.Column="1" Minimum="5" Maximum="100"
+                                        AutomationProperties.AutomationId="SharedVolumeCeilingSlider"
+                                        Value="{Binding SharedVolumeCeiling, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                           FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                           Text="{Binding SharedVolumeCeiling, StringFormat={}{0:0}%}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="独占模式" VerticalAlignment="Center"
+                                           Margin="0,6,0,0"
+                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+                                <Slider Grid.Row="1" Grid.Column="1" Minimum="5" Maximum="100" Margin="0,6,0,0"
+                                        AutomationProperties.AutomationId="ExclusiveVolumeCeilingSlider"
+                                        Value="{Binding ExclusiveVolumeCeiling, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" Margin="8,6,0,0" VerticalAlignment="Center"
+                                           FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                           Text="{Binding ExclusiveVolumeCeiling, StringFormat={}{0:0}%}" />
+                            </Grid>
+                            <TextBlock Text="音量滑块的 100% 对应这里设置的上限：实际输出 = 滑块百分比 × 上限。独占模式绕过系统音量限制，建议调低上限，避免输出过高功率损伤设备或听力。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="90,8,0,0" />
                         </StackPanel>
                     </Border>
 

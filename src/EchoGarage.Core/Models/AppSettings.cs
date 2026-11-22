@@ -40,7 +40,20 @@ public sealed class AppSettings
     public ThemeKind Theme { get; set; } = ThemeKind.PureStudio;
     public string? OutputDeviceId { get; set; }
     public OutputMode OutputMode { get; set; } = OutputMode.Shared;
+
+    /// <summary>
+    /// 全局音量（0–1），也是“该设备/模式还没有记忆”时的回落音量。ADR-033。
+    /// 实际输出增益 = 显示音量 × 对应模式的上限（见 <see cref="VolumeCeilings"/>）。
+    /// </summary>
     public double Volume { get; set; } = 0.75;
+
+    /// <summary>按输出设备（实际端点 ID）+ 模式记住的音量；只保存用户显式调过的值。ADR-033。</summary>
+    public Dictionary<string, OutputDeviceVolume> DeviceVolumes { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>按模式配置的音量上限（0–1），默认 100%。ADR-033。</summary>
+    public OutputVolumeCeilings VolumeCeilings { get; set; } = new();
+
     public PlaybackMode PlaybackMode { get; set; } = PlaybackMode.Sequential;
     public SeekBarMode SeekBarMode { get; set; } = SeekBarMode.Slider;
 
