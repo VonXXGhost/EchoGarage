@@ -99,9 +99,12 @@ public sealed class CoverImageService : IDisposable
 
         // Many list rows can request the same album cover within a few milliseconds while the
         // user scrolls. Coalesce them into one extraction + decode instead of queuing duplicates.
+        // The lazy factory must start on the thread pool: its synchronous prefix runs the cover
+        // cache's file probes and (on a miss) TagLib cover extraction. Awaiting the lazy from the
+        // UI thread would otherwise run that IO on the dispatcher and stall the cover fade.
         var lazy = _inFlight.GetOrAdd(memoryKey,
             key => new Lazy<Task<BitmapSource?>>(
-                () => LoadThroughAsync(key, request, decodeWidth, cancellationToken),
+                () => Task.Run(() => LoadThroughAsync(key, request, decodeWidth, cancellationToken)),
                 LazyThreadSafetyMode.ExecutionAndPublication));
         return await lazy.Value.ConfigureAwait(false);
     }

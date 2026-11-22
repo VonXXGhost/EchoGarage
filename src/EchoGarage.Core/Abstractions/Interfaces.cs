@@ -143,6 +143,12 @@ public interface IAudioPlayer : IDisposable
     AudioPlaybackState State { get; }
     TimeSpan Position { get; }
     TimeSpan Duration { get; }
+
+    /// <summary>
+    /// 无阻塞播放快照（UI 线程用）。加载 / 切换输出期间播放器内部锁可能被后台线程持有数百
+    /// 毫秒；返回 false 表示本次拿不到快照，调用方应跳过本帧而不是阻塞 UI 线程。
+    /// </summary>
+    bool TryReadPlaybackSnapshot(out AudioPlaybackState state, out TimeSpan position, out TimeSpan duration);
     string? CurrentTrackPath { get; }
     double Volume { get; set; }
     string OutputDescription { get; }

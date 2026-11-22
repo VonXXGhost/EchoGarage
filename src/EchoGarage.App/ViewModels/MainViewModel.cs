@@ -2599,19 +2599,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var state = _host.Player.State;
+        // 切歌时后台加载线程会持有播放器的锁（WASAPI 初始化 / 格式协商可能数百毫秒）。
+        // 这里只取无阻塞快照：拿不到锁就跳过本帧，绝不让 UI 线程跟着卡住。
+        if (!_host.Player.TryReadPlaybackSnapshot(out var state, out var position, out var duration))
+        {
+            return;
+        }
+
         if (state is AudioPlaybackState.Playing or AudioPlaybackState.Paused)
         {
-            var position = _host.Player.Position.TotalSeconds;
-            var duration = _host.Player.Duration.TotalSeconds;
-            if (duration > 0)
+            if (duration > TimeSpan.Zero)
             {
-                DurationSeconds = duration;
-                DurationText = DisplayFormatter.Duration(_host.Player.Duration);
+                DurationSeconds = duration.TotalSeconds;
+                DurationText = DisplayFormatter.Duration(duration);
             }
 
-            PositionSeconds = Math.Clamp(position, 0, Math.Max(duration, 0.1));
-            PositionText = DisplayFormatter.Duration(_host.Player.Position);
+            PositionSeconds = Math.Clamp(position.TotalSeconds, 0, Math.Max(duration.TotalSeconds, 0.1));
+            PositionText = DisplayFormatter.Duration(position);
         }
     }
 
@@ -2643,7 +2647,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private async Task LoadWaveformAsync(string path, int version, CancellationTokenSource cts)
     {
         // Progress<T> 在 UI 线程构造，回调会自动回到 UI 线程；渐进快照只替换属性，
-        // 控件自己负责追加几何。
+        // 控件自己负责追加几何。分析器每 250 列上报一次（约每秒数十次），这里按
+        // ~80ms 合并一次 UI 更新：分析期间波形条仍然逐步变长，但避免频繁触发整层几何重建。
+        var progressWatch = Stopwatch.StartNew();
         var progress = new Progress<WaveformPeaks>(peaks =>
         {
             if (version != _waveformVersion || cts.IsCancellationRequested)
@@ -2656,6 +2662,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
+            if (progressWatch.ElapsedMilliseconds < 80)
+            {
+                return;
+            }
+
+            progressWatch.Restart();
             CurrentWaveform = peaks;
         });
 

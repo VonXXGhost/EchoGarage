@@ -39,14 +39,43 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
     public event EventHandler<AudioPlaybackStateChangedEventArgs>? StateChanged;
     public event EventHandler? PlaybackEnded;
 
-    public AudioPlaybackState State
+    public AudioPlaybackState State => _state;
+
+    /// <summary>
+    /// UI 线程专用的无阻塞播放快照。加载 / 切换输出时 <c>_gate</c> 会被后台加载线程持有数百
+    /// 毫秒（WASAPI 初始化、格式协商），进度计时器如果直接读 <see cref="State"/> /
+    /// <see cref="Position"/> 会把 UI 线程一起堵住，表现为切歌时整个界面卡住一下。
+    /// 这里用零超时的 <see cref="Monitor.TryEnter(object)"/>：锁被占用就返回 false，调用方跳过本帧。
+    /// </summary>
+    public bool TryReadPlaybackSnapshot(out AudioPlaybackState state, out TimeSpan position, out TimeSpan duration)
     {
-        get
+        state = _state;
+        position = TimeSpan.Zero;
+        duration = TimeSpan.Zero;
+        if (!Monitor.TryEnter(_gate))
         {
-            lock (_gate)
+            return false;
+        }
+
+        try
+        {
+            state = _state;
+            try
             {
-                return _state;
+                position = _reader?.CurrentTime ?? TimeSpan.Zero;
+                duration = _reader?.TotalTime ?? TimeSpan.Zero;
             }
+            catch
+            {
+                position = TimeSpan.Zero;
+                duration = TimeSpan.Zero;
+            }
+
+            return true;
+        }
+        finally
+        {
+            Monitor.Exit(_gate);
         }
     }
 

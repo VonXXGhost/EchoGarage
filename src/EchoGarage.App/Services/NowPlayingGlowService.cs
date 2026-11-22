@@ -88,6 +88,13 @@ public sealed class NowPlayingGlowService
         return raw;
     }
 
+    /// <summary>
+    /// 取色只需要长边约 64px 的样本。先在后台线程把 420px 的封面缩小再 CopyPixels：
+    /// 否则每切一首歌都要分配一整张 420×420×4（约 0.7 MB，直接进 LOH）的临时缓冲，
+    /// 持续切歌时会造成 GC 抖动，拖慢封面过渡。
+    /// </summary>
+    private const int SampleLongEdge = 64;
+
     private static RawCoverPalette? Extract(BitmapSource cover)
     {
         if (cover.PixelWidth < 16 || cover.PixelHeight < 16)
@@ -96,6 +103,17 @@ public sealed class NowPlayingGlowService
         }
 
         BitmapSource source = cover;
+        var longEdge = Math.Max(cover.PixelWidth, cover.PixelHeight);
+        if (longEdge > SampleLongEdge)
+        {
+            var scale = SampleLongEdge / (double)longEdge;
+            var transform = new ScaleTransform(scale, scale);
+            transform.Freeze();
+            var scaled = new TransformedBitmap(cover, transform);
+            scaled.Freeze();
+            source = scaled;
+        }
+
         if (source.Format != PixelFormats.Bgra32)
         {
             var converted = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
