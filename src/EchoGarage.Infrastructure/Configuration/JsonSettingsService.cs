@@ -125,6 +125,14 @@ public sealed class JsonSettingsService : ISettingsService
         }
 
         settings.Volume = Math.Clamp(settings.Volume, 0, 1);
+        // 记住的输出设备 ID：空白视为“跟随系统默认”，避免导入的脏数据让播放器去查空设备。
+        settings.OutputDeviceId = string.IsNullOrWhiteSpace(settings.OutputDeviceId)
+            ? null
+            : settings.OutputDeviceId.Trim();
+        if (!Enum.IsDefined(settings.OutputMode))
+        {
+            settings.OutputMode = OutputMode.Shared;
+        }
         settings.WindowWidth = Math.Clamp(settings.WindowWidth, 960, 10000);
         settings.WindowHeight = Math.Clamp(settings.WindowHeight, 600, 10000);
         settings.SidebarWidth = Math.Clamp(settings.SidebarWidth, 170, 420);

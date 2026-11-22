@@ -163,6 +163,21 @@ public interface IAudioPlayer : IDisposable
     void ConfigureOutput(string? deviceId, OutputMode mode);
 }
 
+/// <summary>
+/// 输出设备热插拔监视（Windows：IMMNotificationClient + 周期兜底重扫）。
+/// <see cref="DevicesChanged"/> 在后台线程触发，UI 订阅方必须自行切回 Dispatcher。
+/// </summary>
+public interface IAudioDeviceMonitor : IDisposable
+{
+    event EventHandler<AudioDevicesChangedEventArgs>? DevicesChanged;
+
+    /// <summary>启动后台监视线程；重复调用无副作用。</summary>
+    void Start();
+
+    /// <summary>停止后台线程并注销系统通知回调；可重复调用，之后仍可再次 Start。</summary>
+    void Stop();
+}
+
 public interface IAppLogger
 {
     string LogDirectory { get; }

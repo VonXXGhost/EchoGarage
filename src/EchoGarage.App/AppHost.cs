@@ -50,6 +50,8 @@ public sealed class AppHost : IAsyncDisposable
         // 播放可视化数据源（ADR-023）：播放器把解码后的样本喂给它，右栏控件按渲染帧拉取。
         _spectrumAnalyzer = new SpectrumAnalyzer(Logger);
         Player = new WasapiAudioPlayer(Logger, _spectrumAnalyzer);
+        // 输出设备热插拔监视（WASAPI 端点通知 + 兜底轮询），供界面自动刷新设备列表。
+        DeviceMonitor = new WasapiAudioDeviceMonitor(Logger);
         Files = new FileOperationService(Logger);
         // 文件关联注册结果需要写日志（哪些格式因注册表项只读而只做了 Capabilities 注册）。
         Associations = new FileAssociationService(logger: Logger);
@@ -77,6 +79,8 @@ public sealed class AppHost : IAsyncDisposable
     public ILibraryScanner Scanner { get; }
     public IFileWatcherService Watcher { get; }
     public IAudioPlayer Player { get; }
+    /// <summary>输出设备端点变化监视器（ADR-032）；界面订阅 <c>DevicesChanged</c> 自动刷新列表。</summary>
+    public IAudioDeviceMonitor DeviceMonitor { get; }
     /// <summary>右栏「播放可视化」的数据源（ADR-023）；由 MainViewModel 在启动与设置变更时 Apply。</summary>
     public ISpectrumSource Spectrum => _spectrumAnalyzer;
     /// <summary>复制 / 移动 / 删除到回收站（ADR-021）。</summary>
@@ -129,6 +133,7 @@ public sealed class AppHost : IAsyncDisposable
 
         Player.ConfigureOutput(Settings.Current.OutputDeviceId, Settings.Current.OutputMode);
         Player.Volume = Settings.Current.Volume;
+        DeviceMonitor.Start();
 
         Logger.Info($"Host initialized in {_lifetime.ElapsedMilliseconds} ms. " +
                     $"Config={Paths.ConfigDirectory}, Data={Paths.DataDirectory}, Cache={Covers.CoversDirectory}");
@@ -286,6 +291,7 @@ public sealed class AppHost : IAsyncDisposable
 
         try
         {
+            DeviceMonitor.Dispose();
             Watcher.Dispose();
             Player.Dispose();
             _spectrumAnalyzer.Dispose();

@@ -11,7 +11,11 @@
 
 ## 当前状态
 
-当前没有待批准的提案。2026-11-21 批准的提案已分别并入 `docs/adr/ADR-030-…`、`docs/adr/ADR-003-files-are-truth.md`、
+- 当前无待批准提案。
+
+2026-11-22 批准的 ADR-032（输出设备热插拔检测与“上次使用的设备”记忆）已移入
+`docs/adr/ADR-032-audio-output-device-hotplug.md`。
+2026-11-21 批准的提案已分别并入 `docs/adr/ADR-030-…`、`docs/adr/ADR-003-files-are-truth.md`、
 `docs/adr/ADR-015-waveform-seekbar.md` 与 `docs/kb/KB-008-grouped-cover-and-layout-persistence.md`。
 
 历史提案的批准 / 撤回记录见 `docs/adr/ADR-index.md` 文末的“批准记录”，本文件不再逐条重复。

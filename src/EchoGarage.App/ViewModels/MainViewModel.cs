@@ -34,6 +34,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private bool _suppressSourceSelection;
     private bool _suppressOutputApply;
+    // 偏好输出设备缺失时只提示一次回退，避免每次刷新重复打扰。
+    private bool _fallbackNoticeShown;
     private bool _suppressVolumeSave;
     private bool _suppressThemeApply;
     private bool _isSeeking;
@@ -127,6 +129,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _host.Player.StateChanged += OnPlayerStateChanged;
         _host.Player.PlaybackEnded += OnPlaybackEnded;
         _host.Watcher.Changed += OnLibraryFileChanged;
+        _host.DeviceMonitor.DevicesChanged += OnAudioDevicesChanged;
 
         ShowAlbumPanel = Settings.ShowAlbumPanel;
         _suppressVolumeSave = true;
@@ -2786,28 +2789,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var devices = _host.Player.GetOutputDevices();
-            _suppressOutputApply = true;
-            try
-            {
-                Devices.Clear();
-                foreach (var device in devices)
-                {
-                    Devices.Add(device);
-                }
-
-                SelectedDevice = Devices.FirstOrDefault(d =>
-                                     string.Equals(d.Id, Settings.OutputDeviceId, StringComparison.OrdinalIgnoreCase))
-                                 ?? Devices.FirstOrDefault(d => d.IsDefault)
-                                 ?? Devices.FirstOrDefault();
-                OutputModeIndex = Settings.OutputMode == OutputMode.Exclusive ? 1 : 0;
-            }
-            finally
-            {
-                _suppressOutputApply = false;
-            }
-
-            OutputDescription = ComposeOutputDescription();
+            ApplyOutputDevices(_host.Player.GetOutputDevices(), changes: null, announce: false);
         }
         catch (Exception ex)
         {
@@ -2815,8 +2797,171 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private string ComposeOutputDescription() =>
-        $"{SelectedDevice?.FriendlyName ?? "系统默认设备"} · {(OutputModeIndex == 1 ? "独占模式" : "共享模式")}";
+    /// <summary>
+    /// 设备监视器回调（可能来自 COM / 监视线程）：切回 UI 线程后刷新下拉框。
+    /// 初始快照与打开窗口时的 <see cref="RefreshDevices"/> 重复，因此不播报。
+    /// </summary>
+    private void OnAudioDevicesChanged(object? sender, AudioDevicesChangedEventArgs e)
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            _dispatcher.BeginInvoke(
+                new Action(() => ApplyOutputDevices(e.Devices, e.Changes, announce: !e.IsInitialSnapshot)),
+                DispatcherPriority.Background);
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"Scheduling audio device refresh failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 用新的设备快照刷新下拉框并重新应用输出配置。
+    /// <para>
+    /// 记住的偏好设备（<see cref="AppSettings.OutputDeviceId"/>）缺失时回退到系统默认设备，
+    /// 但**不覆盖**设置里的偏好 ID：设备重新出现后监视器会再次选中它。
+    /// </para>
+    /// </summary>
+    private void ApplyOutputDevices(
+        IReadOnlyList<AudioDeviceInfo> devices,
+        AudioDeviceChangeSet? changes,
+        bool announce)
+    {
+        var previousSelection = SelectedDevice;
+        var selection = OutputDeviceSelector.Select(devices, Settings.OutputDeviceId);
+        var mode = Settings.OutputMode;
+
+        _suppressOutputApply = true;
+        try
+        {
+            Devices.Clear();
+            foreach (var device in devices)
+            {
+                Devices.Add(device);
+            }
+
+            SelectedDevice = selection.Device;
+            OutputModeIndex = mode == OutputMode.Exclusive ? 1 : 0;
+        }
+        finally
+        {
+            _suppressOutputApply = false;
+        }
+
+        // 偏好设备不可用时下发 null = 跟随系统默认；否则按偏好 ID 精确匹配。
+        _host.Player.ConfigureOutput(selection.IsPreferredAvailable ? Settings.OutputDeviceId : null, mode);
+        OutputDescription = ComposeOutputDescription(selection);
+        if (selection.IsPreferredAvailable)
+        {
+            _fallbackNoticeShown = false;
+        }
+
+        if (announce)
+        {
+            AnnounceDeviceChanges(previousSelection, selection, changes ?? AudioDeviceChangeDetector.Compare([], devices));
+        }
+        else
+        {
+            _host.Logger.Info(
+                $"Audio devices refreshed: {devices.Count} device(s), selected " +
+                $"{(selection.Device?.FriendlyName ?? "(none)")}{(selection.IsFallback ? " (fallback to default)" : string.Empty)}.");
+            if (selection.IsFallback)
+            {
+                ShowFallbackNotice(selection);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 偏好设备缺失时在状态栏提示一次回退结果（启动 / 手动刷新都可能触发）；
+    /// 设备恢复或用户重新选择设备后会重置，下次丢失可再次提示。
+    /// </summary>
+    private void ShowFallbackNotice(OutputDeviceSelection selection)
+    {
+        if (_fallbackNoticeShown)
+        {
+            return;
+        }
+
+        _fallbackNoticeShown = true;
+        SetStatus($"上次使用的输出设备不可用，已回退到默认设备：{selection.Device?.FriendlyName}");
+    }
+
+    private void AnnounceDeviceChanges(
+        AudioDeviceInfo? previousSelection,
+        OutputDeviceSelection selection,
+        AudioDeviceChangeSet changes)
+    {
+        if (Devices.Count == 0)
+        {
+            SetStatus("未检测到可用的输出设备");
+            return;
+        }
+
+        if (selection.IsFallback)
+        {
+            _fallbackNoticeShown = true;
+            SetStatus($"上次使用的输出设备不可用，已回退到默认设备：{selection.Device?.FriendlyName}");
+            return;
+        }
+
+        var restoredPreferred =
+            selection.HasPreference &&
+            selection.IsPreferredAvailable &&
+            (changes.Added.Any(d => string.Equals(d.Id, selection.PreferredDeviceId, StringComparison.OrdinalIgnoreCase)) ||
+             !string.Equals(previousSelection?.Id, selection.Device?.Id, StringComparison.OrdinalIgnoreCase));
+        if (restoredPreferred)
+        {
+            SetStatus($"已恢复上次使用的输出设备：{selection.Device?.FriendlyName}");
+            return;
+        }
+
+        if (changes.Removed.Count > 0)
+        {
+            SetStatus($"输出设备已断开：{string.Join("、", changes.Removed.Select(d => d.FriendlyName))}");
+            return;
+        }
+
+        if (changes.DefaultChanged)
+        {
+            SetStatus($"默认输出设备已切换：{changes.CurrentDefault?.FriendlyName ?? "系统默认"}");
+            return;
+        }
+
+        if (changes.Added.Count > 0)
+        {
+            SetStatus($"检测到新的输出设备：{string.Join("、", changes.Added.Select(d => d.FriendlyName))}");
+            return;
+        }
+
+        if (changes.Renamed.Count > 0)
+        {
+            SetStatus($"输出设备已更新：{string.Join("、", changes.Renamed.Select(d => d.FriendlyName))}");
+        }
+    }
+
+    private string ComposeOutputDescription(OutputDeviceSelection? selection = null)
+    {
+        selection ??= OutputDeviceSelector.Select(Devices, Settings.OutputDeviceId);
+        var modeText = OutputModeIndex == 1 ? "独占模式" : "共享模式";
+        if (selection.Device is null)
+        {
+            return $"未检测到输出设备 · {modeText}";
+        }
+
+        var text = $"{selection.Device.FriendlyName} · {modeText}";
+        if (selection.IsFallback)
+        {
+            text += "（上次使用的输出设备不可用，已回退到系统默认）";
+        }
+
+        return text;
+    }
 
     partial void OnSelectedDeviceChanged(AudioDeviceInfo? value)
     {
@@ -2825,7 +2970,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        ApplyOutput();
+        ApplyOutput(deviceChanged: true);
     }
 
     partial void OnOutputModeIndexChanged(int value)
@@ -2835,18 +2980,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        ApplyOutput();
+        ApplyOutput(deviceChanged: false);
     }
 
-    private void ApplyOutput()
+    private void ApplyOutput(bool deviceChanged)
     {
         var mode = OutputModeIndex == 1 ? OutputMode.Exclusive : OutputMode.Shared;
-        Settings.OutputDeviceId = SelectedDevice?.Id;
         Settings.OutputMode = mode;
-        _host.Player.ConfigureOutput(Settings.OutputDeviceId, mode);
-        OutputDescription = _host.Player.OutputDescription;
+        if (deviceChanged && SelectedDevice is not null)
+        {
+            // 只有用户显式选择设备才更新“上次使用的设备”；自动回退不能覆盖偏好。
+            Settings.OutputDeviceId = SelectedDevice.Id;
+        }
+
+        var selection = OutputDeviceSelector.Select(Devices, Settings.OutputDeviceId);
+        _host.Player.ConfigureOutput(selection.IsPreferredAvailable ? Settings.OutputDeviceId : null, mode);
+        OutputDescription = ComposeOutputDescription(selection);
         QueueSettingsSave();
-        SetStatus($"输出已切换：{SelectedDevice?.FriendlyName ?? "系统默认"} · {(mode == OutputMode.Exclusive ? "独占" : "共享")}");
+        SetStatus($"输出已切换：{selection.Device?.FriendlyName ?? "系统默认"} · {(mode == OutputMode.Exclusive ? "独占" : "共享")}");
     }
 
     // =====================================================================
@@ -4310,15 +4461,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 ? ViewLayoutFactory.Deserialize(SelectedSource.Playlist.ViewLayoutJson)
                 : ViewLayoutFactory.Normalize(_host.Settings.Current.LibraryLayout.Clone());
             ShowAlbumPanel = _host.Settings.Current.ShowAlbumPanel;
-            _suppressOutputApply = true;
-            try
-            {
-                OutputModeIndex = _host.Settings.Current.OutputMode == OutputMode.Exclusive ? 1 : 0;
-            }
-            finally
-            {
-                _suppressOutputApply = false;
-            }
+            // 导入后 Settings.Current 是新的实例；把输出相关字段同步到视图模型持有的实例，
+            // 随后的设备刷新才能按导入的偏好设备重新选择。
+            Settings.OutputDeviceId = _host.Settings.Current.OutputDeviceId;
+            Settings.OutputMode = _host.Settings.Current.OutputMode;
+            RefreshDevices();
 
             _suppressThemeApply = true;
             ThemeIndex = (int)_host.Settings.Current.Theme;
@@ -4326,7 +4473,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ThemeManager.Apply(_host.Settings.Current.Theme);
             RefreshVisualizer();
 
-            ApplyOutput();
             LayoutChanged?.Invoke(this, EventArgs.Empty);
             SortChanged?.Invoke(this, EventArgs.Empty);
             SetStatus("配置已导入");
@@ -4389,7 +4535,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         PersistCurrentLayout();
         Settings.Volume = Math.Clamp(Volume / 100.0, 0, 1);
         Settings.OutputMode = OutputModeIndex == 1 ? OutputMode.Exclusive : OutputMode.Shared;
-        Settings.OutputDeviceId = SelectedDevice?.Id;
+        // 不在这里写 Settings.OutputDeviceId：下拉框可能展示的是回退后的默认设备，
+        // 写回会覆盖用户记住的偏好设备。
         Settings.ShowAlbumPanel = ShowAlbumPanel;
         await _host.Settings.SaveAsync();
 
@@ -4414,6 +4561,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _host.Player.StateChanged -= OnPlayerStateChanged;
         _host.Player.PlaybackEnded -= OnPlaybackEnded;
         _host.Watcher.Changed -= OnLibraryFileChanged;
+        _host.DeviceMonitor.DevicesChanged -= OnAudioDevicesChanged;
         _positionTimer.Stop();
         _statusTimer.Stop();
         _watcherTimer.Stop();

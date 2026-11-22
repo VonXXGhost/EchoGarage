@@ -30,6 +30,17 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
     private bool _userStopRequested;
     private bool _disposed;
 
+    /// <summary>当前输出实际使用的端点 ID（用于判断设备是否在播放中消失）。</summary>
+    private string? _activeDeviceId;
+
+    /// <summary>播放因输出设备消失而中断；设备回退 / 恢复后应继续播放。</summary>
+    private bool _pendingResumeAfterDeviceLoss;
+
+    /// <summary>有等待消费的输出重建请求（由后台 worker 执行，避免阻塞 UI 线程）。</summary>
+    private bool _reconfigureRequested;
+
+    private bool _reconfigureWorkerActive;
+
     public WasapiAudioPlayer(IAppLogger logger, IAudioSampleSink? sampleSink = null)
     {
         _logger = logger;
@@ -135,24 +146,15 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 
     public IReadOnlyList<AudioDeviceInfo> GetOutputDevices()
     {
-        var list = new List<AudioDeviceInfo>();
         try
         {
-            using var enumerator = new MMDeviceEnumerator();
-            var defaultId = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
-            foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
-            {
-                list.Add(new AudioDeviceInfo(device.ID, device.FriendlyName,
-                    string.Equals(device.ID, defaultId, StringComparison.OrdinalIgnoreCase)));
-                device.Dispose();
-            }
+            return WasapiOutputDeviceEnumerator.GetActiveRenderDevices();
         }
         catch (Exception ex)
         {
             _logger.Error("Enumerating audio devices failed", ex);
+            return [];
         }
-
-        return list;
     }
 
     public void Warmup()
@@ -173,14 +175,140 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 
     public void ConfigureOutput(string? deviceId, OutputMode mode)
     {
+        var normalizedId = string.IsNullOrWhiteSpace(deviceId) ? null : deviceId.Trim();
+        var scheduleRebuild = false;
         lock (_gate)
         {
-            _deviceId = deviceId;
+            if (_disposed)
+            {
+                return;
+            }
+
+            var deviceChanged = !string.Equals(_deviceId, normalizedId, StringComparison.OrdinalIgnoreCase);
+            var modeChanged = _mode != mode;
+            _deviceId = normalizedId;
             _mode = mode;
-            DisposeDevice();
+
+            if (!deviceChanged && !modeChanged && !_pendingResumeAfterDeviceLoss && !_reconfigureRequested)
+            {
+                return;
+            }
+
+            if (_output is not null && _reader is not null)
+            {
+                // 正在播放 / 已加载：在后台线程重建输出，不能在 UI 线程同步等待 WASAPI 初始化。
+                _reconfigureRequested = true;
+                if (!_reconfigureWorkerActive)
+                {
+                    _reconfigureWorkerActive = true;
+                    scheduleRebuild = true;
+                }
+            }
+            else
+            {
+                // 没有活动输出时只需丢弃缓存的设备，下次播放按新配置重新获取。
+                DisposeDevice();
+                _pendingResumeAfterDeviceLoss = false;
+            }
         }
 
-        _logger.Info($"Audio output configured: device={deviceId ?? "(default)"}, mode={mode}");
+        _logger.Info($"Audio output configured: device={normalizedId ?? "(default)"}, mode={mode}");
+        if (scheduleRebuild)
+        {
+            _ = Task.Run(ReconfigureOutputWorker);
+        }
+    }
+
+    /// <summary>
+    /// 消费输出重建请求的串行 worker。重建期间（WASAPI 初始化 / 格式协商）可能又有新的
+    /// 设备变化请求进来，这里循环处理，直到没有待办请求再退出。
+    /// </summary>
+    private void ReconfigureOutputWorker()
+    {
+        while (true)
+        {
+            lock (_gate)
+            {
+                if (_disposed || !_reconfigureRequested)
+                {
+                    _reconfigureWorkerActive = false;
+                    return;
+                }
+
+                _reconfigureRequested = false;
+                try
+                {
+                    RebuildOutputForConfiguration();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error("Rebuilding audio output failed", ex);
+                    SetState(AudioPlaybackState.Stopped, CurrentTrackPath, ex.Message);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 用当前 <c>_deviceId / _mode</c> 重建输出，并在原来处于播放 / 暂停（或设备丢失中断）时
+    /// 从原位置继续。调用方必须持有 <c>_gate</c>。
+    /// </summary>
+    private void RebuildOutputForConfiguration()
+    {
+        if (_output is null || _reader is null)
+        {
+            DisposeDevice();
+            _pendingResumeAfterDeviceLoss = false;
+            return;
+        }
+
+        var wasPlaying = _state == AudioPlaybackState.Playing;
+        var wasPaused = _state == AudioPlaybackState.Paused;
+        var resumeAfterDeviceLoss = _pendingResumeAfterDeviceLoss;
+        var path = CurrentTrackPath;
+        var position = TimeSpan.Zero;
+        try
+        {
+            position = _reader.CurrentTime;
+        }
+        catch
+        {
+            // 读取位置失败时退化为从开头继续。
+        }
+
+        var shouldResume = wasPlaying || wasPaused || resumeAfterDeviceLoss;
+        TeardownOutput();
+        if (!shouldResume)
+        {
+            return;
+        }
+
+        if (wasPaused && !wasPlaying && !resumeAfterDeviceLoss)
+        {
+            // 暂停状态不立即重建输出：下次 Play() 会按新配置启动。
+            // 这样重建期间不会出声，进度也停在暂停点（WASAPI 初始化约 1 秒，
+            // 若先 StartOutput 再 Pause，读取器会前移近一秒）。
+            _logger.Info("Audio output released while paused; it will be recreated on resume.");
+            return;
+        }
+
+        var reader = _reader;
+        if (reader is null)
+        {
+            return;
+        }
+
+        try
+        {
+            StartOutput(reader, position, keepReaderPosition: true);
+            SetState(AudioPlaybackState.Playing, path);
+            _logger.Info($"Audio output rebuilt on {_outputDescription} at {position}.");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Rebuilding audio output on {_deviceId ?? "(default)"} failed", ex);
+            SetState(AudioPlaybackState.Stopped, path, ex.Message);
+        }
     }
 
     public Task LoadAsync(string path, bool playWhenReady, CancellationToken cancellationToken = default)
@@ -408,6 +536,7 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
                 output.Play();
                 _output = output;
                 _userStopRequested = false;
+                _activeDeviceId = device.ID;
                 _outputDescription = $"{device.FriendlyName} · {(_mode == OutputMode.Exclusive ? "WASAPI 独占" : "共享")} · {description}";
                 _logger.Info($"Playback started on {_outputDescription} for {CurrentTrackPath}");
                 return;
@@ -523,6 +652,12 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
         string? error = null;
         lock (_gate)
         {
+            // 重建输出时旧 WasapiOut 可能迟到回调；只处理当前输出的通知。
+            if (!ReferenceEquals(sender, _output))
+            {
+                return;
+            }
+
             if (_userStopRequested)
             {
                 return;
@@ -530,6 +665,10 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 
             if (e.Exception is not null)
             {
+                // 输出设备被拔出 / 禁用时 WasapiOut 会以错误结束；标记为待恢复，
+                // 等设备监视器回调触发重建后用新的默认设备从原位置继续播放。
+                _pendingResumeAfterDeviceLoss = _reader is not null &&
+                    !WasapiOutputDeviceEnumerator.IsDeviceActive(_activeDeviceId);
                 _logger.Error("Playback stopped with an error", e.Exception);
                 error = e.Exception.Message;
             }
@@ -557,6 +696,8 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
         var output = _output;
         _output = null;
         _volumeProvider = null;
+        _activeDeviceId = null;
+        _pendingResumeAfterDeviceLoss = false;
         if (output is not null)
         {
             output.PlaybackStopped -= OnPlaybackStopped;

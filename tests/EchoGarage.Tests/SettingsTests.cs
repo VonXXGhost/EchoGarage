@@ -430,5 +430,62 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(2, settings.TagNormalizationRules.Count);
     }
 
+    [Fact]
+    public async Task Save_TrimsOutputDeviceId()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.OutputDeviceId = "  {0.0.0.00000000}.{demo-speakers}  ";
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal("{0.0.0.00000000}.{demo-speakers}", reloaded.Current.OutputDeviceId);
+    }
+
+    [Fact]
+    public async Task Save_BlankOutputDeviceId_BecomesNull()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.OutputDeviceId = "   ";
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        // null = 跟随系统默认设备，界面不能把空白 ID 当作“记住的设备”。
+        Assert.Null(reloaded.Current.OutputDeviceId);
+    }
+
+    [Fact]
+    public async Task Load_BlankOutputDeviceId_BecomesNull()
+    {
+        await _settings.LoadAsync();
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        node["outputDeviceId"] = "   ";
+        await File.WriteAllTextAsync(_paths.SettingsFile, node.ToJsonString());
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Null(reloaded.Current.OutputDeviceId);
+    }
+
+    [Fact]
+    public async Task Load_UnknownOutputModeFallsBackToShared()
+    {
+        await _settings.LoadAsync();
+        var json = await File.ReadAllTextAsync(_paths.SettingsFile);
+        await File.WriteAllTextAsync(
+            _paths.SettingsFile,
+            json.Replace("\"outputMode\": \"Shared\"", "\"outputMode\": \"NoSuchMode\"", StringComparison.Ordinal));
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(OutputMode.Shared, reloaded.Current.OutputMode);
+    }
+
     public void Dispose() => _workspace.Dispose();
 }

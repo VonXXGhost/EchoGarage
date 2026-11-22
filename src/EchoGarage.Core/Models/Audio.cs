@@ -27,6 +27,35 @@ public sealed class AudioPlaybackStateChangedEventArgs : EventArgs
 }
 
 /// <summary>
+/// 两次输出设备快照之间的差异。用于决定是否需要通知 UI，以及状态栏该提示什么。
+/// 设备 ID 按不区分大小写比较（WASAPI 端点 ID 的大小写不保证稳定）。
+/// </summary>
+public sealed record AudioDeviceChangeSet(
+    IReadOnlyList<AudioDeviceInfo> Added,
+    IReadOnlyList<AudioDeviceInfo> Removed,
+    IReadOnlyList<AudioDeviceInfo> Renamed,
+    AudioDeviceInfo? PreviousDefault,
+    AudioDeviceInfo? CurrentDefault)
+{
+    public static AudioDeviceChangeSet Empty { get; } = new([], [], [], null, null);
+
+    public bool DefaultChanged =>
+        !string.Equals(PreviousDefault?.Id, CurrentDefault?.Id, StringComparison.OrdinalIgnoreCase);
+
+    public bool HasChanges => Added.Count > 0 || Removed.Count > 0 || Renamed.Count > 0 || DefaultChanged;
+}
+
+/// <summary>输出设备列表变化通知（热插拔 / 默认设备切换 / 设备重命名）。</summary>
+public sealed class AudioDevicesChangedEventArgs : EventArgs
+{
+    public required IReadOnlyList<AudioDeviceInfo> Devices { get; init; }
+    public AudioDeviceChangeSet Changes { get; init; } = AudioDeviceChangeSet.Empty;
+
+    /// <summary>监视器启动后的第一份快照：此时没有“变化”可言，UI 不必播报增减。</summary>
+    public bool IsInitialSnapshot { get; init; }
+}
+
+/// <summary>
 /// One additional tag field found in the file that is not part of the common
 /// editable fields (e.g. BPM, ISRC, MusicBrainz ids, custom ID3 frames).
 /// <see cref="Name"/> is the display label; <see cref="Kind"/> and <see cref="Key"/>
