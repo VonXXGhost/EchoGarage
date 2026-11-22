@@ -372,6 +372,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private WaveformPeaks? _currentWaveform;
 
+    /// <summary>
+    /// True 表示波形还在读取缓存 / 分析中，且还没有任何可画的快照；波形进度条据此
+    /// 显示占位加载动画（ADR-015）。第一个渐进快照到达后立即置 false。
+    /// </summary>
+    [ObservableProperty]
+    private bool _isWaveformLoading;
+
     private CancellationTokenSource? _waveformCts;
     private int _waveformVersion;
 
@@ -2081,6 +2088,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         PositionSeconds = 0;
         // 切歌立刻丢弃上一首的波形；新曲目的分析在解码成功后再开始，避免和加载抢 IO。
         CancelWaveformLoad();
+        // 波形模式下从切歌那一刻就显示占位动画，覆盖解码 + 分析开始前的空窗，
+        // 而不是等 StartWaveformLoad 才亮起来（两者之间通常还有数百毫秒）。
+        if (IsWaveformMode && File.Exists(row.Track.Path))
+        {
+            IsWaveformLoading = true;
+        }
 
         try
         {
@@ -2107,6 +2120,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             IsPlaying = false;
+            // 播放失败时波形不会再开始加载，把占位动画收掉，避免进度条一直“转”。
+            CancelWaveformLoad();
             _host.Logger.Error($"Cannot play {row.Track.Path}", ex);
             SetStatus($"无法播放 {row.FileName}：{ex.Message}");
             _consecutiveFailures++;
@@ -2787,6 +2802,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         var cts = new CancellationTokenSource();
         _waveformCts = cts;
+        IsWaveformLoading = true;
         _ = LoadWaveformAsync(path, _waveformVersion, cts);
     }
 
@@ -2797,6 +2813,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _waveformCts?.Dispose();
         _waveformCts = null;
         CurrentWaveform = null;
+        IsWaveformLoading = false;
     }
 
     private async Task LoadWaveformAsync(string path, int version, CancellationTokenSource cts)
@@ -2824,6 +2841,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
             progressWatch.Restart();
             CurrentWaveform = peaks;
+            IsWaveformLoading = false;
         });
 
         try
@@ -2833,6 +2851,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             watch.Stop();
             if (peaks is null || version != _waveformVersion || cts.IsCancellationRequested)
             {
+                if (version == _waveformVersion)
+                {
+                    IsWaveformLoading = false;
+                }
+
                 return;
             }
 
@@ -2842,15 +2865,25 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             CurrentWaveform = peaks;
+            IsWaveformLoading = false;
             _host.Logger.Debug(
                 $"Waveform ready: columns={peaks.ColumnCount} valid={peaks.ValidCount} elapsed={watch.ElapsedMilliseconds}ms");
         }
         catch (OperationCanceledException)
         {
             // 切歌 / 停止是预期路径，不记日志。
+            if (version == _waveformVersion)
+            {
+                IsWaveformLoading = false;
+            }
         }
         catch (Exception ex)
         {
+            if (version == _waveformVersion)
+            {
+                IsWaveformLoading = false;
+            }
+
             _host.Logger.Warn($"Waveform load failed for {path}: {ex.Message}");
         }
     }

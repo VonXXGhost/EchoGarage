@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -22,7 +23,7 @@ public sealed class WaveformSeekBar : FrameworkElement
     /// <summary>缩小到 0..255 的列高度，2049 列左右一首 4 分钟曲目。</summary>
     public static readonly DependencyProperty PeaksProperty = DependencyProperty.Register(
         nameof(Peaks), typeof(WaveformPeaks), typeof(WaveformSeekBar),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnGeometryAffectingPropertyChanged));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnPeaksPropertyChanged));
 
     public static readonly DependencyProperty PositionProperty = DependencyProperty.Register(
         nameof(Position), typeof(double), typeof(WaveformSeekBar),
@@ -60,8 +61,22 @@ public sealed class WaveformSeekBar : FrameworkElement
         nameof(FocusBrush), typeof(Brush), typeof(WaveformSeekBar),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    /// <summary>
+    /// True 表示波形仍在加载（读取 EGWV 缓存或首次分析），且当前没有可画的数据。
+    /// 控件据此显示运动正弦波占位动画；第一个渐进快照到达后淡出、真实波形淡入。
+    /// </summary>
+    public static readonly DependencyProperty IsLoadingProperty = DependencyProperty.Register(
+        nameof(IsLoading), typeof(bool), typeof(WaveformSeekBar),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender, OnIsLoadingPropertyChanged));
+
     // 已播放区域的整体不透明度（owner 规范 25%–28%）：只压低存在感，不改变频段色相。
     private const double PlayedOpacity = 0.26;
+
+    // 波形加载占位动画：延迟 120 ms 才出现（避免缓存命中时闪一下），淡入 160 ms；
+    // 第一个真实快照到达后 220 ms 交叉淡化到真实波形。
+    private const double PlaceholderDelaySeconds = 0.12;
+    private const double PlaceholderFadeInSeconds = 0.16;
+    private const double CrossfadeSeconds = 0.22;
 
     // 每个频段一条合并后的阶梯折线（StreamGeometry）；早期实现是 GeometryGroup +
     // 每设备像素列一个 RectangleGeometry，4K 下每次合成要遍历上万个 figure，帧率会掉到 10 fps
@@ -85,12 +100,21 @@ public sealed class WaveformSeekBar : FrameworkElement
     private bool _isSeeking;
     private bool _seekCancelled;
 
+    private readonly bool _animationsEnabled = SystemParameters.ClientAreaAnimation;
+    private bool _animationHooked;
+    private long _loadingStartedTimestamp;
+    private long _transitionStartedTimestamp;
+
     public WaveformSeekBar()
     {
         Focusable = true;
         SnapsToDevicePixels = true;
         RenderOptions.SetEdgeMode(this, EdgeMode.Aliased);
         UseLayoutRounding = true;
+
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+        IsVisibleChanged += OnIsVisibleChanged;
     }
 
     public WaveformPeaks? Peaks
@@ -155,6 +179,13 @@ public sealed class WaveformSeekBar : FrameworkElement
 
     /// <summary>True between the initial press and the commit/cancel of a pointer gesture.</summary>
     public bool IsSeeking => _isSeeking;
+
+    /// <summary>True 表示波形数据仍在加载；为 true 且无快照时显示运动正弦波占位动画。</summary>
+    public bool IsLoading
+    {
+        get => (bool)GetValue(IsLoadingProperty);
+        set => SetValue(IsLoadingProperty, value);
+    }
 
     /// <summary>Raised on pointer-down: the owner should freeze position updates (BeginSeek).</summary>
     public event EventHandler? SeekStarted;
@@ -222,8 +253,17 @@ public sealed class WaveformSeekBar : FrameworkElement
             }
         }
 
+        var now = Stopwatch.GetTimestamp();
         if (peaks is null || peaks.ColumnCount <= 0)
         {
+            var emptyPlaceholderOpacity = GetPlaceholderOpacity(now);
+            if (emptyPlaceholderOpacity > 0.01)
+            {
+                dc.PushOpacity(emptyPlaceholderOpacity);
+                DrawLoadingWave(dc, width, height);
+                dc.Pop();
+            }
+
             DrawFocusAdorner(dc, width, height);
             return;
         }
@@ -241,6 +281,28 @@ public sealed class WaveformSeekBar : FrameworkElement
         DrawBand(dc, _lowGeometry, LowBrush);
         DrawBand(dc, _midGeometry, MidBrush);
         DrawBand(dc, _highGeometry, HighBrush);
+
+        // 从占位动画切换到真实波形：波形逐渐显现，占位曲线同步淡出。
+        var waveformOpacity = GetWaveformOpacity(now);
+        if (waveformOpacity < 1)
+        {
+            // 波形本身已在上面按真实颜色绘制，这里用一层轨道底色按 (1 - 进度)
+            // 覆盖，等价于淡入但不需要为整层几何重建透明度。
+            if (TrackBrush is { } coverBrush)
+            {
+                dc.PushOpacity(1 - waveformOpacity);
+                dc.DrawRoundedRectangle(coverBrush, null, bounds, 2, 2);
+                dc.Pop();
+            }
+        }
+
+        var placeholderOpacity = GetPlaceholderOpacity(now);
+        if (placeholderOpacity > 0.01)
+        {
+            dc.PushOpacity(placeholderOpacity);
+            DrawLoadingWave(dc, width, height);
+            dc.Pop();
+        }
 
         if (playedWidth > 0 && TrackBrush is { } playedOverlayBrush)
         {
@@ -302,6 +364,76 @@ public sealed class WaveformSeekBar : FrameworkElement
         dc.DrawGeometry(brush, null, geometry);
     }
 
+    /// <summary>
+    /// 加载占位动画：三条频率 / 速度 / 振幅不同的正弦曲线（低 / 中 / 高频段色），
+    /// 像一段正在跑动的波形。只在没有快照且 <see cref="IsLoading"/> 为 true 时绘制；
+    /// 系统关闭动画时画静态相位，避免整条进度条空白。
+    /// </summary>
+    private void DrawLoadingWave(DrawingContext dc, double width, double height)
+    {
+        var phase = _animationsEnabled
+            ? (Stopwatch.GetTimestamp() - _loadingStartedTimestamp) / (double)Stopwatch.Frequency
+            : 0.6;
+
+        var center = height * 0.54;
+        DrawSine(dc, LowBrush, width, height, center, height * 0.26, 8.0, 4.6, 2.8, phase);
+        DrawSine(dc, MidBrush, width, height, center, height * 0.16, 12.0, 5.4, 2.2, phase + 1.2);
+        DrawSine(dc, HighBrush, width, height, center, height * 0.10, 18.0, 6.2, 1.6, phase + 2.4);
+    }
+
+    /// <summary>
+    /// 画一条正弦“波形带”：用填充几何（上下两条正弦包成一条 ribbon）而不是描边。
+    /// 描边几何在本控件（EdgeMode.Aliased 的波形控件）里存在不渲染的问题，
+    /// 填充几何与真实波形同一条渲染路径，稳定可见。
+    /// </summary>
+    private static void DrawSine(
+        DrawingContext dc,
+        Brush? brush,
+        double width,
+        double height,
+        double center,
+        double amplitude,
+        double turns,
+        double speed,
+        double thickness,
+        double phase)
+    {
+        if (brush is null || width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        var step = Math.Max(2, width / 480);
+        var half = thickness / 2;
+
+        double Sample(double x)
+        {
+            var normalized = x / width;
+            var y = center + amplitude * Math.Sin(2 * Math.PI * turns * normalized - speed * phase);
+            return Math.Clamp(y, height * 0.06 + half, height * 0.94 - half);
+        }
+
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(new Point(0, Sample(0) - half), true, true);
+            for (var x = step; x <= width; x += step)
+            {
+                context.LineTo(new Point(x, Sample(x) - half), true, false);
+            }
+
+            for (var x = width; x >= 0; x -= step)
+            {
+                context.LineTo(new Point(x, Sample(x) + half), true, false);
+            }
+        }
+
+        geometry.Freeze();
+        dc.PushOpacity(0.6);
+        dc.DrawGeometry(brush, null, geometry);
+        dc.Pop();
+    }
+
     private void DrawFocusAdorner(DrawingContext dc, double width, double height)
     {
         if (!IsKeyboardFocusWithin || FocusBrush is not { } focusBrush)
@@ -335,10 +467,164 @@ public sealed class WaveformSeekBar : FrameworkElement
     private Rect DeviceRect(int x, int y, double width, double height) =>
         new(x / _dpiScale, y / _dpiScale, width / _dpiScale, height / _dpiScale);
 
-    /// <summary>几何缓存的键：列数 / 有效列 / 归一化窗口 / 设备像素尺寸 / dpi。</summary>
-    private static void OnGeometryAffectingPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    private static void OnPeaksPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        ((WaveformSeekBar)d).InvalidateGeometry();
+        var bar = (WaveformSeekBar)d;
+        bar.InvalidateGeometry();
+        bar.OnPeaksChanged((WaveformPeaks?)e.OldValue, (WaveformPeaks?)e.NewValue);
+    }
+
+    private void OnPeaksChanged(WaveformPeaks? oldPeaks, WaveformPeaks? newPeaks)
+    {
+        if (newPeaks is null)
+        {
+            _transitionStartedTimestamp = 0;
+        }
+        else if (oldPeaks is null)
+        {
+            // 第一个快照到达：占位动画淡出，真实波形淡入。渐进更新不再打断已开始的过渡。
+            _transitionStartedTimestamp = _animationsEnabled ? Stopwatch.GetTimestamp() : 0;
+        }
+
+        UpdateAnimationHook();
+        InvalidateVisual();
+    }
+
+    private static void OnIsLoadingPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var bar = (WaveformSeekBar)d;
+        if ((bool)e.NewValue)
+        {
+            bar._loadingStartedTimestamp = Stopwatch.GetTimestamp();
+            bar._transitionStartedTimestamp = 0;
+        }
+
+        bar.UpdateAnimationHook();
+        bar.InvalidateVisual();
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e) => UpdateAnimationHook();
+
+    private void OnUnloaded(object sender, RoutedEventArgs e) => UnhookAnimation();
+
+    private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        UpdateAnimationHook();
+        InvalidateVisual();
+    }
+
+    private void OnAnimationFrame(object? sender, EventArgs e)
+    {
+        if (!_animationHooked)
+        {
+            return;
+        }
+
+        if (Peaks is null)
+        {
+            if (!IsLoading)
+            {
+                UnhookAnimation();
+                return;
+            }
+
+            InvalidateVisual();
+            return;
+        }
+
+        if (GetWaveformOpacity(Stopwatch.GetTimestamp()) >= 1)
+        {
+            UnhookAnimation();
+            InvalidateVisual();
+            return;
+        }
+
+        InvalidateVisual();
+    }
+
+    private void UpdateAnimationHook()
+    {
+        var needed = IsVisible && HasActiveAnimation();
+        if (needed == _animationHooked)
+        {
+            return;
+        }
+
+        if (needed)
+        {
+            CompositionTarget.Rendering += OnAnimationFrame;
+        }
+        else
+        {
+            CompositionTarget.Rendering -= OnAnimationFrame;
+        }
+
+        _animationHooked = needed;
+    }
+
+    private void UnhookAnimation()
+    {
+        if (!_animationHooked)
+        {
+            return;
+        }
+
+        CompositionTarget.Rendering -= OnAnimationFrame;
+        _animationHooked = false;
+    }
+
+    private bool HasActiveAnimation()
+    {
+        if (Peaks is null)
+        {
+            // 系统关闭客户端动画时占位波形保持静态，只需属性变化时重绘一次，不必逐帧挂 Rendering。
+            return _animationsEnabled && IsLoading;
+        }
+
+        return _animationsEnabled && _transitionStartedTimestamp != 0 &&
+               GetWaveformOpacity(Stopwatch.GetTimestamp()) < 1;
+    }
+
+    private double GetWaveformOpacity(long now)
+    {
+        if (Peaks is null)
+        {
+            return 0;
+        }
+
+        if (!_animationsEnabled || _transitionStartedTimestamp == 0)
+        {
+            return 1;
+        }
+
+        var seconds = (now - _transitionStartedTimestamp) / (double)Stopwatch.Frequency;
+        return Math.Clamp(seconds / CrossfadeSeconds, 0, 1);
+    }
+
+    private double GetPlaceholderOpacity(long now)
+    {
+        if (Peaks is not null)
+        {
+            return 1 - GetWaveformOpacity(now);
+        }
+
+        if (!IsLoading)
+        {
+            return 0;
+        }
+
+        if (!_animationsEnabled)
+        {
+            return 1;
+        }
+
+        var seconds = (now - _loadingStartedTimestamp) / (double)Stopwatch.Frequency;
+        if (seconds < PlaceholderDelaySeconds)
+        {
+            return 0;
+        }
+
+        return Math.Clamp((seconds - PlaceholderDelaySeconds) / PlaceholderFadeInSeconds, 0, 1) * 0.9;
     }
 
     private void InvalidateGeometry()

@@ -1630,6 +1630,7 @@
                                   AutomationProperties.Name="播放进度"
                                   AutomationProperties.HelpText="左右方向键跳转 5 秒，Shift 加方向键跳转 1 秒"
                                   Peaks="{Binding CurrentWaveform}"
+                                  IsLoading="{Binding IsWaveformLoading}"
                                   Position="{Binding PositionSeconds}"
                                   Duration="{Binding DurationSeconds}"
                                   IsEnabled="{Binding HasCurrentTrack}"
