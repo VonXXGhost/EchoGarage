@@ -19,6 +19,63 @@ public sealed record AudioDeviceInfo(string Id, string FriendlyName, bool IsDefa
     public string DisplayName => FriendlyName;
 }
 
+/// <summary>
+/// 当前真正提交给 WASAPI 的输出流格式（输出管线最后一级的采样率 / 位深 / 声道数）。
+/// 独占模式取自协商成功的客户端格式（可能被设备替换为最接近的格式）；共享模式取自
+/// 我们提交的流格式，此时 <see cref="DeviceMixFormatDescription"/> 记录 Windows 引擎
+/// 最终混音用的设备格式。两者都可能与歌曲文件本身的格式不同（发生了重采样 / 声道转换）。
+/// <see cref="ContainerBitsPerSample"/> 用于 24-in-32 这类「32-bit 容器装 24-bit 有效样本」
+/// 的格式：<see cref="BitsPerSample"/> 是有效位深（24），它是容器位深（32）。
+/// </summary>
+public sealed record AudioOutputFormatInfo(
+    string DeviceName,
+    OutputMode Mode,
+    int SampleRate,
+    int Channels,
+    int BitsPerSample,
+    bool IsFloat,
+    bool IsDeviceMixFormat,
+    string? DeviceMixFormatDescription = null,
+    int? ContainerBitsPerSample = null);
+
+/// <summary>
+/// 「音频信息」窗口里的一行明细（左标签 / 右值）。纯数据，不依赖 WPF，便于 Core 单测。
+/// </summary>
+public sealed record AudioPipelineDetail(string Label, string Value);
+
+/// <summary>
+/// 「音频信息」窗口里的一级管线段落；<see cref="Headline"/> 是该级最重要的一行结论，
+/// <see cref="Details"/> 是补充明细。段落顺序即音频数据流的方向。
+/// </summary>
+public sealed record AudioPipelineStage(
+    string Title,
+    string Headline,
+    IReadOnlyList<AudioPipelineDetail> Details);
+
+/// <summary>
+/// 播放器在输出链建立之后采集的端到端管线事实（不含歌曲文件本身与 UI 层信息）。
+/// <see cref="Conversions"/> 描述从解码 PCM 到 WASAPI 客户端流之间发生的重采样 / 声道 / 位深转换。
+/// </summary>
+public sealed record AudioPipelineInfo(
+    string DecoderName,
+    string DecodedFormat,
+    IReadOnlyList<AudioPipelineDetail> Conversions,
+    int BufferLatencyMilliseconds,
+    AudioOutputFormatInfo Output,
+    string? EngineMixFormat,
+    string? EndpointFormat,
+    string? OutputFlags);
+
+/// <summary>
+/// 已整理好的音频管线说明：段落列表 + 一句话摘要（源格式 → 输出格式）。
+/// <see cref="Hint"/> 是可选的弱化提示（例如独占模式下被忽略的 Windows 默认格式），
+/// 没有提示时为 null；它与管线段落不同级，窗口以暗色小字显示。
+/// </summary>
+public sealed record AudioPipelineReport(
+    IReadOnlyList<AudioPipelineStage> Stages,
+    string Summary,
+    string? Hint = null);
+
 public sealed class AudioPlaybackStateChangedEventArgs : EventArgs
 {
     public required AudioPlaybackState State { get; init; }
@@ -141,6 +198,12 @@ public sealed record AudioTagData(
     /// 不写入数据库，数据库缓存只保存 <see cref="Year"/>。
     /// </summary>
     public string? YearText { get; init; }
+
+    /// <summary>
+    /// 文件本身声明的位深（TagLib 音频属性）。有损格式或容器未声明时为 null。
+    /// 不写入数据库，只在「音频信息」这类需要展示原始格式的场景按需读取。
+    /// </summary>
+    public int? BitsPerSample { get; init; }
 }
 
 public sealed class TagEditModel

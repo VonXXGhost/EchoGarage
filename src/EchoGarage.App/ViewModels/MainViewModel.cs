@@ -311,6 +311,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _nowPlayingFormatText = EmptyTagText;
 
+    /// <summary>
+    /// 「正在播放」页徽标里的当前输出格式（共享/独占 · 输出采样率 · 位深 · 声道）。
+    /// 来自播放器写入 WASAPI 的实际格式，而不是歌曲文件本身的格式。
+    /// </summary>
+    [ObservableProperty]
+    private string _nowPlayingOutputText = "未建立输出";
+
+    /// <summary>输出格式徽标的悬停提示：设备名，以及是否发生重采样 / 声道转换。</summary>
+    [ObservableProperty]
+    private string _nowPlayingOutputTooltip = string.Empty;
+
     [ObservableProperty]
     private string _playlistTitle = "媒体库";
 
@@ -2317,6 +2328,111 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         NowPlayingComment = EmptyTagText;
         NowPlayingPath = string.Empty;
         NowPlayingFormatText = EmptyTagText;
+        NowPlayingOutputText = "未建立输出";
+        NowPlayingOutputTooltip = string.Empty;
+    }
+
+    /// <summary>
+    /// 刷新「正在播放」页的输出格式徽标。徽标取“最终送到硬件”的格式：独占模式显示与设备
+    /// 协商出的客户端流（绕过引擎，直达端点），共享模式显示 Windows 引擎转换后的设备端点格式。
+    /// 输出会在后台线程重建（切歌 / 换设备 / 切共享-独占），这里只读播放器的无锁快照，
+    /// 并按字符串比较避免每 200ms 都触发一次绑定通知。
+    /// </summary>
+    private void UpdateNowPlayingOutputInfo()
+    {
+        var format = _host.Player.OutputFormat;
+        if (format is null)
+        {
+            SetNowPlayingOutputInfo("未建立输出", string.Empty);
+            return;
+        }
+
+        var modeText = format.Mode == OutputMode.Exclusive ? "独占" : "共享";
+        var bitDepthText = format.IsFloat
+            ? "32-bit float"
+            : format.ContainerBitsPerSample is int container && container > format.BitsPerSample
+                ? $"{format.BitsPerSample}-bit（{container}-bit 容器）"
+                : $"{format.BitsPerSample}-bit";
+        var channelsText = format.Channels switch
+        {
+            1 => "单声道",
+            2 => "立体声",
+            _ => $"{format.Channels}ch"
+        };
+        var clientText = $"{modeText} · {format.SampleRate / 1000.0:0.#} kHz · {bitDepthText} · {channelsText}";
+
+        // 最终送到硬件的格式：独占模式协商出的客户端流直达设备端点；共享模式由 Windows
+        // 音频引擎把应用流转换成设备端点格式后再送硬件（读不到端点时退回应用流格式）。
+        var endpointFormat = _host.Player.Pipeline?.EndpointFormat;
+        var isExclusive = format.Mode == OutputMode.Exclusive;
+        var badgeText = isExclusive || string.IsNullOrWhiteSpace(endpointFormat)
+            ? clientText
+            : $"{modeText} · {endpointFormat}";
+
+        var details = new List<string> { $"设备：{format.DeviceName}" };
+        if (isExclusive)
+        {
+            details.Add($"实际输出流（最终送往设备）：{clientText}");
+        }
+        else
+        {
+            details.Add($"应用输出流：{clientText}");
+            if (!string.IsNullOrWhiteSpace(endpointFormat))
+            {
+                details.Add($"设备端点（最终输出）：{endpointFormat}");
+            }
+        }
+
+        if (!string.IsNullOrEmpty(format.DeviceMixFormatDescription))
+        {
+            details.Add($"设备混音格式：{format.DeviceMixFormatDescription}");
+        }
+
+        if (CurrentRow is { } row)
+        {
+            var track = row.Track;
+            var conversions = new List<string>();
+            if (track.SampleRate > 0 && track.SampleRate != format.SampleRate)
+            {
+                conversions.Add(
+                    $"重采样 {track.SampleRate / 1000.0:0.#} kHz → {format.SampleRate / 1000.0:0.#} kHz");
+            }
+
+            if (track.Channels > 0 && track.Channels != format.Channels)
+            {
+                conversions.Add($"声道 {track.Channels} → {format.Channels}");
+            }
+
+            if (!format.IsFloat)
+            {
+                var outputBits = format.ContainerBitsPerSample is int containerBits &&
+                                 containerBits > format.BitsPerSample
+                    ? $"{format.BitsPerSample}-bit（{containerBits}-bit 容器）"
+                    : $"{format.BitsPerSample}-bit";
+                conversions.Add($"位深转换 32-bit float → {outputBits}");
+            }
+
+            details.Add(conversions.Count == 0
+                ? "输出采样率 / 声道 / 位深与歌曲一致，未做额外转换"
+                : string.Join("；", conversions));
+        }
+
+        SetNowPlayingOutputInfo(
+            badgeText,
+            string.Join(Environment.NewLine, details) + Environment.NewLine + "点击查看完整音频处理管线");
+    }
+
+    private void SetNowPlayingOutputInfo(string text, string tooltip)
+    {
+        if (!string.Equals(NowPlayingOutputText, text, StringComparison.Ordinal))
+        {
+            NowPlayingOutputText = text;
+        }
+
+        if (!string.Equals(NowPlayingOutputTooltip, tooltip, StringComparison.Ordinal))
+        {
+            NowPlayingOutputTooltip = tooltip;
+        }
     }
 
 
@@ -2634,6 +2750,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             return;
         }
+
+        // 「正在播放」页的输出格式徽标：输出建立 / 重建后异步生效，跟着 200ms tick 对齐即可。
+        UpdateNowPlayingOutputInfo();
 
         // 切歌时后台加载线程会持有播放器的锁（WASAPI 初始化 / 格式协商可能数百毫秒）。
         // 这里只取无阻塞快照：拿不到锁就跳过本帧，绝不让 UI 线程跟着卡住。

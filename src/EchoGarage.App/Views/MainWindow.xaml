@@ -1152,6 +1152,41 @@
                                                            FontFamily="{StaticResource MonoFont}"
                                                            Foreground="{DynamicResource TextSecondaryBrush}" />
                                             </Border>
+                                            <!-- 输出格式：来自播放器写入 WASAPI 的实际格式（与歌曲格式并列显示）。
+                                                 点击打开「音频信息」窗口，查看整条端到端处理管线。 -->
+                                            <Button Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                    Padding="8,2" Margin="0,0,7,6" Cursor="Hand"
+                                                    ToolTip="{Binding NowPlayingOutputTooltip}"
+                                                    Click="OnNowPlayingAudioInfoClick"
+                                                    AutomationProperties.AutomationId="NowPlayingAudioInfoButton">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border x:Name="OutputPill"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="OutputPill" Property="Background"
+                                                                        Value="{DynamicResource RowHoverBrush}" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="输出 " FontSize="11.5"
+                                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                                    <TextBlock Text="{Binding NowPlayingOutputText}" FontSize="11.5"
+                                                               FontFamily="{StaticResource MonoFont}"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    <TextBlock Text="  ⓘ" FontSize="10.5" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                                </StackPanel>
+                                            </Button>
                                         </WrapPanel>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="✎ 标签属性" VerticalAlignment="Top"

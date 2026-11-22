@@ -5,6 +5,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using EchoGarage.App.ViewModels;
+using EchoGarage.Core.Models;
+using EchoGarage.Core.Services;
 
 namespace EchoGarage.App.Views;
 
@@ -475,6 +477,58 @@ public partial class MainWindow
     private void OnNowPlayingEditTagsClick(object sender, RoutedEventArgs e)
     {
         _ = _vm.EditCurrentTrackTagsAsync();
+    }
+
+    /// <summary>
+    /// 打开「音频信息」窗口：库里的 Track 不保存文件声明位深，因此这里按需读一次标签；
+    /// 其余管线事实来自播放器在输出链建立后采集的快照。
+    /// </summary>
+    private async void OnNowPlayingAudioInfoClick(object sender, RoutedEventArgs e)
+    {
+        if (_vm.CurrentRow?.Track is not { } track)
+        {
+            return;
+        }
+
+        int? fileBitsPerSample = null;
+        try
+        {
+            fileBitsPerSample = await Task.Run(() =>
+            {
+                try
+                {
+                    return _host.TagService.Read(track.Path, includeCover: false).BitsPerSample;
+                }
+                catch (Exception ex)
+                {
+                    _host.Logger.Debug(
+                        $"Audio info: reading tag properties failed for '{track.Path}': {ex.Message}");
+                    return (int?)null;
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"Audio info: reading tag properties failed: {ex.Message}");
+        }
+
+        var report = AudioPipelineFormatter.Build(
+            track,
+            fileBitsPerSample,
+            _host.Player.Volume,
+            _host.Player.Pipeline);
+
+        var window = new AudioInfoWindow(report, track.Title, BuildAudioInfoSubtitle(track))
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
+    private static string BuildAudioInfoSubtitle(EchoGarage.Core.Models.Track track)
+    {
+        var artist = string.IsNullOrWhiteSpace(track.DisplayArtist) ? "未知艺术家" : track.DisplayArtist;
+        return string.IsNullOrWhiteSpace(track.Album) ? artist : $"{artist} · {track.Album}";
     }
 
     private void OnNowPlayingPageSizeChanged(object sender, SizeChangedEventArgs e) =>

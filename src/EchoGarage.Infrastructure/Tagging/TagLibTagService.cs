@@ -81,7 +81,10 @@ public sealed class TagLibTagService : ITagService
             picture?.MimeType)
         {
             AdditionalTags = ReadAdditionalTags(file, consumedFreeformKeys),
-            YearText = ReadYearText(file)
+            YearText = ReadYearText(file),
+            BitsPerSample = properties is { BitsPerSample: > 0 } audioProperties
+                ? audioProperties.BitsPerSample
+                : null
         };
     }
 

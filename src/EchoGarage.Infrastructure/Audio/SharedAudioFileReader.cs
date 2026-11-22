@@ -30,8 +30,17 @@ public sealed class SharedAudioFileReader : ISampleProvider, IDisposable
                 RepositionInRead = true,
             }),
         };
+        DecoderName = extension switch
+        {
+            ".wav" => "WAV 原生解码（WaveFileReader）",
+            ".aiff" or ".aif" => "AIFF 原生解码（AiffFileReader）",
+            _ => "Media Foundation 解码器"
+        };
         _channel = new SampleChannel(_reader, true);
     }
+
+    /// <summary>解码器名字（用于「音频信息」窗口展示）。</summary>
+    public string DecoderName { get; }
 
     public WaveFormat WaveFormat => _channel.WaveFormat;
 

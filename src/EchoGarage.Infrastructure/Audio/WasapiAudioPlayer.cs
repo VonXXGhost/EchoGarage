@@ -3,6 +3,7 @@ using EchoGarage.Core.Models;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using System.Runtime.InteropServices;
 
 namespace EchoGarage.Infrastructure.Audio;
 
@@ -13,6 +14,16 @@ namespace EchoGarage.Infrastructure.Audio;
 /// </summary>
 public sealed class WasapiAudioPlayer : IAudioPlayer
 {
+    /// <summary>
+    /// 独占模式下 WASAPI 的回调周期等于请求的缓冲区时长。可视化抽头按回调节奏拿样本，
+    /// 100 ms 缓冲区意味着频谱数据只有约 10 次/秒（共享模式固定约 100 次/秒），画面会明显发顿。
+    /// 因此独占模式从 10 ms 起请求小缓冲区，失败时逐级回退，既对齐两种模式的频谱刷新率，
+    /// 又兼容不接受小缓冲区的设备。
+    /// </summary>
+    private static readonly int[] ExclusiveLatencyMilliseconds = [10, 20, 50, 100];
+
+    private static readonly int[] SharedLatencyMilliseconds = [100];
+
     private readonly object _gate = new();
     private readonly IAppLogger _logger;
     private readonly IAudioSampleSink? _sampleSink;
@@ -26,6 +37,8 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
     private OutputMode _mode = OutputMode.Shared;
     private AudioPlaybackState _state = AudioPlaybackState.Stopped;
     private string _outputDescription = "未初始化";
+    private volatile AudioOutputFormatInfo? _outputFormat;
+    private volatile AudioPipelineInfo? _pipeline;
     private double _volume = 0.75;
     private bool _userStopRequested;
     private bool _disposed;
@@ -143,6 +156,11 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
     }
 
     public string OutputDescription => _outputDescription;
+
+    public AudioOutputFormatInfo? OutputFormat => _outputFormat;
+
+    /// <inheritdoc />
+    public AudioPipelineInfo? Pipeline => _pipeline;
 
     public IReadOnlyList<AudioDeviceInfo> GetOutputDevices()
     {
@@ -507,58 +525,124 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
 
         var device = GetOrCreateDevice();
         var formats = BuildTargetFormats(device, reader.WaveFormat);
+        var latencies = _mode == OutputMode.Exclusive
+            ? ExclusiveLatencyMilliseconds
+            : SharedLatencyMilliseconds;
         Exception? lastError = null;
 
         foreach (var (format, description) in formats)
         {
-            WasapiOut? output = null;
-            try
+            // 独占模式必须先自己确认精确格式可用：WasapiOut.Init 在格式不被支持时会静默
+            // 选用「最接近的格式」并做 DMO 重采样，那样输出位深就不再是我们请求的格式了。
+            if (_mode == OutputMode.Exclusive &&
+                !device.AudioClient.IsFormatSupported(AudioClientShareMode.Exclusive, format))
             {
-                var sampleProvider = Convert(reader, format.SampleRate, format.Channels);
-                if (_sampleSink is not null)
-                {
-                    // 可视化抽头（ADR-023 §6）：接在重采样 / 声道转换之后、音量之前，
-                    // 静音时仍然有数据（ADR-012 要求自动化测试静音运行）。
-                    _sampleSink.Configure(format.SampleRate, format.Channels);
-                    sampleProvider = new SampleTapProvider(sampleProvider, _sampleSink);
-                }
-
-                _volumeProvider = new VolumeSampleProvider(sampleProvider) { Volume = (float)_volume };
-                IWaveProvider waveProvider = format.Encoding == WaveFormatEncoding.IeeeFloat
-                    ? new SampleToWaveProvider(_volumeProvider)
-                    : new SampleToWaveProvider16(_volumeProvider);
-
-                output = new WasapiOut(device, _mode == OutputMode.Exclusive
-                    ? AudioClientShareMode.Exclusive
-                    : AudioClientShareMode.Shared, true, 100);
-                output.PlaybackStopped += OnPlaybackStopped;
-                output.Init(waveProvider);
-                output.Play();
-                _output = output;
-                _userStopRequested = false;
-                _activeDeviceId = device.ID;
-                _outputDescription = $"{device.FriendlyName} · {(_mode == OutputMode.Exclusive ? "WASAPI 独占" : "共享")} · {description}";
-                _logger.Info($"Playback started on {_outputDescription} for {CurrentTrackPath}");
-                return;
+                _logger.Debug($"Output format {description} unsupported in exclusive mode; trying next.");
+                continue;
             }
-            catch (Exception ex)
-            {
-                lastError = ex;
-                if (output is not null)
-                {
-                    output.PlaybackStopped -= OnPlaybackStopped;
-                    try
-                    {
-                        output.Dispose();
-                    }
-                    catch
-                    {
-                        // Ignore cleanup errors.
-                    }
-                }
 
-                _volumeProvider = null;
-                _logger.Debug($"Output format {description} rejected: {ex.Message}");
+            foreach (var latencyMilliseconds in latencies)
+            {
+                WasapiOut? output = null;
+                try
+                {
+                    // 每次尝试都回到请求的播放位置：上一次尝试如果已经读过样本，文件位置会前进。
+                    if (!keepReaderPosition && position > TimeSpan.Zero)
+                    {
+                        reader.CurrentTime = position;
+                    }
+
+                    var sampleProvider = Convert(reader, format.SampleRate, format.Channels);
+                    if (_sampleSink is not null)
+                    {
+                        // 可视化抽头（ADR-023 §6）：接在重采样 / 声道转换之后、音量之前，
+                        // 静音时仍然有数据（ADR-012 要求自动化测试静音运行）。
+                        _sampleSink.Configure(format.SampleRate, format.Channels);
+                        sampleProvider = new SampleTapProvider(sampleProvider, _sampleSink);
+                    }
+
+                    _volumeProvider = new VolumeSampleProvider(sampleProvider) { Volume = (float)_volume };
+                    IWaveProvider waveProvider = CreateWaveProvider(_volumeProvider, format);
+
+
+                    output = new WasapiOut(device, _mode == OutputMode.Exclusive
+                        ? AudioClientShareMode.Exclusive
+                        : AudioClientShareMode.Shared, true, latencyMilliseconds);
+                    output.PlaybackStopped += OnPlaybackStopped;
+                    output.Init(waveProvider);
+                    output.Play();
+                    _output = output;
+                    _userStopRequested = false;
+                    _activeDeviceId = device.ID;
+                    _outputDescription = $"{device.FriendlyName} · {(_mode == OutputMode.Exclusive ? "WASAPI 独占" : "共享")} · {description}";
+
+                    // WasapiOut 在 Init 之后暴露它真正向 WASAPI 注册的流格式：独占模式可能被
+                    // 替换成设备最接近的格式（并由 NAudio 内部 DMO 重采样），共享模式则是
+                    // 我们提交的格式（引擎再自动转换为设备混音格式）。
+                    var clientFormat = output.OutputWaveFormat;
+                    var clientIsFloat = IsFloatFormat(clientFormat);
+                    var clientBits = clientIsFloat ? 32 : ExtensibleWaveFormatFactory.GetValidBits(clientFormat);
+                    var clientContainerBits = clientIsFloat ? 32 : clientFormat.BitsPerSample;
+                    var extend = _mode == OutputMode.Shared;
+                    var mixDescription = extend
+                        ? DescribeClientFormat(device.AudioClient.MixFormat)
+                        : null;
+                    _outputFormat = new AudioOutputFormatInfo(
+                        device.FriendlyName,
+                        _mode,
+                        clientFormat.SampleRate,
+                        clientFormat.Channels,
+                        clientBits,
+                        clientIsFloat,
+                        extend,
+                        mixDescription,
+                        clientContainerBits > clientBits ? clientContainerBits : null);
+
+                    // 端到端管线（「音频信息」窗口）：解码格式 → 采样链转换 → 输出流，
+                    // 共享模式再补 Windows 引擎混音格式与设备端点默认格式。
+                    var sourceFormat = reader.WaveFormat;
+                    var endpointFormat = TryReadEndpointFormat(device);
+                    var pipeline = new AudioPipelineInfo(
+                        reader.DecoderName,
+                        DescribeClientFormat(sourceFormat),
+                        BuildConversions(sourceFormat, clientFormat),
+                        latencyMilliseconds,
+                        _outputFormat,
+                        mixDescription,
+                        endpointFormat,
+                        extend ? "AUTO_CONVERT_PCM · SRC_DEFAULT_QUALITY" : null);
+                    _pipeline = pipeline;
+                    _logger.Debug(
+                        $"Audio pipeline: decoder={pipeline.DecoderName}, decoded={pipeline.DecodedFormat}, " +
+                        $"latency={latencyMilliseconds}ms, client={DescribeClientFormat(clientFormat)}, " +
+                        $"mix={mixDescription ?? "—"}, endpoint={endpointFormat ?? "—"}, " +
+                        $"conversions={pipeline.Conversions.Count}");
+                    _logger.Info(
+                        $"Playback started on {_outputDescription} for {CurrentTrackPath} " +
+                        $"(latency={latencyMilliseconds}ms, client={DescribeClientFormat(clientFormat)}" +
+                        (mixDescription is null ? ")" : $", deviceMix={mixDescription})"));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    if (output is not null)
+                    {
+                        output.PlaybackStopped -= OnPlaybackStopped;
+                        try
+                        {
+                            output.Dispose();
+                        }
+                        catch
+                        {
+                            // Ignore cleanup errors.
+                        }
+                    }
+
+                    _volumeProvider = null;
+                    _logger.Debug(
+                        $"Output format {description} @ {latencyMilliseconds}ms rejected: {ex.Message}");
+                }
             }
         }
 
@@ -577,26 +661,188 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
             yield break;
         }
 
-        // Exclusive mode: prefer the source rate, then common device rates, float first.
-        var rates = new List<int> { sourceFormat.SampleRate };
-        foreach (var rate in new[] { 48000, 44100, 96000, 32000 })
+        // Exclusive mode: bypass the Windows mixing engine and negotiate the stream format
+        // directly with the device. Order the candidates so that as little conversion as
+        // possible is needed: the source rate first, then rates that are simple multiples of
+        // it, and only then other common device rates. Within a rate, quality goes float32 →
+        // 24-in-32 → 24-bit packed → 16-bit. Plenty of DACs only accept 16-bit or 24-in-32 in
+        // exclusive mode; without the 24-in-32 (WAVEFORMATEXTENSIBLE with wValidBitsPerSample=24)
+        // candidate they silently degrade to 16-bit, which is an audible loss of resolution.
+        var channelsToTry = new List<int> { Math.Clamp(sourceFormat.Channels, 1, 2) };
+        if (!channelsToTry.Contains(2))
         {
-            if (!rates.Contains(rate))
+            // Stereo devices are often pickier about mono formats, so mono sources also try 2ch.
+            channelsToTry.Add(2);
+        }
+
+        foreach (var channelCount in channelsToTry)
+        {
+            foreach (var rate in BuildExclusiveRates(sourceFormat.SampleRate))
+            {
+                var rateText = $"{rate / 1000.0:0.#}kHz";
+                yield return (WaveFormat.CreateIeeeFloatWaveFormat(rate, channelCount), $"{rateText} float");
+                yield return (new WaveFormatExtensible(rate, 32, channelCount), $"{rateText} float");
+                yield return (ExtensibleWaveFormatFactory.CreatePcm(rate, channelCount, 32, 32), $"{rateText} 32bit");
+                yield return (ExtensibleWaveFormatFactory.CreatePcm(rate, channelCount, 32, 24), $"{rateText} 24bit-in-32");
+                yield return (new WaveFormat(rate, 24, channelCount), $"{rateText} 24bit");
+                yield return (new WaveFormatExtensible(rate, 24, channelCount), $"{rateText} 24bit");
+                yield return (new WaveFormat(rate, 16, channelCount), $"{rateText} 16bit");
+                yield return (new WaveFormatExtensible(rate, 16, channelCount), $"{rateText} 16bit");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Exclusive-mode candidate sample rates, best first: the source rate, then half/double it,
+    /// then common device rates. Keeps only the usual 32–384 kHz range and de-duplicates.
+    /// </summary>
+    private static IReadOnlyList<int> BuildExclusiveRates(int sourceRate)
+    {
+        var rates = new List<int>();
+        void Add(int rate)
+        {
+            if (rate is >= 32000 and <= 384000 && !rates.Contains(rate))
             {
                 rates.Add(rate);
             }
         }
 
-        foreach (var rate in rates)
+        Add(sourceRate);
+        Add(sourceRate / 2);
+        Add(sourceRate * 2);
+        foreach (var rate in new[] { 48000, 96000, 192000, 44100, 88200, 176400, 352800, 32000 })
         {
-            yield return (WaveFormat.CreateIeeeFloatWaveFormat(rate, channels), $"{rate / 1000.0:0.#}kHz float");
+            Add(rate);
         }
 
-        foreach (var rate in rates)
+        return rates;
+    }
+
+    /// <summary>
+    /// Wraps the volume provider in the matching WASAPI wave provider. A 32-bit integer container
+    /// (24-in-32) has to be produced from float samples explicitly so the valid high bits line up.
+    /// </summary>
+    private static IWaveProvider CreateWaveProvider(VolumeSampleProvider volumeProvider, WaveFormat format)
+    {
+        if (IsFloatFormat(format))
         {
-            yield return (new WaveFormat(rate, 16, channels), $"{rate / 1000.0:0.#}kHz 16bit");
+            return new SampleToWaveProvider(volumeProvider);
+        }
+
+        var validBits = ExtensibleWaveFormatFactory.GetValidBits(format);
+        if (format.BitsPerSample == 32)
+        {
+            return new FloatToPcm32WaveProvider(volumeProvider, format, validBits);
+        }
+
+        return validBits == 24
+            ? new SampleToWaveProvider24(volumeProvider)
+            : new SampleToWaveProvider16(volumeProvider);
+    }
+
+    /// <summary>KSDATAFORMAT_SUBTYPE_IEEE_FLOAT；WaveFormatExtensible 的 SubFormat 用它标识 32-bit float。</summary>
+    private static readonly Guid IeeeFloatSubFormat = new("00000003-0000-0010-8000-00aa00389b71");
+
+    /// <summary>
+    /// 判断格式是否是 32-bit float。WASAPI 的混音格式常以 WaveFormatExtensible 返回，
+    /// 这时 Encoding 可能是 Extensible 而不是 IeeeFloat，需要看 SubFormat GUID。
+    /// </summary>
+    private static bool IsFloatFormat(WaveFormat format) =>
+        format.Encoding == WaveFormatEncoding.IeeeFloat ||
+        (format is WaveFormatExtensible extensible && extensible.SubFormat == IeeeFloatSubFormat);
+
+    /// <summary>把 WASAPI 流格式渲染成「48 kHz · 32-bit float · 立体声」这样的短描述。</summary>
+    private static string DescribeClientFormat(WaveFormat format)
+    {
+        var isFloat = IsFloatFormat(format);
+        var bits = isFloat ? 32 : ExtensibleWaveFormatFactory.GetValidBits(format);
+        var containerBits = isFloat ? bits : format.BitsPerSample;
+        var bitsText = isFloat
+            ? "32-bit float"
+            : containerBits > bits
+                ? $"{bits}-bit（{containerBits}-bit 容器）"
+                : $"{bits}-bit";
+        var channels = format.Channels switch
+        {
+            1 => "单声道",
+            2 => "立体声",
+            _ => $"{format.Channels}ch"
+        };
+        return $"{format.SampleRate / 1000.0:0.#} kHz · {bitsText} · {channels}";
+    }
+
+    /// <summary>解码 PCM → WASAPI 客户端流之间实际发生的转换，供「音频信息」窗口展示。</summary>
+    private static IReadOnlyList<AudioPipelineDetail> BuildConversions(WaveFormat source, WaveFormat target)
+    {
+        var conversions = new List<AudioPipelineDetail>();
+        if (source.SampleRate != target.SampleRate)
+        {
+            conversions.Add(new AudioPipelineDetail(
+                "重采样",
+                $"{DescribeRate(source.SampleRate)} → {DescribeRate(target.SampleRate)}（WDL）"));
+        }
+
+        if (source.Channels != target.Channels)
+        {
+            conversions.Add(new AudioPipelineDetail(
+                "声道转换",
+                $"{source.Channels} → {target.Channels} 声道"));
+        }
+
+        var sourceIsFloat = IsFloatFormat(source);
+        var targetIsFloat = IsFloatFormat(target);
+        var sourceBits = sourceIsFloat ? 32 : ExtensibleWaveFormatFactory.GetValidBits(source);
+        var targetBits = targetIsFloat ? 32 : ExtensibleWaveFormatFactory.GetValidBits(target);
+        if (sourceIsFloat != targetIsFloat || (!sourceIsFloat && sourceBits != targetBits))
+        {
+            var targetContainerBits = targetIsFloat ? targetBits : target.BitsPerSample;
+            var targetText = $"{targetBits}-bit{(targetIsFloat ? " float" : string.Empty)}";
+            if (!targetIsFloat && targetContainerBits > targetBits)
+            {
+                targetText += $"（{targetContainerBits}-bit 容器）";
+            }
+
+            conversions.Add(new AudioPipelineDetail(
+                "位深转换",
+                $"{sourceBits}-bit{(sourceIsFloat ? " float" : string.Empty)} → {targetText}"));
+        }
+
+        return conversions;
+    }
+
+    /// <summary>
+    /// 读取 Windows 声音设置里的设备默认格式（PKEY_AudioEngine_DeviceFormat）。
+    /// 共享模式下音频引擎最终会把混音格式转换成它，再送给硬件；读不到时返回 null（不影响播放）。
+    /// </summary>
+    private string? TryReadEndpointFormat(MMDevice device)
+    {
+        try
+        {
+            var property = device.Properties[PropertyKeys.PKEY_AudioEngine_DeviceFormat];
+            if (property?.Value is not byte[] blob || blob.Length < 18)
+            {
+                return null;
+            }
+
+            var pointer = Marshal.AllocHGlobal(blob.Length);
+            try
+            {
+                Marshal.Copy(blob, 0, pointer, blob.Length);
+                return DescribeClientFormat(WaveFormat.MarshalFromPtr(pointer));
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(pointer);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Reading endpoint device format failed: {ex.Message}");
+            return null;
         }
     }
+
+    private static string DescribeRate(int sampleRate) => $"{sampleRate / 1000.0:0.#} kHz";
 
     private static ISampleProvider Convert(ISampleProvider input, int sampleRate, int channels)
     {
@@ -697,6 +943,8 @@ public sealed class WasapiAudioPlayer : IAudioPlayer
         _output = null;
         _volumeProvider = null;
         _activeDeviceId = null;
+        _outputFormat = null;
+        _pipeline = null;
         _pendingResumeAfterDeviceLoss = false;
         if (output is not null)
         {

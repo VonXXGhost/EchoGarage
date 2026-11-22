@@ -11,8 +11,10 @@
 
 ## 当前状态
 
-- 无待批准提案。
+- 当前没有待批准的提案。
 
+2026-11-22 批准的 ADR-023 修订（独占模式输出缓冲区、格式协商与可视化回调节奏）已按页首合并规则
+并入 `docs/adr/ADR-023-playback-visualizer.md`（§18），提案文件已删除。
 2026-11-22 批准的 ADR-032（输出设备热插拔检测与“上次使用的设备”记忆）已移入
 `docs/adr/ADR-032-audio-output-device-hotplug.md`；同日批准的 ADR-033（按输出设备与模式记忆音量、
 按模式设置音量上限）已移入 `docs/adr/ADR-033-output-volume-memory-and-ceiling.md`。

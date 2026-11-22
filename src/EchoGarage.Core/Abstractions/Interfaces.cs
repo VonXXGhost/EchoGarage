@@ -152,6 +152,18 @@ public interface IAudioPlayer : IDisposable
     string? CurrentTrackPath { get; }
     double Volume { get; set; }
     string OutputDescription { get; }
+
+    /// <summary>
+    /// 当前写进 WASAPI 的实际输出格式（采样率 / 位深 / 声道 / 共享或独占）。输出尚未建立时为 null；
+    /// 由后台加载线程写入、UI 线程读取，实现方需保证替换是原子且可见的。
+    /// </summary>
+    AudioOutputFormatInfo? OutputFormat { get; }
+
+    /// <summary>
+    /// 端到端输出管线的采集事实（解码格式、采样链转换、缓冲区、引擎混音格式、设备端点格式）。
+    /// 与 <see cref="OutputFormat"/> 同步建立 / 清空，仅在当前输出有效时非 null。
+    /// </summary>
+    AudioPipelineInfo? Pipeline { get; }
     IReadOnlyList<AudioDeviceInfo> GetOutputDevices();
     void Warmup();
     Task LoadAsync(string path, bool playWhenReady, CancellationToken cancellationToken = default);

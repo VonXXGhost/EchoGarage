@@ -16,4 +16,8 @@
     <ProjectReference Include="..\EchoGarage.Core\EchoGarage.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="EchoGarage.Tests" />
+  </ItemGroup>
+
 </Project>
