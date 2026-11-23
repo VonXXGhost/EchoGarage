@@ -133,6 +133,10 @@ public sealed class JsonSettingsService : ISettingsService
         settings.OutputDeviceId = string.IsNullOrWhiteSpace(settings.OutputDeviceId)
             ? null
             : settings.OutputDeviceId.Trim();
+        // 只在启动时用于定位 / 选中上一次的曲目；空白路径没有意义，统一折叠为 null。
+        settings.LastPlayedTrackPath = string.IsNullOrWhiteSpace(settings.LastPlayedTrackPath)
+            ? null
+            : settings.LastPlayedTrackPath.Trim();
         if (!Enum.IsDefined(settings.OutputMode))
         {
             settings.OutputMode = OutputMode.Shared;

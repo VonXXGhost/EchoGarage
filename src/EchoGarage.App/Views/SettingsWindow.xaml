@@ -506,7 +506,7 @@
                         <StackPanel>
                             <CheckBox x:Name="AutoScanCheck" Content="启动时自动扫描媒体库（仅处理变化的文件）"
                                       Click="OnToggleAutoScan" />
-                            <CheckBox x:Name="RestoreLastCheck" Content="启动时恢复上次打开的播放列表"
+                            <CheckBox x:Name="RestoreLastCheck" Content="启动时恢复上次打开的播放列表与曲目"
                                       Margin="0,10,0,0" Click="OnToggleRestoreLast" />
                             <TextBlock x:Name="LibrarySummaryText" Foreground="{DynamicResource TextSecondaryBrush}"
                                        Margin="0,10,0,0" />

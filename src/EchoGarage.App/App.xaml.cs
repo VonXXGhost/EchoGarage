@@ -43,7 +43,10 @@ public partial class App : Application
             // ADR-015 诊断开关只影响本次进程，因此通过构造函数下发，不改写 Settings.SeekBarMode。
             var waveformDiagnostics = Array.Exists(e.Args,
                 a => string.Equals(a, "--waveform", StringComparison.OrdinalIgnoreCase));
-            var window = new MainWindow(Host, waveformDiagnostics);
+            // 文件关联 / 命令行指定文件启动时，窗口在初始化完成后再加载这些文件，
+            // 从而跳过“恢复上次播放列表并选中上次曲目”的行为。
+            var startupFiles = FileArgumentParser.ExtractAudioFiles(e.Args);
+            var window = new MainWindow(Host, waveformDiagnostics, startupFiles);
             MainWindow = window;
             window.Show();
             Timeline.Mark("window-shown");
@@ -54,12 +57,6 @@ public partial class App : Application
                 Dispatcher.BeginInvoke(new Action(() => window.HandleExternalFiles(paths)),
                     DispatcherPriority.Background);
             });
-
-            var startupFiles = FileArgumentParser.ExtractAudioFiles(e.Args);
-            if (startupFiles.Count > 0)
-            {
-                window.HandleExternalFiles(startupFiles);
-            }
 
             var playIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--play-file", StringComparison.OrdinalIgnoreCase));
             if (playIndex >= 0 && playIndex + 1 < e.Args.Length)

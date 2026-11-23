@@ -44,6 +44,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _isSeeking;
     private bool _isDisposed;
     private bool _refreshingTracks;
+    private readonly bool _restoreSessionOnStartup;
     private DateTime _lastTrackRefreshUtc = DateTime.MinValue;
     private int _consecutiveFailures;
     private List<TrackRowViewModel>? _shuffleOrder;
@@ -88,11 +89,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>True while the advanced search dialog writes the keyword into <see cref="FilterText"/>.</summary>
     private bool _applyingAdvancedSearch;
 
-    public MainViewModel(AppHost host, IDialogService dialogs, bool waveformModeDiagnostics = false)
+    public MainViewModel(AppHost host, IDialogService dialogs, bool waveformModeDiagnostics = false,
+        bool restoreSessionOnStartup = true)
     {
         _host = host;
         _dialogs = dialogs;
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _restoreSessionOnStartup = restoreSessionOnStartup;
         Settings = host.Settings.Current;
         _playMode = Settings.PlaybackMode;
         // 直接赋字段：初始化时不应触发切换回调（否则会写设置并尝试加载空路径）。
@@ -809,6 +812,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public event EventHandler? CurrentRowChanged;
 
     /// <summary>
+    /// Raised once at startup when the last played track was selected without playback,
+    /// so the window can scroll that row into view after the layout is applied.
+    /// </summary>
+    public event EventHandler<TrackRowViewModel>? SelectionRestored;
+
+    /// <summary>
     /// Raised after <see cref="RebuildGroupedView"/> replaced the header/row cell list (layout or
     /// pin change). The window uses it to re-stretch the left flow up to the right-pinned block
     /// before the new cells are rendered.
@@ -944,7 +953,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // =====================================================================
     // Startup
     // =====================================================================
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(bool loadInitialSource = true)
     {
         RefreshVisualizer();
         var stopwatch = Stopwatch.StartNew();
@@ -954,8 +963,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _host.Watcher.Start(await _host.LibraryRepository.GetFoldersAsync());
         _positionTimer.Start();
 
-        await SelectSourceAsync(ResolveStartupSource());
-        _host.Logger.Info($"Initial playlist loaded in {stopwatch.ElapsedMilliseconds} ms total.");
+        if (loadInitialSource)
+        {
+            var startupSource = ResolveStartupSource();
+            // Remember the playlist id before SelectSourceAsync writes the newly selected
+            // playlist back into settings; only that exact playlist may restore a selection.
+            var restorePlaylistId = Settings.RestoreLastPlaylist ? Settings.LastPlaylistId : null;
+            await SelectSourceAsync(startupSource);
+            if (restorePlaylistId is { } playlistId)
+            {
+                RestoreLastPlayedSelection(playlistId);
+            }
+
+            _host.Logger.Info($"Initial playlist loaded in {stopwatch.ElapsedMilliseconds} ms total.");
+        }
 
         // Older scans could cache rows whose tag read failed (no duration, no album/artist).
         // Those rows are marked stale by the scanner, so a single background scan repairs
@@ -993,6 +1014,43 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         return Sources.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Selects the last played track in the playlist restored at startup without starting
+    /// playback. The window scrolls the row into view after applying its layout.
+    /// </summary>
+    private void RestoreLastPlayedSelection(long playlistId)
+    {
+        if (!_restoreSessionOnStartup || _isDisposed || !Settings.RestoreLastPlaylist)
+        {
+            return;
+        }
+
+        var path = Settings.LastPlayedTrackPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        // Only the playlist that was actually restored may select a row; if it has been
+        // deleted or replaced, leave the new source unselected.
+        if (SelectedSource is not { Kind: SourceKind.Playlist } source || source.Playlist?.Id != playlistId)
+        {
+            return;
+        }
+
+        var row = Tracks.FirstOrDefault(r =>
+            string.Equals(r.Track.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (row is null)
+        {
+            _host.Logger.Info($"Last played track is not in the restored playlist: {path}");
+            return;
+        }
+
+        SelectedRow = row;
+        _host.Logger.Info($"Restored last played row: {path}");
+        SelectionRestored?.Invoke(this, row);
     }
 
     public async Task ReloadSourcesPublicAsync() => await ReloadSourcesAsync();
@@ -2102,6 +2160,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             OutputDescription = _host.Player.OutputDescription;
             _consecutiveFailures = 0;
             SetStatus($"正在播放：{row.Title}");
+            if (!string.Equals(Settings.LastPlayedTrackPath, row.Track.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                Settings.LastPlayedTrackPath = row.Track.Path;
+                QueueSettingsSave();
+            }
             _ = Task.Run(async () =>
             {
                 try
@@ -3389,15 +3452,27 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 }
             });
 
+            var changedTracks = 0;
             foreach (var folder in folders)
             {
                 token.ThrowIfCancellationRequested();
                 var result = await _host.Scanner.ScanFolderAsync(folder, progress, token);
+                changedTracks += result.Added + result.Removed;
                 _host.Logger.Info($"Folder scan {folder.Path}: +{result.Added}/-{result.Removed} in {result.Elapsed.TotalSeconds:F1}s");
             }
 
-            await ReloadSourcesAsync();
-            await RefreshCurrentSourceAsync(preserveSelection: true);
+            // 扫描没有实际变化时不要重载列表：重启后的首次扫描通常什么也没变，
+            // 重载会把启动时已经定位好的选中行滚出可视区域（还会白白重建一次列表）。
+            if (changedTracks > 0)
+            {
+                await ReloadSourcesAsync();
+                await RefreshCurrentSourceAsync(preserveSelection: true);
+            }
+            else
+            {
+                _host.Logger.Debug("Library scan found no changes; keeping the current list");
+            }
+
             SetStatus(repair ? "媒体库标签已修复" : "媒体库扫描完成");
             if (repair)
             {
@@ -3532,9 +3607,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        var selectedRowPath = preserveSelection ? SelectedRow?.Track.Path : null;
         var selectedPaths = preserveSelection
             ? Tracks.Where(t => IsRowSelected(t)).Select(t => t.Track.Path).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : null;
+        // SelectedRow is normally also flagged in SelectedRows, but startup restoration assigns
+        // it directly before the controls have synchronized, so preserve it explicitly.
+        if (selectedPaths is not null && selectedRowPath is not null)
+        {
+            selectedPaths.Add(selectedRowPath);
+        }
+
         var source = SelectedSource;
         var loadStopwatch = Stopwatch.StartNew();
         var tracks = await LoadTracksForSourceAsync(source);
@@ -3554,6 +3637,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 row.IsSelected = true;
             }
+        }
+
+        if (selectedRowPath is not null)
+        {
+            SelectedRow = Tracks.FirstOrDefault(r =>
+                string.Equals(r.Track.Path, selectedRowPath, StringComparison.OrdinalIgnoreCase));
         }
     }
 

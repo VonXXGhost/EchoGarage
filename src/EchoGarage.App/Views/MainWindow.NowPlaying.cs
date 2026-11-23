@@ -21,6 +21,7 @@ public partial class MainWindow
     private const int MaxCenterCorrectionAttempts = 5;
 
     private bool _centerCurrentRowPending;
+    private TrackRowViewModel? _centerTargetRow;
 
     /// <summary>右侧列表的封面补加载是否已排队（滚动事件很密，合并成一次 dispatcher 回调）。</summary>
     private bool _nowPlayingCoverLoadQueued;
@@ -41,13 +42,23 @@ public partial class MainWindow
     /// </remarks>
     private void ScheduleCenterCurrentRow()
     {
-        if (_centerCurrentRowPending)
+        var row = _vm.CurrentRow;
+        if (row is null || !IsRowBrowsable(row))
         {
             return;
         }
 
-        var row = _vm.CurrentRow;
-        if (row is null || !IsCurrentRowBrowsable(row))
+        ScheduleCenterRow(row);
+    }
+
+    /// <summary>
+    /// Schedules centering of a row in the browsed track list. Used both when playback starts
+    /// and when the startup session restoration selects the last played row.
+    /// </summary>
+    private void ScheduleCenterRow(TrackRowViewModel row)
+    {
+        _centerTargetRow = row;
+        if (_centerCurrentRowPending)
         {
             return;
         }
@@ -76,16 +87,23 @@ public partial class MainWindow
                 }
 
                 _centerCurrentRowPending = false;
+                _centerTargetRow = null;
                 _host.Logger.Debug("Auto-center skipped: the user kept interacting with the scrollbar.");
                 return;
             }
 
+            var target = _centerTargetRow;
             _centerCurrentRowPending = false;
-            CenterCurrentRow();
+            _centerTargetRow = null;
+            if (target is not null)
+            {
+                CenterRow(target);
+            }
         }
         catch (Exception ex)
         {
             _centerCurrentRowPending = false;
+            _centerTargetRow = null;
             _host.Logger.Debug($"Auto-center attempt failed: {ex.Message}");
         }
     }
@@ -119,13 +137,12 @@ public partial class MainWindow
         return false;
     }
 
-    /// <summary>True when the current row belongs to the list that is being browsed.</summary>
-    private bool IsCurrentRowBrowsable(TrackRowViewModel row) =>
+    /// <summary>True when the row belongs to the list that is being browsed.</summary>
+    private bool IsRowBrowsable(TrackRowViewModel row) =>
         _vm.IsGroupedViewActive ? GroupedList.Items.Contains(row) : TrackGrid.Items.Contains(row);
 
-    private void CenterCurrentRow()
+    private void CenterRow(TrackRowViewModel? row)
     {
-        var row = _vm.CurrentRow;
         if (row is null)
         {
             return;
@@ -342,7 +359,7 @@ public partial class MainWindow
             return;
         }
 
-        if (!IsCurrentRowBrowsable(row))
+        if (!IsRowBrowsable(row))
         {
             _host.Logger.Debug($"Now-playing status double-click: playing row is not in the current list (row={row.Track.Title}).");
             _vm.SetStatus("正在播放的歌曲不在当前列表中。");

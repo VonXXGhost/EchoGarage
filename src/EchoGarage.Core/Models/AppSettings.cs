@@ -65,6 +65,12 @@ public sealed class AppSettings
     public bool ShowAlbumPanel { get; set; } = true;
     public bool RestoreLastPlaylist { get; set; } = true;
     public long? LastPlaylistId { get; set; }
+
+    /// <summary>
+    /// 上一次真正开始播放的曲目路径。启动恢复播放列表时只用来选中并滚动到该行，
+    /// 不会自动播放；通过文件关联 / 命令行指定文件启动时不使用。
+    /// </summary>
+    public string? LastPlayedTrackPath { get; set; }
     public string CacheDirectory { get; set; } = string.Empty;
     public PlaylistViewLayout LibraryLayout { get; set; } = ViewLayoutFactory.CreateDefault();
     public List<ColumnPreset> ColumnPresets { get; set; } = ViewLayoutFactory.CreateBuiltInPresets();

@@ -21,6 +21,7 @@ public partial class MainWindow : Window
 {
     private readonly AppHost _host;
     private readonly MainViewModel _vm;
+    private readonly IReadOnlyList<string> _startupFiles;
     private readonly DialogService _dialogs;
     private readonly HotkeyService _hotkeys;
     private readonly ConversionCoordinator _conversion;
@@ -52,13 +53,16 @@ public partial class MainWindow : Window
     /// <summary>Song-column width that must stay visible next to a pinned header block (DIPs).</summary>
     private const double MinGroupedContentWidth = 160;
 
-    public MainWindow(AppHost host, bool waveformModeDiagnostics = false)
+    public MainWindow(AppHost host, bool waveformModeDiagnostics = false,
+        IReadOnlyList<string>? startupFiles = null)
     {
         _host = host;
+        _startupFiles = startupFiles ?? [];
         InitializeComponent();
 
         _dialogs = new DialogService(this, host);
-        _vm = new MainViewModel(host, _dialogs, waveformModeDiagnostics);
+        _vm = new MainViewModel(host, _dialogs, waveformModeDiagnostics,
+            restoreSessionOnStartup: _startupFiles.Count == 0);
         _hotkeys = new HotkeyService(_vm, host.Logger);
         _conversion = new ConversionCoordinator(host, _vm, _dialogs, this);
         _loudness = new LoudnessCoordinator(host, _vm, _dialogs, this);
@@ -72,6 +76,7 @@ public partial class MainWindow : Window
         _vm.SortChanged += (_, _) => UpdateSortGlyphs();
         _vm.SettingsRequested += (_, _) => OpenSettings();
         _vm.CurrentRowChanged += (_, _) => ScrollToCurrentRow();
+        _vm.SelectionRestored += (_, row) => ScheduleCenterRow(row);
         _vm.PropertyChanged += OnViewModelPropertyChanged;
         ApplyGroupCoverMetrics();
 
@@ -258,8 +263,15 @@ public partial class MainWindow : Window
         {
             ApplyDpiScale();
             DpiChanged += (_, _) => ApplyDpiScale();
-            await _vm.InitializeAsync();
+            // Files opened through the shell (double-click / "Open with") must not restore
+            // the previous playlist or selection; they are loaded after initialization instead.
+            await _vm.InitializeAsync(loadInitialSource: _startupFiles.Count == 0);
             ApplyLayout();
+
+            if (_startupFiles.Count > 0)
+            {
+                await _vm.HandleExternalFilesAsync(_startupFiles);
+            }
 
             // Audio device enumeration talks to WASAPI/COM and can take a moment on
             // first use; keep it off the critical path so the window paints immediately.

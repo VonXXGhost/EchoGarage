@@ -474,6 +474,46 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_RoundTripsLastPlayedTrackPath()
+    {
+        await _settings.LoadAsync();
+        var path = @"C:\Music\Demo Artist\Demo Album A\Demo Track 01.flac";
+        _settings.Current.LastPlayedTrackPath = path;
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(path, reloaded.Current.LastPlayedTrackPath);
+    }
+
+    [Fact]
+    public async Task Save_TrimsLastPlayedTrackPath()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.LastPlayedTrackPath = @"  C:\Music\Demo Track 01.flac  ";
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Equal(@"C:\Music\Demo Track 01.flac", reloaded.Current.LastPlayedTrackPath);
+    }
+
+    [Fact]
+    public async Task Save_BlankLastPlayedTrackPath_BecomesNull()
+    {
+        await _settings.LoadAsync();
+        _settings.Current.LastPlayedTrackPath = "   ";
+        await _settings.SaveAsync();
+
+        var reloaded = new JsonSettingsService(_paths, new FileLogger(_paths));
+        await reloaded.LoadAsync();
+
+        Assert.Null(reloaded.Current.LastPlayedTrackPath);
+    }
+
+    [Fact]
     public async Task Load_UnknownOutputModeFallsBackToShared()
     {
         await _settings.LoadAsync();
