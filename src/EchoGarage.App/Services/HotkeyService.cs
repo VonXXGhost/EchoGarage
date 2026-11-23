@@ -6,6 +6,7 @@ using System.Windows.Interop;
 using EchoGarage.App.ViewModels;
 using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
+using EchoGarage.Core.Services;
 
 namespace EchoGarage.App.Services;
 
@@ -27,6 +28,27 @@ public sealed class HotkeyService : IDisposable
 
     /// <summary>Private id range for WM_HOTKEY; ids only need to be unique per window.</summary>
     private const int FirstGlobalId = 0xE900;
+
+    /// <summary>
+    /// 标点键的规范名 → WPF Key。WPF 的 Key 枚举名（OemSemicolon / OemPlus / …）与
+    /// <see cref="HotkeyGesture"/> 的规范名不同，不能依赖 <c>Enum.TryParse</c>。
+    /// </summary>
+    private static readonly Dictionary<string, Key> PunctuationKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Semicolon"] = Key.OemSemicolon,
+        ["Equals"] = Key.OemPlus,
+        ["Comma"] = Key.OemComma,
+        ["Minus"] = Key.OemMinus,
+        ["Period"] = Key.OemPeriod,
+        ["Slash"] = Key.OemQuestion,
+        ["Tilde"] = Key.OemTilde,
+        ["OpenBracket"] = Key.OemOpenBrackets,
+        ["Backslash"] = Key.OemPipe,
+        ["CloseBracket"] = Key.OemCloseBrackets,
+        ["Quote"] = Key.OemQuotes,
+        ["Oem8"] = Key.Oem8,
+        ["Oem102"] = Key.Oem102
+    };
 
     private readonly MainViewModel _vm;
     private readonly IAppLogger _logger;
@@ -378,6 +400,12 @@ public sealed class HotkeyService : IDisposable
             case HotkeyAction.Mute:
                 _vm.ToggleMuteCommand.Execute(null);
                 break;
+            case HotkeyAction.VolumeUp:
+                _vm.AdjustVolume(1);
+                break;
+            case HotkeyAction.VolumeDown:
+                _vm.AdjustVolume(-1);
+                break;
             case HotkeyAction.OpenSearch:
                 _vm.OpenAdvancedSearchCommand.Execute(null);
                 break;
@@ -468,6 +496,11 @@ public sealed class HotkeyService : IDisposable
             }
 
             return null;
+        }
+
+        if (PunctuationKeys.TryGetValue(name, out var punctuation))
+        {
+            return punctuation;
         }
 
         return Enum.TryParse<Key>(name, ignoreCase: true, out var key) ? key : null;

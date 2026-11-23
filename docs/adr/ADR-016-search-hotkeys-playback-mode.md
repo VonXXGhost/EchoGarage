@@ -1,6 +1,7 @@
 # ADR-016：列表搜索、可配置与全局快捷键、播放模式、年份原文显示、媒体键、播放列表管理与单曲循环
 
-- 状态：Accepted（2026-11-14 批准；2026-11-19 并入原 ADR-026，该 ADR 于 2026-11-17 批准）
+- 状态：Accepted（2026-11-14 批准；2026-11-19 并入原 ADR-026，该 ADR 于 2026-11-17 批准；
+  2026-11-24 批准修订 A1：标点键捕获与音量快捷键）
 - 日期：2026-11-14（2026-11-19 并入原 ADR-026）
 - 相关：ADR-013（列表行次要信息）、ADR-014（schema v3 缓存修复，已批准）、ADR-019（标签编辑页）、
   ADR-021（文件操作）、ADR-025（标签规范化）、AGENTS.md §4 / §5 / §7
@@ -127,12 +128,25 @@ Owner 在验收后提出四组需求（2026-11-16）：
 
 #### 5.1 手势模型、全局注册与配置归一化
 
-- Core 新增 `HotkeyAction`（PlayPause / Next / Previous / Stop / Mute / OpenSearch / OpenTagProperties）、
+- Core 新增 `HotkeyAction`（PlayPause / Next / Previous / Stop / Mute / OpenSearch / OpenTagProperties；
+  2026-11-24 修订 A1 在末尾追加 VolumeUp / VolumeDown，保持既有枚举数值不变）、
   `[Flags] HotkeyModifiers`、`HotkeyGesture`（解析 / 规范化 / `ToString()`）与 `HotkeyBinding`（Action + Gesture + Global）。
   解析规则：`Ctrl+Alt+Space`、`MediaPlayPause`、`Esc`、`F5` 等；修饰键别名 ctrl/control、alt、shift、win/windows/meta；
   键名大小写不敏感；输出统一为 `Ctrl+Alt+Shift+Win+Key` 顺序。
 - `Hotkeys.cs` 提供媒体键 / 音量键与 VK ↔ 规范键名的纯逻辑辅助（`IsMediaKeyName` / `IsMediaGesture` /
   `IsMediaVirtualKey` / `KeyNameFromVirtualKey`），供捕获与钩子复用。
+- 标点键（2026-11-24 修订 A1）：规范名采用**未按 Shift 时的物理字符单词**——`Semicolon`、`Equals`、
+  `Comma`、`Minus`、`Period`、`Slash`、`Tilde`、`OpenBracket`、`Backslash`、`CloseBracket`、`Quote`、
+  `Oem8`、`Oem102`，小键盘运算符使用 WPF 键名 `Multiply` / `Add` / `Separator` / `Subtract` /
+  `Decimal` / `Divide`。原因是 `+` 是手势分隔符，规范名中不能出现 `+`，否则 `ToString()` 无法再次解析。
+  `KeyNameFromVirtualKey` 补充 0xBA–0xDE、0xDF、0xE2 与小键盘 0x6A–0x6F 的映射；解析同时接受
+  WPF 别名（`OemSemicolon` / `Oem1`、`OemPlus`、`OemQuestion` / `Oem2`、`OemPipe`、`OemQuotes` 等）
+  与字面字符（`;`、`=`、`,`、`-`、`.`、`/`、`` ` ``、`[`、`\`、`]`、`'`）；`Ctrl++` / `++` 按
+  “键为 `+`（`Equals`）”解析，`Ctrl+` 仍视为非法。新增 `HotkeyGesture.ToDisplayString()` 与
+  `HotkeyGesture.FormatDisplay(string?)`：界面显示字面字符（`Ctrl+;`、`Ctrl+Num +`），存储与去重仍用
+  规范名（`Ctrl+Semicolon`）。`HotkeyService.ToWpfKey` 增加规范名 → `Key.Oem*` 的显式映射
+  （WPF 的 `Key` 枚举名与规范名不同，不能只靠 `Enum.TryParse`）；全局注册仍走
+  `RegisterHotKey` + `KeyInterop.VirtualKeyFromKey`。
 - `AppSettings.Hotkeys: List<HotkeyBinding>`；`JsonSettingsService.Normalize` 丢弃无效 Action、无法解析的手势、
   重复手势与重复动作，并写入规范化后的手势字符串。
 - App 新增 `HotkeyService`：局部绑定在主窗口 `PreviewKeyDown` 中匹配（文本框内无修饰键的绑定不触发）；
@@ -151,9 +165,10 @@ Owner 在验收后提出四组需求（2026-11-16）：
 - 新增 `HotkeyCaptureButton`（App 控件）：`Gesture` 为双向绑定依赖属性；
   点击进入“按下快捷键…（Esc 退出）”状态；纯修饰键等待；Esc 取消并恢复旧值；
   Backspace / Delete 清除；媒体键经键盘钩子捕获；失焦 / 窗口关闭 / `Unloaded` 自动退出。
+  2026-11-24 修订 A1 起支持主键盘标点与小键盘运算符（捕获后显示为字面字符，如 `Ctrl+;`）。
 - 设置窗口“快捷键”页改为三块：
-  1. 7 个可配置动作（播放 / 暂停、上一首、下一首、停止、静音切换、打开高级搜索、
-     打开标签属性）；
+  1. 9 个可配置动作（播放 / 暂停、上一首、下一首、停止、静音切换、音量 +5%、音量 -5%、
+     打开高级搜索、打开标签属性）；
   2. 全部转换预设的快捷键（按预设名逐行显示，直接读写 `ConversionPreset.Hotkey/HotkeyGlobal`
      并即时保存）；
   3. 12 项只读内置快捷键：4 个默认媒体键（MediaPlayPause / MediaPreviousTrack /
@@ -189,6 +204,19 @@ Owner 在验收后提出四组需求（2026-11-16）：
   - 音量键无默认映射，未绑定时保持系统音量行为。
   - 默认媒体键需要钩子常驻，因此钩子改为随 `HotkeyService` 生命周期安装（启动即安装、
     `Dispose` 释放），而不再要求“存在媒体键绑定才安装”；设置页捕获期间另外增加引用。
+
+#### 5.4 音量快捷键与 5% 步进（2026-11-24 修订 A1）
+
+- `HotkeyAction` 末尾追加 `VolumeUp` / `VolumeDown`，设置页在“静音切换”之后新增“音量 +5%”
+  “音量 -5%”两行；默认留空，不抢占按键，需要时由用户自行绑定（可勾选全局）。
+- `HotkeyService.Execute` 调用 `MainViewModel.AdjustVolume(±1)`；`AdjustVolume` 先 `IsMuted = false`，
+  再写入 `Volume`，因此静音状态下按音量快捷键会先解除静音再调整，与音量条滚轮一致。
+- Core 的 `OutputVolumeResolver` 新增纯逻辑 `VolumeStepPercent = 5` 与
+  `StepDisplayPercent(double currentPercent, int direction)`：先 ±5%，再
+  `Math.Round(value / 5, MidpointRounding.AwayFromZero) * 5` 吸附到 5% 刻度，最后夹到 0–100；
+  非有限输入按 0 处理。
+- 主窗口音量条滚轮改为调用 `MainViewModel.AdjustVolume`，不再保留重复公式；快捷键与滚轮共用
+  同一套步进与解除静音行为，`OnVolumeChanged` 的设备音量记忆、模式上限与持久化逻辑不变。
 
 ### 6. 播放列表管理
 
@@ -238,6 +266,12 @@ Owner 在验收后提出四组需求（2026-11-16）：
 - 搜索仅作用于当前来源（播放列表 / 媒体库）已加载的曲目，不跨播放列表搜索；高级搜索条件不持久化，
   关闭应用后恢复为无过滤状态。
 - `HotkeyAction` 新增 `OpenSearch` 与 `OpenTagProperties`；旧配置不受影响（按名称反序列化，未知值由归一化丢弃）。
+- 2026-11-24 修订 A1 在 `HotkeyAction` 末尾追加 `VolumeUp` / `VolumeDown`，旧配置按名称反序列化不受影响；
+  音量快捷键默认留空，不改变既有默认绑定。
+- 标点键采用“规范名存储 + 字面字符显示”双层表示；旧手势字符串继续有效，只有用户新绑定标点键时才写入
+  新规范名；`Ctrl++` / `++` 按 `Equals` 解析，`Ctrl+` 仍非法。
+- 音量快捷键与滚轮共用 `OutputVolumeResolver.StepDisplayPercent`，避免两处公式漂移；音量记忆、模式上限与
+  持久化仍由既有 `OnVolumeChanged` 负责，未改变 ADR-033 的语义。
 - 列宽修复不改变数据格式，只改变保存时机；分组视图关闭时不再用平铺表格覆盖宽度。
 - ID3v2.3 的详细日期实际写入 `TYER` 帧（TagLib 渲染行为），TagLib 自身读回正常；
   第三方工具可能只解析前 4 位。
@@ -290,6 +324,20 @@ Owner 在验收后提出四组需求（2026-11-16）：
   所有文本输入框（标签编辑 / 设置项 / 搜索框）内容起点紧凑且占位提示与光标对齐；
   转换输出保留源文件年份（含详细日期）。
 
+### 2026-11-24 修订 A1（标点键与音量快捷键）
+
+- 构建：`dotnet build EchoGarage.sln -nodeReuse:false -p:UseSharedCompilation=false` → 0 警告 0 错误。
+- 单元测试：xUnit v3 进程内运行器 948 项通过，0 failed / 0 errors，2 项因环境跳过
+  （HKCU 注册表受限、缺少真实响度样本）；新增 `HotkeyGestureTests` 的标点 / 小键盘解析、别名、
+  `Ctrl++`、显示文本、VK 映射与枚举追加顺序用例，`OutputVolumeResolverTests` 的 5% 吸附 / 边界 /
+  非有限输入用例。
+- 真实 WPF 捕获链：临时 harness 对主键盘 13 个标点键 + 6 个小键盘运算符逐一验证捕获结果，
+  并验证 Esc 恢复、Backspace / Delete 清除、`Ctrl+;` / `Ctrl+Num +` 显示文本，全部通过。
+- 界面：`--screenshot-all` 生成 `dialog-settings-hotkeys.png`，确认设置页显示 9 个动作行
+  （含“音量 +5%”“音量 -5%”）与标点键 / 5% 步进说明，无布局溢出。
+- 发布：`scripts/publish.ps1` 生成 `artifacts/publish/win-x64`，无 `EchoGarageData`；
+  发布版 exe 使用独立 `ECHOGARAGE_DATA_DIR` 冒烟启动并截图成功。
+
 ## 修订记录
 
 - 2026-11-14：创建 `docs/adr/ADR-016-search-hotkeys-playback-mode.md`（本文件）：列表搜索、
@@ -301,3 +349,6 @@ Owner 在验收后提出四组需求（2026-11-16）：
   决策按主题重组为「列宽 / 搜索 / 播放模式 / 年份原文 / 快捷键与媒体键 / 播放列表管理」；
   `PlaybackMode` 由 Sequential / Shuffle 补充为 `Sequential` / `Shuffle` / `RepeatOne` 三态；
   并入年份原文、播放列表管理等决策与相应备选方案、影响与验证；原 ADR-026 文件删除（内容已并入本文）。
+- 2026-11-24：owner 批准修订 A1（标点键捕获与音量 ±5% 快捷键）；更新 §5.1 / §5.2，新增 §5.4，
+  补充影响与验证；提案文件 `docs/proposals/ADR-016-A1-hotkey-punctuation-and-volume-actions.md`
+  已删除并并入本文。

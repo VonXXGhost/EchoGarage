@@ -43,7 +43,8 @@ public sealed class HotkeyCaptureButton : Button
     {
         IsTabStop = false;
         ToolTip = "点击后按下组合键完成绑定；Esc 取消并恢复原值，Backspace 或 Delete 清除。"
-                  + "支持媒体键（播放/暂停、上一首/下一首、停止等）。";
+                  + "支持字母、数字、功能键、方向键与标点符号（如 Ctrl+;），"
+                  + "以及媒体键（播放/暂停、上一首/下一首、停止等）。";
         Unloaded += OnUnloaded;
         UpdateDisplay();
     }
@@ -266,7 +267,7 @@ public sealed class HotkeyCaptureButton : Button
         }
 
         var gesture = (Gesture ?? string.Empty).Trim();
-        Content = gesture.Length == 0 ? "未设置（点击设置）" : gesture;
+        Content = gesture.Length == 0 ? "未设置（点击设置）" : HotkeyGesture.FormatDisplay(gesture);
     }
 
     private static string FormatModifiers(HotkeyModifiers modifiers)

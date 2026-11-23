@@ -205,4 +205,30 @@ public sealed class OutputVolumeResolverTests
         Assert.Empty(OutputVolumeResolver.NormalizeMemories(null));
         Assert.Empty(OutputVolumeResolver.NormalizeMemories(new Dictionary<string, OutputDeviceVolume>()));
     }
+
+    [Theory]
+    [InlineData(50, 1, 55)]
+    [InlineData(50, -1, 45)]
+    [InlineData(75, 1, 80)]
+    [InlineData(77, 1, 80)]
+    [InlineData(3, -1, 0)]
+    [InlineData(100, 1, 100)]
+    [InlineData(0, -1, 0)]
+    [InlineData(97, -1, 90)]
+    [InlineData(96, -1, 90)]
+    [InlineData(96, 1, 100)]
+    [InlineData(50, 0, 50)]
+    [InlineData(52, 0, 50)]
+    public void StepDisplayPercent_SnapsToFivePercentTicks(double current, int direction, double expected)
+    {
+        // 音量条滚轮与音量快捷键共用该公式：先 ±5%，再吸附到最近的 5% 刻度。
+        Assert.Equal(expected, OutputVolumeResolver.StepDisplayPercent(current, direction), 6);
+    }
+
+    [Fact]
+    public void StepDisplayPercent_HandlesNonFiniteInput()
+    {
+        Assert.Equal(5, OutputVolumeResolver.StepDisplayPercent(double.NaN, 1), 6);
+        Assert.Equal(0, OutputVolumeResolver.StepDisplayPercent(double.PositiveInfinity, -1), 6);
+    }
 }

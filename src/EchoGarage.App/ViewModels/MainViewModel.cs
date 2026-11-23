@@ -3137,6 +3137,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ToggleMute() => IsMuted = !IsMuted;
 
+    /// <summary>
+    /// 按 UI 步进（5%）调整显示音量并解除静音；音量条滚轮与音量快捷键共用此逻辑。
+    /// <paramref name="direction"/> 为正向上、为负向下。
+    /// </summary>
+    public void AdjustVolume(int direction)
+    {
+        if (direction == 0)
+        {
+            return;
+        }
+
+        IsMuted = false;
+        Volume = OutputVolumeResolver.StepDisplayPercent(Volume, direction);
+    }
+
     partial void OnShowAlbumPanelChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowPlaylistAlbumPanel));

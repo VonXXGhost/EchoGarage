@@ -11,6 +11,8 @@ public sealed class HotkeyGestureTests
     [InlineData("Esc", HotkeyModifiers.None, "Escape")]
     [InlineData("a", HotkeyModifiers.None, "A")]
     [InlineData("5", HotkeyModifiers.None, "5")]
+    [InlineData("Ctrl+;", HotkeyModifiers.Control, "Semicolon")]
+    [InlineData("Shift+=", HotkeyModifiers.Shift, "Equals")]
     public void TryParse_AcceptsSupportedGestures(string text, HotkeyModifiers modifiers, string key)
     {
         Assert.True(HotkeyGesture.TryParse(text, out var gesture));
@@ -40,6 +42,54 @@ public sealed class HotkeyGestureTests
 
         Assert.True(HotkeyGesture.TryParse(gesture.ToString(), out var again));
         Assert.Equal(gesture, again);
+    }
+
+    [Theory]
+    [InlineData("Ctrl+;", "Ctrl+Semicolon")]
+    [InlineData("Ctrl+=", "Ctrl+Equals")]
+    [InlineData("Ctrl+,", "Ctrl+Comma")]
+    [InlineData("Ctrl+-", "Ctrl+Minus")]
+    [InlineData("Ctrl+.", "Ctrl+Period")]
+    [InlineData("Ctrl+/", "Ctrl+Slash")]
+    [InlineData("Ctrl+`", "Ctrl+Tilde")]
+    [InlineData("Ctrl+[", "Ctrl+OpenBracket")]
+    [InlineData("Ctrl+\\", "Ctrl+Backslash")]
+    [InlineData("Ctrl+]", "Ctrl+CloseBracket")]
+    [InlineData("Ctrl+'", "Ctrl+Quote")]
+    [InlineData("Ctrl+OemSemicolon", "Ctrl+Semicolon")]
+    [InlineData("Ctrl+Oem1", "Ctrl+Semicolon")]
+    [InlineData("Ctrl+OemPlus", "Ctrl+Equals")]
+    [InlineData("Ctrl+OemQuestion", "Ctrl+Slash")]
+    [InlineData("Ctrl+OemPipe", "Ctrl+Backslash")]
+    [InlineData("Ctrl+OemQuotes", "Ctrl+Quote")]
+    [InlineData("Ctrl++", "Ctrl+Equals")]
+    [InlineData("++", "Equals")]
+    [InlineData("Ctrl+Add", "Ctrl+Add")]
+    [InlineData("Ctrl+NumpadMultiply", "Ctrl+Multiply")]
+    public void TryParse_AcceptsPunctuationKeys(string text, string canonical)
+    {
+        Assert.True(HotkeyGesture.TryParse(text, out var gesture));
+        Assert.NotNull(gesture);
+        Assert.Equal(canonical, gesture!.ToString());
+
+        // 规范名必须能再次解析并保持不变，才能安全写入 settings.json。
+        Assert.True(HotkeyGesture.TryParse(canonical, out var again));
+        Assert.Equal(gesture, again);
+    }
+
+    [Theory]
+    [InlineData("Ctrl+;", "Ctrl+;")]
+    [InlineData("Semicolon", ";")]
+    [InlineData("Ctrl+OemPlus", "Ctrl+=")]
+    [InlineData("Ctrl+OemPipe", "Ctrl+\\")]
+    [InlineData("Ctrl++", "Ctrl+=")]
+    [InlineData("Ctrl+Add", "Ctrl+Num +")]
+    [InlineData("Multiply", "Num *")]
+    [InlineData("Ctrl+Shift+MediaNextTrack", "Ctrl+Shift+MediaNextTrack")]
+    [InlineData("not a gesture", "not a gesture")]
+    public void FormatDisplay_ShowsLiteralPunctuation(string text, string expected)
+    {
+        Assert.Equal(expected, HotkeyGesture.FormatDisplay(text));
     }
 
     [Theory]
@@ -95,6 +145,25 @@ public sealed class HotkeyGestureTests
     [InlineData(0xB1, "MediaPreviousTrack")]
     [InlineData(0xB2, "MediaStop")]
     [InlineData(0xB3, "MediaPlayPause")]
+    [InlineData(0xBA, "Semicolon")]
+    [InlineData(0xBB, "Equals")]
+    [InlineData(0xBC, "Comma")]
+    [InlineData(0xBD, "Minus")]
+    [InlineData(0xBE, "Period")]
+    [InlineData(0xBF, "Slash")]
+    [InlineData(0xC0, "Tilde")]
+    [InlineData(0xDB, "OpenBracket")]
+    [InlineData(0xDC, "Backslash")]
+    [InlineData(0xDD, "CloseBracket")]
+    [InlineData(0xDE, "Quote")]
+    [InlineData(0xDF, "Oem8")]
+    [InlineData(0xE2, "Oem102")]
+    [InlineData(0x6A, "Multiply")]
+    [InlineData(0x6B, "Add")]
+    [InlineData(0x6C, "Separator")]
+    [InlineData(0x6D, "Subtract")]
+    [InlineData(0x6E, "Decimal")]
+    [InlineData(0x6F, "Divide")]
     public void KeyNameFromVirtualKey_MapsKnownKeys(int virtualKey, string expected)
     {
         Assert.Equal(expected, HotkeyGesture.KeyNameFromVirtualKey(virtualKey));
@@ -177,5 +246,15 @@ public sealed class HotkeyGestureTests
         Assert.Equal(
             Enum.GetValues<HotkeyAction>().Length,
             Enum.GetValues<HotkeyAction>().Distinct().Count());
+    }
+
+    [Fact]
+    public void VolumeActions_AreAppendedAfterConvertPreset()
+    {
+        // 数值顺序是 settings.json 的兼容性约束：新动作只能追加，不能插入。
+        Assert.True(Enum.IsDefined(HotkeyAction.VolumeUp));
+        Assert.True(Enum.IsDefined(HotkeyAction.VolumeDown));
+        Assert.True(HotkeyAction.VolumeUp > HotkeyAction.ConvertPreset);
+        Assert.True(HotkeyAction.VolumeDown > HotkeyAction.VolumeUp);
     }
 }

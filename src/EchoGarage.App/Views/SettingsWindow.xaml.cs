@@ -24,6 +24,8 @@ public partial class SettingsWindow : ThemedWindow
         (HotkeyAction.Next, "下一首"),
         (HotkeyAction.Stop, "停止"),
         (HotkeyAction.Mute, "静音切换"),
+        (HotkeyAction.VolumeUp, "音量 +5%"),
+        (HotkeyAction.VolumeDown, "音量 -5%"),
         (HotkeyAction.OpenSearch, "打开高级搜索"),
         (HotkeyAction.OpenTagProperties, "打开标签属性")
     ];
@@ -277,7 +279,7 @@ public partial class SettingsWindow : ThemedWindow
             var canonical = gesture.ToString();
             if (gestures.TryGetValue(canonical, out var other))
             {
-                HotkeyStatusText.Text = $"快捷键“{canonical}”与“{other}”重复了。";
+                HotkeyStatusText.Text = $"快捷键“{gesture.ToDisplayString()}”与“{HotkeyGesture.FormatDisplay(other)}”重复了。";
                 return false;
             }
 
@@ -305,7 +307,7 @@ public partial class SettingsWindow : ThemedWindow
             var canonical = gesture.ToString();
             if (gestures.TryGetValue(canonical, out var other))
             {
-                HotkeyStatusText.Text = $"快捷键“{canonical}”与“{other}”重复了。";
+                HotkeyStatusText.Text = $"快捷键“{gesture.ToDisplayString()}”与“{HotkeyGesture.FormatDisplay(other)}”重复了。";
                 return false;
             }
 

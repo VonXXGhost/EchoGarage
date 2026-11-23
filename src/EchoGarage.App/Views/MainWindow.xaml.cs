@@ -1699,17 +1699,15 @@ public partial class MainWindow : Window
 
     private void OnVolumeAreaMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // Wheel over the volume controls steps by 5 %; the value snaps to whole steps so repeated
-        // nudges always land on multiples of five (matching the slider's displayed percentage).
-        if (e.Delta == 0)
+        // 与音量快捷键共用同一套 5% 步进逻辑（见 MainViewModel.AdjustVolume）：值会吸附到
+        // 5% 的整数倍，滚轮与快捷键因此得到完全一致的显示百分比。
+        var direction = Math.Sign(e.Delta);
+        if (direction == 0)
         {
             return;
         }
 
-        var step = e.Delta > 0 ? 5.0 : -5.0;
-        var target = Math.Round((_vm.Volume + step) / 5, MidpointRounding.AwayFromZero) * 5;
-        _vm.IsMuted = false;
-        _vm.Volume = Math.Clamp(target, 0, 100);
+        _vm.AdjustVolume(direction);
         e.Handled = true;
     }
 

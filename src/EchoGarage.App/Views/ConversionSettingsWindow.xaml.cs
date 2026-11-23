@@ -416,11 +416,11 @@ public partial class ConversionSettingsWindow : ThemedWindow
         {
             button.Gesture = e.PreviousGesture;
             preset.Hotkey = e.PreviousGesture;
-            SetStatus($"快捷键“{canonical}”已被预设“{DisplayName(other)}”使用。", error: true);
+            SetStatus($"快捷键“{HotkeyGesture.FormatDisplay(canonical)}”已被预设“{DisplayName(other)}”使用。", error: true);
             return;
         }
 
-        SetStatus($"快捷键已设置为 {canonical}。", error: false);
+        SetStatus($"快捷键已设置为 {HotkeyGesture.FormatDisplay(canonical)}。", error: false);
     }
 
     private void OnHotkeyGlobalChanged(object sender, RoutedEventArgs e)
@@ -460,7 +460,7 @@ public partial class ConversionSettingsWindow : ThemedWindow
             var canonical = gesture.ToString();
             if (gestures.TryGetValue(canonical, out var other))
             {
-                SetStatus($"快捷键“{canonical}”被“{other}”和“{DisplayName(preset)}”重复使用。", error: true);
+                SetStatus($"快捷键“{HotkeyGesture.FormatDisplay(canonical)}”被“{other}”和“{DisplayName(preset)}”重复使用。", error: true);
                 return false;
             }
 

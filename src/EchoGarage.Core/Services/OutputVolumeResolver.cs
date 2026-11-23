@@ -17,8 +17,26 @@ public static class OutputVolumeResolver
     /// <summary>音量上限下限：5%。避免上限被拖到 0 后完全无声、无法再调回来。</summary>
     public const double MinCeiling = 0.05;
 
+    /// <summary>UI 音量步进（百分比）：音量条滚轮与音量快捷键共用。</summary>
+    public const double VolumeStepPercent = 5;
+
     /// <summary>最多记住的设备数，防止长期插拔累积无限条目。</summary>
     public const int MaxRememberedDevices = 32;
+
+    /// <summary>
+    /// 按 UI 步进调整显示音量（0–100 百分比）：先加上 / 减去 <see cref="VolumeStepPercent"/>，
+    /// 再四舍五入到最近的 5% 刻度（AwayFromZero），最后夹到 0–100。音量条滚轮与音量快捷键
+    /// 共用同一公式，保证两者行为完全一致。<paramref name="direction"/> 为正向上、为负向下，
+    /// 0 表示只把当前值对齐到刻度。
+    /// </summary>
+    public static double StepDisplayPercent(double currentPercent, int direction)
+    {
+        var current = double.IsFinite(currentPercent) ? currentPercent : 0;
+        var step = Math.Sign(direction) * VolumeStepPercent;
+        var target = Math.Round((current + step) / VolumeStepPercent, MidpointRounding.AwayFromZero) *
+                     VolumeStepPercent;
+        return Math.Clamp(target, 0, 100);
+    }
 
     /// <summary>把任意上限值规范到 [<see cref="MinCeiling"/>, 1]；非有限值回退 100%。</summary>
     public static double ClampCeiling(double value) =>

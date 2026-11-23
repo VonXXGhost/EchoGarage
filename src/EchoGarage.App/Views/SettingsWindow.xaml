@@ -405,14 +405,14 @@
 
                 <StackPanel x:Name="PageHotkeys" Visibility="Collapsed">
                     <TextBlock Text="快捷键" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-                    <TextBlock Text="点击快捷键按钮后直接按下组合键即可完成绑定：Esc 取消并恢复原值，Backspace 或 Delete 清除。勾选“全局”后，即使焦点在其他程序也会生效；媒体键（播放/暂停、上一首/下一首、停止、音量）也支持本地与全局绑定。键盘上的媒体键无需设置即默认控制播放（见下方内置快捷键），为同一媒体键显式绑定动作后以绑定为准。"
+                    <TextBlock Text="点击快捷键按钮后直接按下组合键即可完成绑定：Esc 取消并恢复原值，Backspace 或 Delete 清除。字母、数字、功能键、方向键与标点符号（如 Ctrl+;）均可绑定；勾选“全局”后，即使焦点在其他程序也会生效。媒体键（播放/暂停、上一首/下一首、停止、音量）也支持本地与全局绑定。键盘上的媒体键无需设置即默认控制播放（见下方内置快捷键），为同一媒体键显式绑定动作后以绑定为准。音量 +5% / -5% 动作与音量条滚轮使用同一套 5% 步进，并会自动解除静音。"
                                Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                Margin="0,0,0,8" />
 
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="播放与搜索" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
+                            <TextBlock Text="播放、音量与搜索" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
                             <ItemsControl x:Name="HotkeyList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>

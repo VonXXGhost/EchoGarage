@@ -19,7 +19,13 @@ public enum HotkeyAction
     OpenTagProperties,
 
     /// <summary>Starts the audio converter with one of the configured conversion presets.</summary>
-    ConvertPreset
+    ConvertPreset,
+
+    /// <summary>Raises the display volume by one UI step (5%), unmuting first.</summary>
+    VolumeUp,
+
+    /// <summary>Lowers the display volume by one UI step (5%), unmuting first.</summary>
+    VolumeDown
 }
 
 [Flags]
@@ -35,49 +41,107 @@ public enum HotkeyModifiers
 /// <summary>
 /// A parsed keyboard shortcut such as <c>Ctrl+Alt+Space</c>. The key name is stored in a
 /// canonical form (letters upper case, digits as-is, WPF key names such as <c>Space</c>,
-/// <c>MediaPlayPause</c> or <c>F5</c>) so the same value can be matched against WPF
-/// <c>Key</c> values and registered with Win32 <c>RegisterHotKey</c>.
+/// <c>MediaPlayPause</c> or <c>F5</c>, and punctuation keys as <c>Semicolon</c>,
+/// <c>Equals</c>, <c>Comma</c>, …) so the same value can be matched against WPF
+/// <c>Key</c> values and registered with Win32 <c>RegisterHotKey</c>. Use
+/// <see cref="ToDisplayString"/> when showing a gesture to the user (punctuation is shown
+/// as the literal character).
 /// </summary>
 public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
 {
-    private static readonly Dictionary<string, string> KeyNames = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// 标点 / 符号键：规范名按未按 Shift 时的物理字符命名（'+' 是手势分隔符，不能出现在
+    /// 规范名里），界面显示时改用实际字符；虚拟键码用于从捕获到的 VK 反查规范名。
+    /// </summary>
+    private static readonly (int VirtualKey, string Name, string Display, string[] Aliases)[] SymbolKeys =
+    [
+        (0xBA, "Semicolon", ";", ["oemsemicolon", "oem1"]),
+        (0xBB, "Equals", "=", ["oemplus", "plus", "equal", "+"]),
+        (0xBC, "Comma", ",", ["oemcomma"]),
+        (0xBD, "Minus", "-", ["oemminus", "hyphen", "dash"]),
+        (0xBE, "Period", ".", ["oemperiod", "dot"]),
+        (0xBF, "Slash", "/", ["oemquestion", "oem2", "question", "forwardslash"]),
+        (0xC0, "Tilde", "`", ["oemtilde", "oem3", "backtick", "grave"]),
+        (0xDB, "OpenBracket", "[", ["oemopenbrackets", "oem4", "leftbracket", "lbracket"]),
+        (0xDC, "Backslash", "\\", ["oempipe", "oem5", "pipe"]),
+        (0xDD, "CloseBracket", "]", ["oemclosebrackets", "oem6", "rightbracket", "rbracket"]),
+        (0xDE, "Quote", "'", ["oemquotes", "oem7", "apostrophe", "quotes"]),
+        (0xDF, "Oem8", "Oem8", []),
+        (0xE2, "Oem102", "Oem102", ["oembackslash"]),
+
+        // 小键盘运算符同样是标点键；名称沿用 WPF 的 Key 名，显示时加 Num 前缀以便区分。
+        (0x6A, "Multiply", "Num *", ["numpadmultiply", "nummultiply"]),
+        (0x6B, "Add", "Num +", ["numpadadd", "numadd", "numpadplus"]),
+        (0x6C, "Separator", "Num ,", ["numpadseparator", "numseparator"]),
+        (0x6D, "Subtract", "Num -", ["numpadsubtract", "numsubtract", "numpadminus"]),
+        (0x6E, "Decimal", "Num .", ["numpaddecimal", "numdecimal"]),
+        (0x6F, "Divide", "Num /", ["numpaddivide", "numdivide"])
+    ];
+
+    private static readonly Dictionary<string, string> KeyNames = CreateKeyNames();
+
+    private static readonly Dictionary<string, string> KeyDisplayNames = SymbolKeys.ToDictionary(
+        entry => entry.Name,
+        entry => entry.Display,
+        StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<int, string> SymbolNamesByVirtualKey = SymbolKeys.ToDictionary(
+        entry => entry.VirtualKey,
+        entry => entry.Name);
+
+    private static Dictionary<string, string> CreateKeyNames()
     {
-        ["space"] = "Space",
-        ["enter"] = "Enter",
-        ["return"] = "Enter",
-        ["tab"] = "Tab",
-        ["esc"] = "Escape",
-        ["escape"] = "Escape",
-        ["backspace"] = "Backspace",
-        ["back"] = "Backspace",
-        ["delete"] = "Delete",
-        ["del"] = "Delete",
-        ["insert"] = "Insert",
-        ["ins"] = "Insert",
-        ["home"] = "Home",
-        ["end"] = "End",
-        ["pageup"] = "PageUp",
-        ["pgup"] = "PageUp",
-        ["pagedown"] = "PageDown",
-        ["pgdn"] = "PageDown",
-        ["left"] = "Left",
-        ["right"] = "Right",
-        ["up"] = "Up",
-        ["down"] = "Down",
-        ["mediaplaypause"] = "MediaPlayPause",
-        ["playpause"] = "MediaPlayPause",
-        ["medianexttrack"] = "MediaNextTrack",
-        ["nexttrack"] = "MediaNextTrack",
-        ["mediaprevioustrack"] = "MediaPreviousTrack",
-        ["prevtrack"] = "MediaPreviousTrack",
-        ["mediastop"] = "MediaStop",
-        ["volumeup"] = "VolumeUp",
-        ["volup"] = "VolumeUp",
-        ["volumedown"] = "VolumeDown",
-        ["voldown"] = "VolumeDown",
-        ["volumemute"] = "VolumeMute",
-        ["mute"] = "VolumeMute"
-    };
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["space"] = "Space",
+            ["enter"] = "Enter",
+            ["return"] = "Enter",
+            ["tab"] = "Tab",
+            ["esc"] = "Escape",
+            ["escape"] = "Escape",
+            ["backspace"] = "Backspace",
+            ["back"] = "Backspace",
+            ["delete"] = "Delete",
+            ["del"] = "Delete",
+            ["insert"] = "Insert",
+            ["ins"] = "Insert",
+            ["home"] = "Home",
+            ["end"] = "End",
+            ["pageup"] = "PageUp",
+            ["pgup"] = "PageUp",
+            ["pagedown"] = "PageDown",
+            ["pgdn"] = "PageDown",
+            ["left"] = "Left",
+            ["right"] = "Right",
+            ["up"] = "Up",
+            ["down"] = "Down",
+            ["mediaplaypause"] = "MediaPlayPause",
+            ["playpause"] = "MediaPlayPause",
+            ["medianexttrack"] = "MediaNextTrack",
+            ["nexttrack"] = "MediaNextTrack",
+            ["mediaprevioustrack"] = "MediaPreviousTrack",
+            ["prevtrack"] = "MediaPreviousTrack",
+            ["mediastop"] = "MediaStop",
+            ["volumeup"] = "VolumeUp",
+            ["volup"] = "VolumeUp",
+            ["volumedown"] = "VolumeDown",
+            ["voldown"] = "VolumeDown",
+            ["volumemute"] = "VolumeMute",
+            ["mute"] = "VolumeMute"
+        };
+
+        foreach (var (_, name, display, aliases) in SymbolKeys)
+        {
+            names[name] = name;
+            names[display] = name;
+            foreach (var alias in aliases)
+            {
+                names[alias] = name;
+            }
+        }
+
+        return names;
+    }
 
     /// <summary>
     /// Parses text like <c>Ctrl+Shift+Right</c> or <c>Alt+F5</c>. The last part is the key;
@@ -91,14 +155,24 @@ public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
             return false;
         }
 
-        var parts = text.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length is 0 or > 5)
+        var body = text.Trim();
+
+        // '+' 既是分隔符又是可绑定的键：末尾的 "++" 表示键本身是 '+'（例如 "Ctrl++"、"++"）。
+        var plusKey = body.Length >= 2 && body[^1] == '+' && body[^2] == '+';
+        if (plusKey)
+        {
+            body = body[..^1];
+        }
+
+        var parts = body.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 5 || (!plusKey && parts.Length == 0))
         {
             return false;
         }
 
         var modifiers = HotkeyModifiers.None;
-        for (var i = 0; i < parts.Length - 1; i++)
+        var modifierCount = plusKey ? parts.Length : parts.Length - 1;
+        for (var i = 0; i < modifierCount; i++)
         {
             switch (parts[i].ToLowerInvariant())
             {
@@ -122,7 +196,7 @@ public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
             }
         }
 
-        var key = NormalizeKey(parts[^1]);
+        var key = plusKey ? "Equals" : NormalizeKey(parts[^1]);
         if (key is null)
         {
             return false;
@@ -164,6 +238,31 @@ public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
     public override string ToString()
     {
         var builder = new StringBuilder();
+        AppendModifiers(builder);
+        builder.Append(Key);
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 界面显示用的手势文本：与 <see cref="ToString"/> 相同，但标点键显示为实际字符
+    /// （例如 <c>Ctrl+;</c> 而不是 <c>Ctrl+Semicolon</c>）。
+    /// </summary>
+    public string ToDisplayString()
+    {
+        var builder = new StringBuilder();
+        AppendModifiers(builder);
+        builder.Append(KeyDisplayNames.TryGetValue(Key, out var display) ? display : Key);
+        return builder.ToString();
+    }
+
+    /// <summary>把已保存的手势文本转成界面显示文本；无法解析时原样返回（去空白）。</summary>
+    public static string FormatDisplay(string? text) =>
+        TryParse(text, out var gesture) && gesture is not null
+            ? gesture.ToDisplayString()
+            : (text ?? string.Empty).Trim();
+
+    private void AppendModifiers(StringBuilder builder)
+    {
         if (Modifiers.HasFlag(HotkeyModifiers.Control))
         {
             builder.Append("Ctrl+");
@@ -183,9 +282,6 @@ public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
         {
             builder.Append("Win+");
         }
-
-        builder.Append(Key);
-        return builder.ToString();
     }
 
     private static readonly HashSet<string> MediaKeyNames = new(StringComparer.OrdinalIgnoreCase)
@@ -245,7 +341,7 @@ public sealed record HotkeyGesture(HotkeyModifiers Modifiers, string Key)
         0xB1 => "MediaPreviousTrack",
         0xB2 => "MediaStop",
         0xB3 => "MediaPlayPause",
-        _ => null
+        _ => SymbolNamesByVirtualKey.GetValueOrDefault(virtualKey)
     };
 }
 
