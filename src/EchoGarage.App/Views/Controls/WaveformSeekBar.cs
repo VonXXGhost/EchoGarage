@@ -376,9 +376,9 @@ public sealed class WaveformSeekBar : FrameworkElement
             : 0.6;
 
         var center = height * 0.54;
-        DrawSine(dc, LowBrush, width, height, center, height * 0.26, 8.0, 4.6, 2.8, phase);
-        DrawSine(dc, MidBrush, width, height, center, height * 0.16, 12.0, 5.4, 2.2, phase + 1.2);
-        DrawSine(dc, HighBrush, width, height, center, height * 0.10, 18.0, 6.2, 1.6, phase + 2.4);
+        DrawSine(dc, LowBrush, width, height, center, height * 0.26, 16.0, 4.6, 2.8, phase);
+        DrawSine(dc, MidBrush, width, height, center, height * 0.16, 24.0, 5.4, 2.2, phase + 1.2);
+        DrawSine(dc, HighBrush, width, height, center, height * 0.10, 36.0, 6.2, 1.6, phase + 2.4);
     }
 
     /// <summary>
@@ -403,7 +403,7 @@ public sealed class WaveformSeekBar : FrameworkElement
             return;
         }
 
-        var step = Math.Max(2, width / 480);
+        var step = Math.Max(1.0, width / 720);
         var half = thickness / 2;
 
         double Sample(double x)
