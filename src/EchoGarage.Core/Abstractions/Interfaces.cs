@@ -62,8 +62,17 @@ public interface IPlaylistRepository
     Task UpdatePlaylistRulesAsync(long playlistId, SmartPlaylistDefinition definition,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Track>> GetPlaylistTracksAsync(Playlist playlist, CancellationToken cancellationToken = default);
-    Task AddPlaylistItemsAsync(long playlistId, IReadOnlyList<Track> tracks,
-        CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 读取普通播放列表中已存在条目的路径集合（仅查询 <c>playlist_items.TrackPath</c>，不关联 <c>tracks</c> 表），
+    /// 用于拖放导入前按绝对路径提前去重、避免对已存在文件重复读取标签。
+    /// </summary>
+    Task<IReadOnlyList<string>> GetPlaylistItemPathsAsync(long playlistId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 向普通播放列表末尾追加曲目。当 <paramref name="skipExisting"/> 为 true 时，在同一事务内按规范化绝对路径
+    /// （忽略大小写）跳过列表中已存在及本批次重复的曲目。返回实际写入的条目数。
+    /// </summary>
+    Task<int> AddPlaylistItemsAsync(long playlistId, IReadOnlyList<Track> tracks,
+        bool skipExisting = false, CancellationToken cancellationToken = default);
     Task RemovePlaylistItemsAsync(IReadOnlyList<long> playlistItemIds, CancellationToken cancellationToken = default);
     /// <summary>
     /// 按歌曲路径从所有普通播放列表删除条目（智能播放列表没有 <c>playlist_items</c> 行，天然不受影响）。

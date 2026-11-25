@@ -3761,7 +3761,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public async Task AddFilesToCurrentPlaylistAsync(IEnumerable<string> paths, bool playFirst = false)
+    public async Task AddFilesToCurrentPlaylistAsync(
+        IEnumerable<string> paths,
+        bool playFirst = false,
+        bool skipExisting = false)
     {
         if (SelectedSource?.Kind == SourceKind.Playlist && SelectedSource.IsSmart)
         {
@@ -3769,37 +3772,89 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var files = paths.Where(PathUtil.IsSupportedAudio).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // 先确定目标播放列表：当前选中普通播放列表则写入该列表，否则按 ADR-004 追加到默认播放列表。
+        var isCurrentPlaylist = SelectedSource?.Kind == SourceKind.Playlist && SelectedSource.Playlist is not null;
+        var targetPlaylist = isCurrentPlaylist
+            ? SelectedSource!.Playlist
+            : await _host.PlaylistRepository.GetDefaultPlaylistAsync();
+        if (targetPlaylist is null)
+        {
+            SetStatus("找不到默认播放列表");
+            return;
+        }
+
+        IReadOnlyList<string> files;
+        var skippedExisting = 0;
+        if (skipExisting)
+        {
+            var existingPaths = await _host.PlaylistRepository.GetPlaylistItemPathsAsync(targetPlaylist.Id);
+            var filtered = PlaylistImportFilter.FilterNewAudioPaths(paths, existingPaths);
+            files = filtered.PathsToAdd;
+            skippedExisting = filtered.SkippedExistingCount;
+        }
+        else
+        {
+            files = PlaylistImportFilter.FilterNewAudioPaths(paths, []).PathsToAdd;
+        }
+
         if (files.Count == 0)
         {
+            if (skippedExisting > 0)
+            {
+                _host.Logger.Debug($"Skipped {skippedExisting} duplicate file(s) already in playlist {targetPlaylist.Id}.");
+                SetStatus($"已忽略 {skippedExisting} 首已存在的歌曲");
+            }
+
             return;
         }
 
         SetStatus($"正在导入 {files.Count} 个文件…");
         var indexed = await IndexFilesAsync(files);
 
-        if (SelectedSource?.Kind == SourceKind.Playlist && SelectedSource.Playlist is not null)
+        var addedCount = await _host.PlaylistRepository.AddPlaylistItemsAsync(
+            targetPlaylist.Id, indexed, skipExisting: skipExisting);
+
+        // 若并发导入导致部分曲目在写库事务内再次被去重，也计入忽略数，保持状态提示准确。
+        if (skipExisting && indexed.Count > addedCount)
         {
-            await _host.PlaylistRepository.AddPlaylistItemsAsync(SelectedSource.Playlist.Id, indexed);
-            await RefreshCurrentSourceAsync();
+            skippedExisting += indexed.Count - addedCount;
+        }
+
+        if (addedCount > 0)
+        {
+            var viewingTargetPlaylist = SelectedSource?.Kind == SourceKind.Playlist &&
+                                        SelectedSource.Playlist?.Id == targetPlaylist.Id;
+            if (viewingTargetPlaylist)
+            {
+                await RefreshCurrentSourceAsync();
+            }
+            else if (!isCurrentPlaylist)
+            {
+                await RefreshCurrentSourceAsync(preserveSelection: true);
+            }
+
+            await ReloadSourcesAsync();
+        }
+
+        if (skippedExisting > 0)
+        {
+            _host.Logger.Debug($"Skipped {skippedExisting} duplicate file(s) already in playlist {targetPlaylist.Id}.");
+        }
+
+        if (addedCount == 0 && skippedExisting > 0)
+        {
+            SetStatus($"已忽略 {skippedExisting} 首已存在的歌曲");
+        }
+        else if (skippedExisting > 0)
+        {
+            SetStatus($"已导入 {addedCount} 首歌曲（已忽略 {skippedExisting} 首重复）");
         }
         else
         {
-            // Dropping files while the library (or a folder) is displayed appends them
-            // to the default playlist, which is the "current queue" in this player.
-            var defaultPlaylist = await _host.PlaylistRepository.GetDefaultPlaylistAsync();
-            if (defaultPlaylist is not null)
-            {
-                await _host.PlaylistRepository.AddPlaylistItemsAsync(defaultPlaylist.Id, indexed);
-            }
-
-            await RefreshCurrentSourceAsync(preserveSelection: true);
+            SetStatus($"已导入 {addedCount} 首歌曲");
         }
 
-        await ReloadSourcesAsync();
-        SetStatus($"已导入 {indexed.Count} 首歌曲");
-
-        if (playFirst && indexed.Count > 0)
+        if (playFirst && addedCount > 0 && indexed.Count > 0)
         {
             var first = Tracks.FirstOrDefault(t =>
                 string.Equals(t.Track.Path, indexed[0].Path, StringComparison.OrdinalIgnoreCase));

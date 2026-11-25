@@ -195,25 +195,50 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
         return rows.ToList();
     }
 
-    public async Task AddPlaylistItemsAsync(long playlistId, IReadOnlyList<Track> tracks,
+    public async Task<IReadOnlyList<string>> GetPlaylistItemPathsAsync(long playlistId,
         CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken);
+        var rows = await connection.QueryAsync<string>(new CommandDefinition(
+            "SELECT TrackPath FROM playlist_items WHERE PlaylistId = @playlistId;",
+            new { playlistId }, cancellationToken: cancellationToken));
+        return rows.ToList();
+    }
+
+    public async Task<int> AddPlaylistItemsAsync(long playlistId, IReadOnlyList<Track> tracks,
+        bool skipExisting = false, CancellationToken cancellationToken = default)
     {
         if (tracks.Count == 0)
         {
-            return;
+            return 0;
         }
 
         await using var connection = await _database.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var position = await connection.ExecuteScalarAsync<long>(
+
+        IReadOnlyList<Track> toInsert = tracks;
+        if (skipExisting)
+        {
+            var existingPaths = (await connection.QueryAsync<string>(new CommandDefinition(
+                "SELECT TrackPath FROM playlist_items WHERE PlaylistId = @playlistId;",
+                new { playlistId }, transaction, cancellationToken: cancellationToken))).ToList();
+            toInsert = PlaylistImportFilter.FilterNewTracks(tracks, existingPaths);
+            if (toInsert.Count == 0)
+            {
+                return 0;
+            }
+        }
+
+        var position = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
             "SELECT COALESCE(MAX(Position), 0) FROM playlist_items WHERE PlaylistId = @playlistId;",
-            new { playlistId }, transaction);
+            new { playlistId }, transaction, cancellationToken: cancellationToken));
         var now = DateTime.UtcNow;
 
-        foreach (var track in tracks)
+        foreach (var track in toInsert)
         {
             position++;
-            await connection.ExecuteAsync("""
+            var path = PathUtil.TryNormalize(track.Path, out var normalized) ? normalized : track.Path;
+            await connection.ExecuteAsync(new CommandDefinition("""
                 INSERT INTO playlist_items (
                     PlaylistId, TrackPath, Position, TitleSnapshot, ArtistSnapshot, AlbumSnapshot,
                     DurationMsSnapshot, CoverKeySnapshot, AddedAtUtc)
@@ -221,7 +246,7 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
                 """, new
             {
                 playlistId,
-                path = track.Path,
+                path,
                 position,
                 title = track.DisplayTitle,
                 artist = track.Artist,
@@ -229,12 +254,14 @@ public sealed class SqlitePlaylistRepository : IPlaylistRepository
                 duration = track.DurationMs,
                 coverKey = track.CoverKey,
                 now
-            }, transaction);
+            }, transaction, cancellationToken: cancellationToken));
         }
 
-        await connection.ExecuteAsync("UPDATE playlists SET UpdatedAtUtc = @now WHERE Id = @playlistId;",
-            new { playlistId, now }, transaction);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE playlists SET UpdatedAtUtc = @now WHERE Id = @playlistId;",
+            new { playlistId, now }, transaction, cancellationToken: cancellationToken));
         await transaction.CommitAsync(cancellationToken);
+        return toInsert.Count;
     }
 
     public async Task RemovePlaylistItemsAsync(IReadOnlyList<long> playlistItemIds, CancellationToken cancellationToken = default)

@@ -774,6 +774,61 @@ public sealed class RepositoryTests : IDisposable
         Assert.Contains("Second Artist", refreshed.Get(TagFieldKeys.Artist));
     }
 
+    [Fact]
+    public async Task AddPlaylistItems_SkipExisting_IgnoresPathsAlreadyInPlaylist_AcrossCaseAndSeparators()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var first = MakeTrack("demo-01.wav", folderId: folder.Id);
+        var second = MakeTrack("demo-02.wav", folderId: folder.Id);
+        var third = MakeTrack("demo-03.wav", folderId: folder.Id);
+        await _library.UpsertTracksAsync([first, second, third]);
+
+        var playlist = await _playlists.CreatePlaylistAsync("Dedup List", PlaylistKind.Normal, null);
+        Assert.Equal(2, await _playlists.AddPlaylistItemsAsync(playlist.Id, [first, second], skipExisting: true));
+
+        // 已存在条目的大小写变体、正斜杠变体都应被忽略，只插入新曲目 third。
+        var firstUpper = new Track { Path = first.Path.ToUpperInvariant(), Title = first.Title };
+        var secondForward = new Track { Path = second.Path.Replace('\\', '/'), Title = second.Title };
+        var added = await _playlists.AddPlaylistItemsAsync(
+            playlist.Id,
+            [firstUpper, secondForward, third],
+            skipExisting: true);
+
+        Assert.Equal(1, added);
+        var tracks = await _playlists.GetPlaylistTracksAsync(playlist);
+        Assert.Equal([first.Path, second.Path, third.Path], tracks.Select(t => t.Path));
+
+        // 全部已存在时返回 0，不新增任何行。
+        Assert.Equal(0, await _playlists.AddPlaylistItemsAsync(playlist.Id, [first, second, third], skipExisting: true));
+        Assert.Equal(3, (await _playlists.GetPlaylistTracksAsync(playlist)).Count);
+    }
+
+    [Fact]
+    public async Task AddPlaylistItems_SkipExisting_DeduplicatesPerPlaylistAndWithinBatch_AllowsSameFileNameInOtherDir()
+    {
+        var folder = await _library.AddFolderAsync(_workspace.Combine("media"));
+        var albumATrack = MakeTrack(Path.Combine("AlbumA", "01.wav"), folderId: folder.Id);
+        var albumBTrack = MakeTrack(Path.Combine("AlbumB", "01.wav"), folderId: folder.Id);
+        await _library.UpsertTracksAsync([albumATrack, albumBTrack]);
+
+        var listA = await _playlists.CreatePlaylistAsync("List A", PlaylistKind.Normal, null);
+        var listB = await _playlists.CreatePlaylistAsync("List B", PlaylistKind.Normal, null);
+
+        // 单批次内重复也只写一条。
+        var dupInBatch = new Track { Path = albumATrack.Path.ToUpperInvariant(), Title = albumATrack.Title };
+        Assert.Equal(1, await _playlists.AddPlaylistItemsAsync(listA.Id, [albumATrack, dupInBatch], skipExisting: true));
+
+        // 同名不同目录（绝对路径不同）允许加入同一播放列表。
+        Assert.Equal(1, await _playlists.AddPlaylistItemsAsync(listA.Id, [albumBTrack], skipExisting: true));
+        Assert.Equal([albumATrack.Path, albumBTrack.Path],
+            (await _playlists.GetPlaylistTracksAsync(listA)).Select(t => t.Path));
+
+        // 去重仅针对目标播放列表，其它播放列表不受影响。
+        Assert.Equal(1, await _playlists.AddPlaylistItemsAsync(listB.Id, [albumATrack], skipExisting: true));
+        Assert.Equal([albumATrack.Path], await _playlists.GetPlaylistItemPathsAsync(listB.Id));
+        Assert.Equal(2, (await _playlists.GetPlaylistItemPathsAsync(listA.Id)).Count);
+    }
+
     public void Dispose()
     {
         _workspace.Dispose();

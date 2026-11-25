@@ -2112,25 +2112,39 @@ public partial class MainWindow : Window
             return;
         }
 
-        var files = new List<string>();
-        foreach (var item in dropped)
+        try
         {
-            if (Directory.Exists(item))
+            var files = new List<string>();
+            var options = new EnumerationOptions
             {
-                var directory = item;
-                files.AddRange(await Task.Run(() => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-                    .Where(PathUtil.IsSupportedAudio)
-                    .ToList()));
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                ReturnSpecialDirectories = false
+            };
+            foreach (var item in dropped)
+            {
+                if (Directory.Exists(item))
+                {
+                    var directory = item;
+                    files.AddRange(await Task.Run(() => Directory.EnumerateFiles(directory, "*", options)
+                        .Where(PathUtil.IsSupportedAudio)
+                        .ToList()));
+                }
+                else if (File.Exists(item) && PathUtil.IsSupportedAudio(item))
+                {
+                    files.Add(item);
+                }
             }
-            else if (File.Exists(item) && PathUtil.IsSupportedAudio(item))
+
+            if (files.Count > 0)
             {
-                files.Add(item);
+                await _vm.AddFilesToCurrentPlaylistAsync(files, skipExisting: true);
             }
         }
-
-        if (files.Count > 0)
+        catch (Exception ex)
         {
-            await _vm.AddFilesToCurrentPlaylistAsync(files);
+            _host.Logger.Error("Handling dropped files failed", ex);
+            _vm.SetStatus($"拖入文件失败：{ex.Message}");
         }
     }
 
