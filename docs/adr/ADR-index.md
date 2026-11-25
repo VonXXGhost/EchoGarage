@@ -11,9 +11,9 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 
 | 编号 | 标题 | 状态 | 日期 | 一句话结论 |
 | --- | --- | --- | --- | --- |
-| [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09（2026-11-16 修订主题条目） | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题，v0.1 为五套（ADR-024）：纯净极简白（默认）、温润纸感白、极简冰青白、午夜黑胶、深海蓝灰 |
+| [ADR-001](ADR-001-platform-and-stack.md) | 平台与技术栈 | Accepted | 2026-11-09（2026-11-16 修订主题；2026-11-25 增补 BPM 离线分析依赖） | .NET 10 + WPF + NAudio + TagLib# + SQLite；支持多主题（ADR-024）；BPM 离线测量按需懒加载 ONNX Runtime DirectML + Beat This! small0（ADR-034，非 BPM 零开销） |
 | [ADR-002](ADR-002-layered-architecture.md) | 分层架构与组合根 | Accepted | 2026-11-09 | Core / Infrastructure / App 单向依赖，能力经接口暴露，AppHost 统一装配 |
-| [ADR-003](ADR-003-files-are-truth.md) | 文件即真相——标签、封面与元数据缓存 | Accepted | 2026-11-09（2026-11-21 补充容量上限） | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数等软件状态除外；封面缓存键由 `CoverKeyFactory` 生成；封面缓存内存上限 1 GB（字节 LRU）+ 磁盘上限默认 2 GB，解码尺寸随 DPI |
+| [ADR-003](ADR-003-files-are-truth.md) | 文件即真相——标签、封面与元数据缓存 | Accepted | 2026-11-09（2026-11-21 补充容量上限；2026-11-25 增补手动 BPM 状态） | 标签 / 时长 / 封面从文件读取，数据库只做缓存；播放计数 / 评分及未落盘手动修正 BPM（ADR-034）等软件状态除外；封面缓存键由 `CoverKeyFactory` 生成；封面缓存内存上限 1 GB（字节 LRU）+ 磁盘上限默认 2 GB，解码尺寸随 DPI |
 | [ADR-004](ADR-004-playlist-model.md) | 播放列表模型（普通 / 智能 / 默认） | Accepted | 2026-11-09 | 普通列表存显式条目，智能列表存条件；默认列表由外部打开覆盖；媒体库外条目由 ADR-018 刷新 |
 | [ADR-005](ADR-005-playlist-view-layouts.md) | 每个播放列表独立的显示布局与预设 | Accepted | 2026-11-09 | 每个播放列表独立记忆列显示 / 宽度 / 顺序 / 排序，全局预设可复用；排序列只需能映射到 `ColumnCatalog`，允许隐藏列排序 |
 | [ADR-006](ADR-006-settings-vs-library.md) | 配置与媒体库分离、缓存目录可配置 | Accepted | 2026-11-09 | `settings.json` 与 `library.db` 分离；默认便携到 exe 旁 `EchoGarageData`；导出配置不含媒体库内容 |
@@ -40,6 +40,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-031](ADR-031-now-playing-page-and-cover-glow.md) | 「正在播放」页与封面柔光取色 | Accepted | 2026-11-22 | 顶栏 TAB 切换的平行「正在播放」页：左侧封面 + 元数据 + 标签卡片 + 频谱，右侧播放列表按当前播放顺序快照（不分组、不可排序）；封面柔光用 OKLCH 中位切分取色，无彩/失败回退主题强调色，透明度由主题令牌控制，切歌交叉淡入 |
 | [ADR-032](ADR-032-audio-output-device-hotplug.md) | 输出设备热插拔检测与“上次使用的设备”记忆 | Accepted | 2026-11-22（修订 ADR-009 §8） | 专用后台线程 + `IMMNotificationClient` + 250 ms 去抖 + 10 s 兜底轮询；`OutputDeviceId` 只存用户偏好、缺失时回退系统默认且退出不改写、设备恢复后自动切回；播放中切换设备在后台重建输出并从原位置续播，暂停只释放输出、恢复时再重建 |
 | [ADR-033](ADR-033-output-volume-memory-and-ceiling.md) | 按输出设备与模式记忆音量，并按模式设置音量上限 | Accepted | 2026-11-22 | `Volume` 保留全局回落；`DeviceVolumes` 按“实际端点 ID + 模式”记忆显示音量（无记忆回落全局）；`VolumeCeilings` 按模式设 5%–100% 上限，实际增益 = 显示音量 × 上限（滑块 100% = 上限）；不升 schema，旧配置行为不变 |
+| [ADR-034](ADR-034-bpm-measurement-and-caching.md) | 「正在播放」页 BPM 测量、ONNX/DirectML 推理、缓存持久化与 Tap 修正 | Accepted | 2026-11-25（2026-11-26 并入分段 BPM 与 schema v6） | 「正在播放」页手动「BPM 测量」按钮；ONNX Runtime DirectML GPU 加速 + CPU 回退，内置 `beat_this_small0.onnx`（MIT）并在设置页提供 `final0` 下载安装指引；懒加载 + 60 s 空闲卸载保非 BPM 零影响；SQLite schema v5/v6 新增 `track_bpm_cache` 表（含 2–5 段变速明细，清空缓存保护手动修正）；默认 1 位小数；标签卡片内联修正含进度条比例可视化 + 明细列表（>5 段自动隐藏提示）+ `÷2`/`×2` + OLS Tap 轻点测速 + 可选 ADR-020 无中断写入文件标签（同步修复 M4A `tmpo`） |
 
 ## 相关长期知识（KB）
 
@@ -56,6 +57,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 - [KB-018](../kb/KB-018-tag-normalization-ui.md) 标签规范化 UI（设置页规则管理 / 右键批量 / 标签属性窗口快捷处理）
 - [KB-019](../kb/KB-019-loudness-measurement.md) 响度测量算法（LUFS / LRA / True Peak）：K 加权系数、门限、真峰值过采样、实现与验证笔记
 - [KB-020](../kb/KB-020-now-playing-cover-crossfade.md) “正在播放”封面交叉淡入过渡（保留旧图 + 200ms 交叉淡入；替代 KB-008 §5 原加载态描述）
+- [KB-021](../kb/KB-021-bpm-estimation-research.md) 歌曲 BPM 精确测量：业界调研、Beat This! ONNX/DirectML 管线、OLS Tap 测速与跨格式 TagLib# 规范
 
 ## 批准记录（摘要）
 
@@ -77,3 +79,5 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 - 2026-11-22：批准 ADR-033（按输出设备与模式记忆音量、按模式设置音量上限：`DeviceVolumes` 按实际端点 ID + 模式记忆、无记忆回落全局 `Volume`；`VolumeCeilings` 共享 / 独占独立，实际增益 = 显示音量 × 上限，滑块 100% 即上限；不升 schema，旧配置行为不变）。
 - 2026-11-22：批准 ADR-023 修订（独占模式输出缓冲区 10/20/50/100 ms 逐级回退，修正 §4.3 关于独占回调周期的结论；独占格式协商按源采样率优先、支持 PCM 24-in-32，避免 16-bit 降级；输出信息以 `WasapiOut.OutputWaveFormat` 为准并区分有效位深 / 容器位深）。
 - 2026-11-24：批准 ADR-016 修订 A1（标点键捕获与音量 ±5% 快捷键）；已并入 ADR-016 §5.1 / §5.2 / §5.4，提案文件已删除。
+- 2026-11-25：批准 ADR-034（「正在播放」页 BPM 测量、ONNX Runtime DirectML GPU 加速 + CPU 回退、内置 `beat_this_small0.onnx` + 设置页 `final0` 下载安装指引、懒加载与空闲卸载保非 BPM 零性能影响、SQLite schema v5 `track_bpm_cache` 表、默认 1 位小数、`÷2`/`×2` + Tap 轻点测速与可选无中断写文件标签）与 KB-021；同步修订 ADR-001（第 8 条）与 ADR-003（§2 未落盘手动修正 BPM 状态说明）。
+- 2026-11-26：批准 ADR-034 增补（变速曲目分段 BPM 识别 `TempoSegmentAnalyzer`、SQLite schema v6 分段缓存列、进度条比例可视化 + 明细列表与 `> 5` 段隐藏保护）与 KB-021 §3.2/§3.4 实测参数修订；增补已并入 ADR-034 §10，提案文件已删除。

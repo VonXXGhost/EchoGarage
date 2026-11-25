@@ -1,6 +1,6 @@
 # ADR-001：平台与技术栈
 
-- 状态：已批准（Accepted，2026-11-09，owner）
+- 状态：已批准（Accepted，2026-11-09，owner；2026-11-16 修订主题条目；2026-11-25 增补 BPM 离线分析依赖）
 - 日期：2026-11-09
 - 决策者：owner
 - 记录者：agent
@@ -23,6 +23,10 @@
 5. 标签：TagLib#（NuGet 包 `TagLibSharp` 2.3）。
 6. 数据：SQLite（`Microsoft.Data.Sqlite`）+ Dapper，WAL 模式。
 7. 测试：xUnit v3（进程内 runner）。
+8. 离线音频分析（BPM，ADR-034，2026-11-25 增补）：`Microsoft.ML.OnnxRuntime.DirectML`（MIT）+ 内置
+   `beat_this_small0.onnx`（MIT，~10.5 MB；设置页提供可选高精度 `beat_this_final0.onnx` 的下载安装指引）。
+   仅在用户手动触发「BPM 测量」时后台懒加载，支持 DirectX 12 GPU 加速并自动回退 CPU，空闲后自动
+   `Dispose()` 释放显存与原生内存；**不介入启动路径与常规播放链路**，对非 BPM 场景保持零性能影响。
 
 ## 理由
 

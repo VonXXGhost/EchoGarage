@@ -109,7 +109,7 @@ public sealed class RepositoryTests : IDisposable
         await using var versionCommand = upgraded.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
         var version = Convert.ToInt64(await versionCommand.ExecuteScalarAsync());
-        Assert.Equal(4, version);
+        Assert.Equal(6, version);
 
         await using var legacy = upgraded.CreateCommand();
         legacy.CommandText = "SELECT Composer, DurationMs FROM tracks WHERE Path = 'old/one.wav';";
@@ -162,7 +162,7 @@ public sealed class RepositoryTests : IDisposable
         await upgraded.OpenAsync();
         await using var versionCommand = upgraded.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
-        Assert.Equal(4, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
+        Assert.Equal(6, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
 
         await using var legacy = upgraded.CreateCommand();
         legacy.CommandText = "SELECT Composer, DurationMs FROM tracks WHERE Path = 'old/two.wav';";
@@ -222,7 +222,7 @@ public sealed class RepositoryTests : IDisposable
         await upgraded.OpenAsync();
         await using var versionCommand = upgraded.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
-        Assert.Equal(4, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
+        Assert.Equal(6, Convert.ToInt64(await versionCommand.ExecuteScalarAsync()));
 
         await using var rows = upgraded.CreateCommand();
         rows.CommandText = "SELECT Path, DurationMs FROM tracks ORDER BY Path;";

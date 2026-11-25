@@ -24,6 +24,35 @@ internal static class Diagnostics
         var vm = main.ViewModel;
         LogTrackMenuItems(host, main);
 
+        // 捕获「正在播放」页（含 BPM 测量按钮与标签卡片 BPM 栏）及 BPM 浮层
+        var prevNowPlaying = vm.IsNowPlayingPageActive;
+        vm.IsNowPlayingPageActive = true;
+        await main.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        await Task.Delay(500);
+        SaveVisual(main, Path.Combine(directory, "page-now-playing.png"), (int)main.ActualWidth, (int)main.ActualHeight);
+
+        if (vm.HasCurrentTrack)
+        {
+            main.OpenBpmPopupForDiagnostics();
+            await main.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            await Task.Delay(350);
+            if (main.NowPlayingBpmPopup.Child is FrameworkElement popupContent &&
+                popupContent.ActualWidth > 0 && popupContent.ActualHeight > 0)
+            {
+                SaveVisual(popupContent, Path.Combine(directory, "popup-bpm.png"),
+                    (int)Math.Ceiling(popupContent.ActualWidth),
+                    (int)Math.Ceiling(popupContent.ActualHeight));
+            }
+
+            main.NowPlayingBpmPopup.IsOpen = false;
+        }
+
+        if (!prevNowPlaying)
+        {
+            vm.IsNowPlayingPageActive = false;
+            await main.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        }
+
         await CaptureWindowAsync(new TextInputWindow("新建播放列表", "播放列表名称", "新播放列表"), directory, "dialog-input.png", main);
 
         var firstTrack = vm.Tracks.FirstOrDefault()?.Track;

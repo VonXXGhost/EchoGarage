@@ -432,6 +432,35 @@ public static class TagNormalization
     /// </summary>
     private static bool TryUpdateField(string key, string transformed, Dictionary<string, string> workingFields)
     {
+        if (string.Equals(key, TagFieldKeys.Bpm, StringComparison.OrdinalIgnoreCase))
+        {
+            var trimmed = transformed.Trim();
+            if (trimmed.Length == 0)
+            {
+                if (workingFields[key].Length == 0)
+                {
+                    return false;
+                }
+
+                workingFields[key] = string.Empty;
+                return true;
+            }
+
+            if (!Services.BpmFormatter.TryParse(trimmed, out var bpm))
+            {
+                return false;
+            }
+
+            var formatted = Services.BpmFormatter.FormatInput(bpm);
+            if (string.Equals(workingFields[key], formatted, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            workingFields[key] = formatted;
+            return true;
+        }
+
         if (IsNumericField(key))
         {
             if (!int.TryParse(transformed.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)

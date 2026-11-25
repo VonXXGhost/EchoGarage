@@ -450,14 +450,14 @@ public sealed class TagNormalizerTests
     }
 
     [Fact]
-    public void ApplyToTag_AllOptionalFields_UsesTenCommonFields()
+    public void ApplyToTag_AllOptionalFields_UsesElevenCommonFields()
     {
         var tag = CreateTag();
 
         var result = TagNormalization.ApplyToTag(DefaultAlbumRule(), tag);
 
         Assert.Null(result);
-        Assert.Equal(10, TagBatchEditor.GetFieldValues(tag).Count);
+        Assert.Equal(11, TagBatchEditor.GetFieldValues(tag).Count);
     }
 
     [Fact]

@@ -75,7 +75,11 @@ public partial class MainWindow : Window
         _vm.LayoutChanged += (_, _) => ApplyLayout();
         _vm.SortChanged += (_, _) => UpdateSortGlyphs();
         _vm.SettingsRequested += (_, _) => OpenSettings();
-        _vm.CurrentRowChanged += (_, _) => ScrollToCurrentRow();
+        _vm.CurrentRowChanged += (_, _) =>
+        {
+            CloseBpmPopup();
+            ScrollToCurrentRow();
+        };
         _vm.SelectionRestored += (_, row) => ScheduleCenterRow(row);
         _vm.PropertyChanged += OnViewModelPropertyChanged;
         ApplyGroupCoverMetrics();
@@ -176,10 +180,20 @@ public partial class MainWindow : Window
         }
         else if (e.PropertyName is nameof(MainViewModel.IsNowPlayingPageActive))
         {
+            if (!_vm.IsNowPlayingPageActive)
+            {
+                CloseBpmPopup();
+            }
+
             ApplyNowPlayingPageChrome();
         }
         else if (e.PropertyName is nameof(MainViewModel.HasCurrentTrack))
         {
+            if (!_vm.HasCurrentTrack)
+            {
+                CloseBpmPopup();
+            }
+
             // 播放 / 停止会切换标签卡片的显隐，需要按当前页尺寸重新评估一次。
             ApplyNowPlayingPageMetrics(NowPlayingPageRoot.RenderSize);
         }
@@ -1984,6 +1998,12 @@ public partial class MainWindow : Window
 
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // ADR-034：BPM 修正 / Tap 轻点测速浮层打开时，按键留给浮层处理，避免敲空格测速把歌暂停。
+        if (NowPlayingBpmPopup.IsOpen)
+        {
+            return;
+        }
+
         // ADR-015: 波形进度条有键盘焦点时，跳转键（←/→/PageUp/PageDown/Home/End）必须留给控件，
         // 不能被全局播放快捷键或窗口内置动作吃掉。
         if (Keyboard.FocusedElement is WaveformSeekBar && IsWaveformNavigationKey(e.Key))

@@ -13,6 +13,11 @@
 
 - 当前没有待批准的提案。
 
+2026-11-26 批准的 ADR-034 增补（变速曲目分段 BPM 识别、SQLite schema v6 与进度条比例可视化）已并入
+`docs/adr/ADR-034-bpm-measurement-and-caching.md`（§10），提案文件已删除。
+2026-11-25 批准的 ADR-034（「正在播放」页 BPM 测量、ONNX/DirectML 推理、缓存持久化与 Tap 修正）与 KB-021
+（BPM 调研、Beat This! 管线、OLS Tap 测速与标签规范）已移入 `docs/adr/ADR-034-bpm-measurement-and-caching.md`
+与 `docs/kb/KB-021-bpm-estimation-research.md`（同步修订 ADR-001 / ADR-003 并更新索引），提案文件已删除。
 2026-11-24 批准的 ADR-016 修订 A1（标点键捕获与音量快捷键）已并入
 `docs/adr/ADR-016-search-hotkeys-playback-mode.md`（§5.1 / §5.2 / §5.4），提案文件已删除。
 2026-11-22 批准的 ADR-023 修订（独占模式输出缓冲区、格式协商与可视化回调节奏）已按页首合并规则

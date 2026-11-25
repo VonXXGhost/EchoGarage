@@ -46,6 +46,11 @@ public sealed class AppHost : IAsyncDisposable
         TagService = new TagLibTagService(Logger);
         Converter = new AudioConverter(TagService, Logger, Paths);
         Loudness = new LoudnessAnalyzer(Logger);
+        // ADR-034：BPM 缓存与 Beat This! ONNX/DirectML 服务；构造时不加载任何 ONNX/DirectML 原生库。
+        BpmCache = new SqliteBpmCache(Database, Logger);
+        var bpmModelLocator = new BpmModelLocator(Paths);
+        var bpmAnalyzer = new OnnxBeatThisBpmAnalyzer(bpmModelLocator, () => Settings.Current.Bpm, Logger);
+        Bpm = new BpmService(bpmAnalyzer, BpmCache, TagService, () => Settings.Current.Bpm, Logger);
         Scanner = new LibraryScanner(LibraryRepository, TagService, Logger);
         Watcher = new LibraryFileWatcher(Logger);
         // 播放可视化数据源（ADR-023）：播放器把解码后的样本喂给它，右栏控件按渲染帧拉取。
@@ -77,6 +82,10 @@ public sealed class AppHost : IAsyncDisposable
     public IAudioConverter Converter { get; }
     /// <summary>EBU R128 / BS.1770 响度测量（ADR-028）；计算与调整共用。</summary>
     public ILoudnessAnalyzer Loudness { get; }
+    /// <summary>SQLite track_bpm_cache 持久化缓存（ADR-034）。</summary>
+    public IBpmCache BpmCache { get; }
+    /// <summary>Beat This! ONNX/DirectML BPM 测量与标签写回服务（ADR-034，按需懒加载）。</summary>
+    public IBpmService Bpm { get; }
     public ILibraryScanner Scanner { get; }
     public IFileWatcherService Watcher { get; }
     public IAudioPlayer Player { get; }
@@ -305,6 +314,7 @@ public sealed class AppHost : IAsyncDisposable
             DeviceMonitor.Dispose();
             Watcher.Dispose();
             Player.Dispose();
+            Bpm.Dispose();
             _spectrumAnalyzer.Dispose();
             CoverImages.Dispose();
         }

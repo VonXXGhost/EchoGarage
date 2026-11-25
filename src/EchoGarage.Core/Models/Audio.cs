@@ -204,6 +204,12 @@ public sealed record AudioTagData(
     /// 不写入数据库，只在「音频信息」这类需要展示原始格式的场景按需读取。
     /// </summary>
     public int? BitsPerSample { get; init; }
+
+    /// <summary>
+    /// 文件内嵌的标准 BPM 标签值（ID3v2 TBPM / Xiph BPM / Apple tmpo / ASF WM/BeatsPerMinute）。
+    /// 不经 TagLib <c>uint</c> 截断以保留小数（M4A tmpo 按规范仍为整数）；缺失或非法时为 null（ADR-034）。
+    /// </summary>
+    public double? Bpm { get; init; }
 }
 
 public sealed class TagEditModel
@@ -238,6 +244,18 @@ public sealed class TagEditModel
 
     /// <summary>额外标签改动；值为空表示删除。未列出的额外标签保持原值。</summary>
     public List<AudioTagChange> AdditionalTagChanges { get; } = [];
+
+    /// <summary>
+    /// 标准 BPM 标签的目标值（null 表示清除）。仅当 <see cref="BpmChanged"/> 为 true 时
+    /// 才被 <c>TagLibTagService</c> 写入，避免编辑其它字段时覆盖原有 BPM 标签。
+    /// </summary>
+    public double? Bpm { get; set; }
+
+    /// <summary>本次编辑是否修改了 BPM 字段（默认 false 以兼容既有调用方）。</summary>
+    public bool BpmChanged { get; set; }
+
+    /// <summary>写入 ID3v2 TBPM 时是否取整（默认 false 保留小数，兼容设置项）。</summary>
+    public bool RoundId3BpmToInteger { get; set; }
 }
 
 public sealed class AudioFileDetails

@@ -36,6 +36,7 @@ public sealed class AppPaths
         ConfigDirectory = System.IO.Path.Combine(RootDirectory, "config");
         DataDirectory = System.IO.Path.Combine(RootDirectory, "data");
         DefaultCacheDirectory = System.IO.Path.Combine(DataDirectory, "Cache");
+        ModelsDirectory = System.IO.Path.Combine(DataDirectory, "Models");
         LogsDirectory = System.IO.Path.Combine(DataDirectory, "Logs");
         SettingsFile = System.IO.Path.Combine(ConfigDirectory, "settings.json");
         DatabaseFile = System.IO.Path.Combine(DataDirectory, "library.db");
@@ -53,6 +54,8 @@ public sealed class AppPaths
     public string ConfigDirectory { get; }
     public string DataDirectory { get; }
     public string DefaultCacheDirectory { get; }
+    /// <summary>用户可选安装的高精度分析模型目录（如 beat_this_final0.onnx），随数据目录持久保留、升级程序不丢失。</summary>
+    public string ModelsDirectory { get; }
     public string LogsDirectory { get; }
     public string SettingsFile { get; }
     public string DatabaseFile { get; }

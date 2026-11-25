@@ -79,6 +79,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // Monotonic token so a slow cover decode cannot overwrite a newer track's artwork.
     private int _nowPlayingCoverVersion;
 
+    // Monotonic token & CTS for Now Playing BPM state loading and manual measurement (ADR-034).
+    private int _nowPlayingBpmVersion;
+    private string? _nowPlayingBpmLoadedPath;
+    private CancellationTokenSource? _bpmLoadCts;
+    private CancellationTokenSource? _bpmMeasureCts;
+    private string? _bpmMeasuringPath;
+
     /// <summary>Subtitle for the current source without any search filter applied.</summary>
     private string _basePlaylistSubtitle = string.Empty;
 
@@ -309,6 +316,43 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _nowPlayingPath = string.Empty;
+
+    /// <summary>「正在播放」页当前曲目的 BPM 合并状态（文件标签 / 本地缓存 / 手动修正，ADR-034）。</summary>
+    [ObservableProperty]
+    private BpmDisplayState _nowPlayingBpmState = BpmDisplayState.Empty;
+
+    [ObservableProperty]
+    private string _nowPlayingBpmText = EmptyTagText;
+
+    [ObservableProperty]
+    private string _nowPlayingBpmBadgeText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasNowPlayingBpmBadge;
+
+    [ObservableProperty]
+    private bool _isNowPlayingBpmManual;
+
+    [ObservableProperty]
+    private string _nowPlayingBpmTempoBadgeText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasNowPlayingBpmTempoBadge;
+
+    [ObservableProperty]
+    private bool _hasNowPlayingBpmSegments;
+
+    [ObservableProperty]
+    private string _nowPlayingBpmTooltip = "点击手动修正 BPM 或使用轻点测速（Tap）";
+
+    [ObservableProperty]
+    private bool _isMeasuringBpm;
+
+    [ObservableProperty]
+    private string _bpmMeasureButtonText = "♩ BPM 测量";
+
+    [ObservableProperty]
+    private string _bpmMeasureTooltip = "使用 Beat This! 分析当前曲目的 BPM（结果保存在本地缓存，不自动修改音频文件）";
 
     /// <summary>封面下方的格式徽标：编码器 · 码率 / 采样率。</summary>
     [ObservableProperty]
@@ -765,7 +809,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <see cref="Tracks"/> collection stays complete so row state (covers, selection,
     /// playing indicator) survives search changes.
     /// </summary>
-    private void ApplyFilter()
+    private void ApplyFilter(bool rebuildNowPlaying = true)
     {
         var query = FilterText;
         var isActive = !string.IsNullOrWhiteSpace(query);
@@ -785,7 +829,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _shuffleOrder = null;
         HasTracks = visible > 0;
         PlaylistSubtitle = BuildFilteredSubtitle(visible);
-        RebuildNowPlayingPlaylist();
+        if (rebuildNowPlaying)
+        {
+            RebuildNowPlayingPlaylist();
+        }
     }
 
     private string BuildFilteredSubtitle(int visible)
@@ -1390,8 +1437,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             CurrentRow = row;
             // The row was rebuilt (for example after a metadata repair scan), so refresh
             // the now-playing panel from the new track data instead of the stale row.
+            // Note: playingIndex is the index in the sorted `rows` list, NOT the unsorted `tracks` list.
             UpdateNowPlayingMetadata(row);
-            BeginNowPlayingCoverLoad(tracks[playingIndex]);
+            BeginNowPlayingCoverLoad(row.Track);
+            BeginNowPlayingBpmLoad(row.Track);
         }
 
         // Let the overlay render after the background row build.
@@ -1450,10 +1499,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // signature includes _tracksVersion, so this always runs after a swap.
             RebuildGroupedView();
             sortMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
-            ApplyFilter();
+            ApplyFilter(rebuildNowPlaying: false);
             filterMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
-            // 新页面右侧列表与当前列表共用同一批行对象，切源后顺序快照必须跟着换。
-            RebuildNowPlayingPlaylist();
         }
         finally
         {
@@ -1466,6 +1513,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         // Disposing the defer scopes above refreshes each view exactly once with the final state.
+        // 必须在 DeferRefresh 释放之后再枚举视图刷新「正在播放」页右侧列表。
+        RebuildNowPlayingPlaylist();
         viewRefreshMilliseconds = switchStopwatch.Elapsed.TotalMilliseconds;
 
         LayoutChanged?.Invoke(this, EventArgs.Empty);
@@ -2141,6 +2190,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CurrentRowChanged?.Invoke(this, EventArgs.Empty);
         UpdateNowPlayingMetadata(row);
         BeginNowPlayingCoverLoad(row.Track);
+        BeginNowPlayingBpmLoad(row.Track);
         DurationSeconds = row.Track.DurationMs / 1000.0;
         DurationText = DisplayFormatter.Duration(row.Track.DurationMs);
         PositionSeconds = 0;
@@ -2322,6 +2372,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CurrentRow = null;
         CurrentRowChanged?.Invoke(this, EventArgs.Empty);
         CancelWaveformLoad();
+        CancelBpmOperations();
         CurrentTitle = "未在播放";
         CurrentSubtitle = string.Empty;
         CurrentInfo = string.Empty;
@@ -2405,9 +2456,414 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         NowPlayingCodec = EmptyTagText;
         NowPlayingComment = EmptyTagText;
         NowPlayingPath = string.Empty;
+        _nowPlayingBpmLoadedPath = null;
+        ApplyNowPlayingBpmState(BpmDisplayState.Empty);
         NowPlayingFormatText = EmptyTagText;
         NowPlayingOutputText = "未建立输出";
         NowPlayingOutputTooltip = string.Empty;
+    }
+
+    // =====================================================================
+    // 「正在播放」页 BPM 测量、缓存加载与手动修正（ADR-034）
+    // =====================================================================
+
+    /// <summary>切歌或标签变更后异步加载当前曲目的 BPM 状态（文件标签 + track_bpm_cache）。</summary>
+    public void BeginNowPlayingBpmLoad(Track track)
+    {
+        if (track is null || string.IsNullOrWhiteSpace(track.Path))
+        {
+            ApplyNowPlayingBpmState(BpmDisplayState.Empty);
+            return;
+        }
+
+        // 若正在测量另一首歌，切歌时立即取消旧测量，避免结果串写到新曲目。
+        if (_bpmMeasuringPath is not null &&
+            !string.Equals(_bpmMeasuringPath, track.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            CancelBpmMeasurement();
+        }
+
+        _bpmLoadCts?.Cancel();
+        _bpmLoadCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _bpmLoadCts = cts;
+        var version = Interlocked.Increment(ref _nowPlayingBpmVersion);
+        var path = track.Path;
+        var fileSize = track.FileSize;
+        var modifiedAtUtc = track.ModifiedAtUtc;
+        var durationMs = track.DurationMs;
+
+        // 切换到另一首歌时立刻清空旧值，避免短暂显示上一首的 BPM；
+        // 同一首歌写标签或文件监听刷新时保留当前值，等后台重读完平滑更新，避免闪烁成 "—"。
+        if (!string.Equals(_nowPlayingBpmLoadedPath, path, StringComparison.OrdinalIgnoreCase))
+        {
+            _nowPlayingBpmLoadedPath = path;
+            ApplyNowPlayingBpmState(BpmDisplayState.Empty);
+        }
+
+        _ = LoadNowPlayingBpmAsync(path, fileSize, modifiedAtUtc, durationMs, version, cts.Token);
+    }
+
+    private async Task LoadNowPlayingBpmAsync(
+        string path,
+        long fileSize,
+        DateTime modifiedAtUtc,
+        long durationMs,
+        int version,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var state = await _host.Bpm.GetDisplayStateAsync(
+                path, fileSize, modifiedAtUtc, durationMs, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || version != _nowPlayingBpmVersion)
+            {
+                return;
+            }
+
+            if (!string.Equals(CurrentRow?.Track.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _nowPlayingBpmLoadedPath = path;
+            ApplyNowPlayingBpmState(state);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer track or stop.
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"Loading BPM display state failed for {path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>设置页修改显示小数位数或清空 BPM 缓存后刷新当前展示。</summary>
+    public void RefreshNowPlayingBpmDisplay(bool reloadFromStore = false)
+    {
+        if (reloadFromStore && CurrentRow is { } row)
+        {
+            BeginNowPlayingBpmLoad(row.Track);
+            return;
+        }
+
+        ApplyNowPlayingBpmState(NowPlayingBpmState);
+    }
+
+    /// <summary>「正在播放」页「♩ BPM 测量」按钮：空闲时启动分析，进行中再次点击取消。</summary>
+    public async Task ToggleMeasureCurrentTrackBpmAsync()
+    {
+        if (IsMeasuringBpm)
+        {
+            CancelBpmMeasurement();
+            SetStatus("已取消 BPM 测量");
+            return;
+        }
+
+        if (CurrentRow is not { } row)
+        {
+            return;
+        }
+
+        var path = row.Track.Path;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            SetStatus("当前歌曲文件不存在，无法测量 BPM");
+            return;
+        }
+
+        CancelBpmMeasurement();
+        var cts = new CancellationTokenSource();
+        _bpmMeasureCts = cts;
+        _bpmMeasuringPath = path;
+        IsMeasuringBpm = true;
+        BpmMeasureButtonText = "取消测量…";
+        BpmMeasureTooltip = "正在分析当前曲目的 BPM，再次点击可取消";
+        SetStatus($"正在测量 BPM：{row.Title}…");
+
+        var progress = new Progress<BpmAnalysisProgress>(p =>
+        {
+            if (_bpmMeasureCts != cts || cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (p.Fraction is >= 0 and <= 1.0)
+            {
+                var pct = (int)Math.Round(p.Fraction * 100);
+                BpmMeasureButtonText = pct > 0 && pct < 100 ? $"取消 ({pct}%)" : "取消测量…";
+                BpmMeasureTooltip = $"正在{p.Stage}（{pct}%），点击可取消";
+            }
+            else
+            {
+                BpmMeasureButtonText = "取消测量…";
+                BpmMeasureTooltip = $"正在{p.Stage}，点击可取消";
+            }
+        });
+
+        try
+        {
+            var (result, state) = await _host.Bpm.MeasureAsync(path, progress, cts.Token);
+            if (cts.IsCancellationRequested ||
+                !string.Equals(CurrentRow?.Track.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _nowPlayingBpmLoadedPath = path;
+            ApplyNowPlayingBpmState(state);
+            var dp = Settings.Bpm.DecimalPlaces;
+            if (!result.IsReliable)
+            {
+                SetStatus(result.Note ?? "未检测到明显节拍，可点击 BPM 手动输入或轻点测速");
+            }
+            else if (state.FileTagBpm.HasValue && Math.Abs(state.FileTagBpm.Value - result.Bpm) >= 0.5)
+            {
+                SetStatus(
+                    $"BPM 实测 {BpmFormatter.FormatDisplay(result.Bpm, dp)}（{result.ExecutionProvider} · {result.Elapsed.TotalSeconds:0.0}s），" +
+                    $"文件原标签为 {BpmFormatter.FormatDisplay(state.FileTagBpm, dp)}，可点击 BPM 栏选择采用或覆盖");
+            }
+            else
+            {
+                var conf = BpmFormatter.FormatConfidenceLabel(result.Confidence);
+                if (result.TooManyTempoChanges)
+                {
+                    SetStatus(
+                        $"BPM 测量完成：{BpmFormatter.FormatDisplay(result.Bpm, dp)}（{result.ExecutionProvider} · " +
+                        $"{result.Elapsed.TotalSeconds:0.0}s，变速过多超过 {BpmFormatter.MaxDisplaySegments} 段，已隐藏分段明细）");
+                }
+                else if (result.Segments.Count >= 2)
+                {
+                    SetStatus(
+                        $"BPM 测量完成：主段落 {BpmFormatter.FormatDisplay(result.Bpm, dp)}（共检出 {result.Segments.Count} 个速度段落 · " +
+                        $"{result.ExecutionProvider} · {result.Elapsed.TotalSeconds:0.0}s，点击 BPM 栏查看分布）");
+                }
+                else
+                {
+                    var variableSuffix = result.IsVariableTempoSuspected ? " · 疑似变速" : string.Empty;
+                    SetStatus(
+                        $"BPM 测量完成：{BpmFormatter.FormatDisplay(result.Bpm, dp)}（{result.ExecutionProvider} · " +
+                        $"{result.Elapsed.TotalSeconds:0.0}s，置信度 {conf}，已缓存{variableSuffix}）");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _host.Logger.Debug($"BPM measurement cancelled for {path}.");
+        }
+        catch (BpmAnalysisException ex)
+        {
+            _host.Logger.Warn($"BPM analysis failed for {path}: {ex.Message}");
+            SetStatus($"BPM 测量失败：{ex.FriendlyMessage}");
+            _dialogs.Error(ex.FriendlyMessage, "BPM 测量");
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error($"Unexpected BPM analysis error for {path}", ex);
+            SetStatus($"BPM 测量失败：{ex.Message}");
+            _dialogs.Error($"BPM 测量失败：{ex.Message}", "BPM 测量");
+        }
+        finally
+        {
+            if (ReferenceEquals(_bpmMeasureCts, cts))
+            {
+                _bpmMeasureCts = null;
+                _bpmMeasuringPath = null;
+                IsMeasuringBpm = false;
+                BpmMeasureButtonText = "♩ BPM 测量";
+                BpmMeasureTooltip = "使用 Beat This! 分析当前曲目的 BPM（结果保存在本地缓存，不自动修改音频文件）";
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    /// <summary>保存来自标签栏内联修正浮层的手动 / Tap BPM（可选同时写入音频文件级标签）。</summary>
+    public async Task<bool> SaveCurrentTrackBpmAsync(double? bpm, bool writeToFile)
+    {
+        if (CurrentRow is not { } row)
+        {
+            return false;
+        }
+
+        var path = row.Track.Path;
+        try
+        {
+            var state = await _host.Bpm.SaveManualAsync(path, bpm, writeToFile);
+            if (writeToFile)
+            {
+                var updated = await _host.Scanner.IndexFileAsync(path, row.Track.IsInLibrary, row.Track.FolderId);
+                if (updated is not null)
+                {
+                    row.UpdateTrack(updated);
+                }
+            }
+
+            if (string.Equals(CurrentRow?.Track.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                _nowPlayingBpmLoadedPath = path;
+                ApplyNowPlayingBpmState(state);
+            }
+
+            var dp = Settings.Bpm.DecimalPlaces;
+            if (bpm is { } val)
+            {
+                if (writeToFile)
+                {
+                    var writtenText = BpmFormatter.FormatDisplay(state.EffectiveBpm ?? val, dp);
+                    SetStatus(BpmFormatter.RequiresIntegerTag(path)
+                        ? $"BPM 已写入文件标签（M4A tmpo 按规范取整为 {BpmFormatter.ToIntegerTag(val)}）"
+                        : $"BPM {writtenText} 已写入音频文件标签");
+                }
+                else
+                {
+                    SetStatus($"BPM {BpmFormatter.FormatDisplay(val, dp)} 已保存到本地缓存（未修改原文件）");
+                }
+            }
+            else
+            {
+                SetStatus(writeToFile ? "已清除音频文件中的 BPM 标签" : "已清除本地手动修正的 BPM");
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Error($"Saving BPM failed for {path} (writeToFile={writeToFile})", ex);
+            _dialogs.Error($"保存 BPM 失败：{ex.Message}", "保存 BPM");
+            SetStatus($"保存 BPM 失败：{ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>从 BPM 段落可视化条或明细列表跳转到对应段落起始位置试听核对。</summary>
+    public void SeekToBpmSegment(double startSeconds)
+    {
+        if (CurrentRow is null || DurationSeconds <= 0)
+        {
+            return;
+        }
+
+        var target = Math.Clamp(startSeconds, 0.0, Math.Max(0.0, DurationSeconds - 0.5));
+        CommitSeek(target);
+        SetStatus($"已跳转到段落起点 {BpmFormatter.FormatTimestamp(target)}");
+    }
+
+    private void ApplyNowPlayingBpmState(BpmDisplayState state)
+    {
+        NowPlayingBpmState = state;
+        var dp = Settings.Bpm.DecimalPlaces;
+        NowPlayingBpmText = BpmFormatter.FormatDisplay(state.EffectiveBpm, dp, EmptyTagText);
+        var badge = BpmFormatter.FormatSourceBadge(state.Source);
+        NowPlayingBpmBadgeText = badge;
+        HasNowPlayingBpmBadge = badge.Length > 0;
+        IsNowPlayingBpmManual = state.Source == BpmSource.CachedManual;
+
+        var hasSegments = !state.TooManyTempoChanges &&
+                          state.Segments.Count is >= 2 and <= BpmFormatter.MaxDisplaySegments;
+        HasNowPlayingBpmSegments = hasSegments;
+        NowPlayingBpmTempoBadgeText = hasSegments
+            ? $"{state.Segments.Count}段变速"
+            : state.TooManyTempoChanges
+                ? "变速过多"
+                : state.IsVariableTempoSuspected
+                    ? "变速"
+                    : string.Empty;
+        HasNowPlayingBpmTempoBadge = NowPlayingBpmTempoBadgeText.Length > 0;
+        NowPlayingBpmTooltip = BuildBpmTooltip(state, dp);
+    }
+
+    private static string BuildBpmTooltip(BpmDisplayState state, int decimalPlaces)
+    {
+        var lines = new List<string>();
+        switch (state.Source)
+        {
+            case BpmSource.FileTag:
+                lines.Add($"BPM：{BpmFormatter.FormatDisplay(state.EffectiveBpm, decimalPlaces)}（来自音频文件标签）");
+                break;
+            case BpmSource.CachedMeasured:
+                var conf = BpmFormatter.FormatConfidenceLabel(state.Confidence);
+                var confText = conf.Length > 0 ? $" · 置信度 {conf}" : string.Empty;
+                lines.Add($"BPM：{BpmFormatter.FormatDisplay(state.EffectiveBpm, decimalPlaces)}（本地缓存 · 算法测量{confText} · 未写入文件）");
+                break;
+            case BpmSource.CachedManual:
+                lines.Add($"BPM：{BpmFormatter.FormatDisplay(state.EffectiveBpm, decimalPlaces)}（本地缓存 · 手动修正 · 未写入文件）");
+                break;
+            default:
+                lines.Add("尚未测量 BPM");
+                break;
+        }
+
+        if (state.MeasuredBpm.HasValue && state.Source != BpmSource.CachedMeasured)
+        {
+            lines.Add($"算法测量记录：{BpmFormatter.FormatDisplay(state.MeasuredBpm, decimalPlaces)}");
+        }
+
+        if (state.FileTagBpm.HasValue && state.Source != BpmSource.FileTag)
+        {
+            lines.Add($"文件原标签：{BpmFormatter.FormatDisplay(state.FileTagBpm, decimalPlaces)}");
+        }
+
+        if (state.TooManyTempoChanges)
+        {
+            lines.Add($"提示：检测到曲目变速过于频繁（超过 {BpmFormatter.MaxDisplaySegments} 个段落），已隐藏分段明细，仅显示主段落速度。");
+        }
+        else if (state.Segments.Count is >= 2 and <= BpmFormatter.MaxDisplaySegments)
+        {
+            lines.Add($"段落速度分布（共 {state.Segments.Count} 段）：");
+            foreach (var seg in state.Segments)
+            {
+                var range = BpmFormatter.FormatTimeRange(seg.StartSeconds, seg.EndSeconds);
+                var primaryMark = seg.IsPrimary ? "（主段落）" : string.Empty;
+                lines.Add($"  {range}  {BpmFormatter.FormatDisplay(seg.Bpm, decimalPlaces)} BPM{primaryMark}");
+            }
+        }
+        else if (state.IsVariableTempoSuspected)
+        {
+            lines.Add("提示：检测到曲目存在速度变化（重新点击「BPM 测量」可生成各段落明细）。");
+        }
+
+        if (state.DurationChangedWarning)
+        {
+            lines.Add("提示：音频时长与缓存记录差异较大，建议重新测量。");
+        }
+
+        if (state.ExternalFileTagChangedHint)
+        {
+            lines.Add("提示：音频文件标签已由外部修改，当前优先显示文件标签值。");
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.AnalyzerId))
+        {
+            var ep = string.IsNullOrWhiteSpace(state.ExecutionProvider) ? string.Empty : $" · {state.ExecutionProvider}";
+            lines.Add($"分析模型：{state.AnalyzerId}{ep}");
+        }
+
+        lines.Add("点击可手动修正、使用 ÷2 / ×2 / 轻点测速（Tap），或写入歌曲文件标签。");
+        return string.Join("\n", lines);
+    }
+
+    private void CancelBpmOperations()
+    {
+        _bpmLoadCts?.Cancel();
+        _bpmLoadCts?.Dispose();
+        _bpmLoadCts = null;
+        CancelBpmMeasurement();
+    }
+
+    private void CancelBpmMeasurement()
+    {
+        if (_bpmMeasureCts is { } cts)
+        {
+            cts.Cancel();
+            _bpmMeasureCts = null;
+        }
+
+        _bpmMeasuringPath = null;
+        IsMeasuringBpm = false;
+        BpmMeasureButtonText = "♩ BPM 测量";
+        BpmMeasureTooltip = "使用 Beat This! 分析当前曲目的 BPM（结果保存在本地缓存，不自动修改音频文件）";
     }
 
     /// <summary>
@@ -4533,8 +4989,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             try
             {
                 var model = TagBatchEditor.CreateEdit(tags[i], edits[i]);
+                model.RoundId3BpmToInteger = Settings.Bpm.RoundId3BpmToInteger;
                 var oldCover = target.Track.CoverKey;
                 await Task.Run(() => _host.TagService.Write(target.Track.Path, model));
+                if (model.BpmChanged)
+                {
+                    await _host.BpmCache.ClearManualAsync(target.Track.Path);
+                }
                 var updated = await _host.Scanner.IndexFileAsync(target.Track.Path, target.Track.IsInLibrary, target.Track.FolderId);
                 if (updated is not null)
                 {
@@ -4548,6 +5009,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     {
                         UpdateNowPlayingMetadata(target);
                         BeginNowPlayingCoverLoad(updated);
+                        BeginNowPlayingBpmLoad(updated);
                     }
                 }
 
@@ -4669,6 +5131,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 foreach (var path in deleted)
                 {
                     _host.Waveforms.Invalidate(path);
+                }
+
+                try
+                {
+                    await _host.BpmCache.DeletePathsAsync(deleted);
+                }
+                catch (Exception ex)
+                {
+                    _host.Logger.Warn($"Removing BPM cache for deleted files failed: {ex.Message}");
                 }
 
                 StopPlaybackIfAffected(deleted);
@@ -4930,6 +5401,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Settings.Volume = _host.Settings.Current.Volume;
             Settings.DeviceVolumes = _host.Settings.Current.DeviceVolumes;
             Settings.VolumeCeilings = _host.Settings.Current.VolumeCeilings;
+            Settings.Bpm = _host.Settings.Current.Bpm;
+            _host.Bpm.UnloadRuntime();
+            RefreshNowPlayingBpmDisplay();
             SyncVolumeCeilingsFromSettings();
             // 强制接下来的设备刷新按导入的音量记忆重新加载显示音量（ADR-033）。
             _volumeContextKey = null;
@@ -5040,6 +5514,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _waveformCts?.Cancel();
         _waveformCts?.Dispose();
         _waveformCts = null;
+        CancelBpmOperations();
         _selectionGate.Dispose();
     }
 }

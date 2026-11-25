@@ -109,6 +109,9 @@ public sealed class AppSettings
     /// <summary>右栏「正在播放」下方的播放可视化设置（ADR-023）。</summary>
     public VisualizationSettings Visualization { get; set; } = new();
 
+    /// <summary>「正在播放」页 BPM 测量、模型与展示设置（ADR-034）。</summary>
+    public BpmSettings Bpm { get; set; } = new();
+
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 880;
     public double? WindowLeft { get; set; }

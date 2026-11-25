@@ -5,4 +5,8 @@
     <RootNamespace>EchoGarage.Core</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="EchoGarage.Tests" />
+  </ItemGroup>
+
 </Project>

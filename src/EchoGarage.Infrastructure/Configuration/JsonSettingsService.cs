@@ -163,6 +163,7 @@ public sealed class JsonSettingsService : ISettingsService
         settings.Network = NetworkSettings.Normalize(settings.Network);
         settings.WebTags = WebTagSettings.Normalize(settings.WebTags);
         settings.Visualization = VisualizationSettings.Normalize(settings.Visualization);
+        settings.Bpm = BpmSettings.Normalize(settings.Bpm);
 
         var builtIns = ViewLayoutFactory.CreateBuiltInPresets();
         foreach (var builtIn in builtIns)

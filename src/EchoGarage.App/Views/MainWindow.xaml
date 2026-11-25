@@ -1189,10 +1189,31 @@
                                             </Button>
                                         </WrapPanel>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="✎ 标签属性" VerticalAlignment="Top"
-                                            Style="{StaticResource FlatButton}" Margin="12,0,0,0"
-                                            IsEnabled="{Binding HasCurrentTrack}"
-                                            Click="OnNowPlayingEditTagsClick" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
+                                        <Button x:Name="NowPlayingMeasureBpmButton"
+                                                Content="{Binding BpmMeasureButtonText}"
+                                                Margin="0,0,4,0"
+                                                IsEnabled="{Binding HasCurrentTrack}"
+                                                ToolTip="{Binding BpmMeasureTooltip}"
+                                                Click="OnNowPlayingMeasureBpmClick"
+                                                AutomationProperties.AutomationId="NowPlayingMeasureBpmButton">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource FlatButton}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMeasuringBpm}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                        <Button Content="✎ 标签属性"
+                                                Style="{StaticResource FlatButton}"
+                                                IsEnabled="{Binding HasCurrentTrack}"
+                                                Click="OnNowPlayingEditTagsClick" />
+                                    </StackPanel>
                                 </Grid>
 
                                 <!-- 标签卡片：字段名 / 值三列排布，最后一行是文件路径。
@@ -1241,10 +1262,269 @@
                                             <TextBlock Text="{Binding NowPlayingDiscNumber}" Style="{StaticResource TagFieldValue}" />
                                         </StackPanel>
 
-                                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,18,0">
+                                        <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,18,0">
                                             <TextBlock Text="编码器" Style="{StaticResource TagFieldLabel}" />
                                             <TextBlock Text="{Binding NowPlayingCodec}" Style="{StaticResource TagFieldValue}"
-                                                       FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                                                       FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                       ToolTip="{Binding NowPlayingCodec}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,18,0">
+                                            <TextBlock Text="BPM" Style="{StaticResource TagFieldLabel}" />
+                                            <Button x:Name="NowPlayingBpmButton"
+                                                    HorizontalAlignment="Left"
+                                                    Margin="-4,1,0,0" Padding="4,1,6,1"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                                    IsEnabled="{Binding HasCurrentTrack}"
+                                                    ToolTip="{Binding NowPlayingBpmTooltip}"
+                                                    Click="OnNowPlayingBpmClick"
+                                                    AutomationProperties.AutomationId="NowPlayingBpmButton">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border x:Name="BpmPill"
+                                                                Background="{TemplateBinding Background}"
+                                                                CornerRadius="5" Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="BpmPill" Property="Background"
+                                                                        Value="{DynamicResource RowHoverBrush}" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsPressed" Value="True">
+                                                                <Setter TargetName="BpmPill" Property="Background"
+                                                                        Value="{DynamicResource RowSelectedBrush}" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding NowPlayingBpmText}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="13"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <Border Visibility="{Binding HasNowPlayingBpmBadge, Converter={StaticResource BoolToVisibility}}"
+                                                            Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                            CornerRadius="4" Padding="5,1" Margin="6,0,0,0"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding NowPlayingBpmBadgeText}" FontSize="10">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsNowPlayingBpmManual}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                    <Border Visibility="{Binding HasNowPlayingBpmTempoBadge, Converter={StaticResource BoolToVisibility}}"
+                                                            BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="4,0,0,0"
+                                                            VerticalAlignment="Center">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{DynamicResource PanelAltBackgroundBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasNowPlayingBpmSegments}" Value="True">
+                                                                        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding NowPlayingBpmTempoBadgeText}" FontSize="10">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding HasNowPlayingBpmSegments}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                    <TextBlock Text="✎" FontSize="10" Margin="5,0,0,0" Opacity="0.65"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+
+                                            <!-- BPM 手动修正 / 变速段落分布 / Tap 轻点测速浮层（ADR-034） -->
+                                            <Popup x:Name="NowPlayingBpmPopup"
+                                                   PlacementTarget="{Binding ElementName=NowPlayingBpmButton}"
+                                                   Placement="Bottom" VerticalOffset="4"
+                                                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                                                   PreviewKeyDown="OnBpmPopupPreviewKeyDown"
+                                                   Closed="OnBpmPopupClosed">
+                                                <Border Width="404" Margin="8,4,14,16" Padding="14,12" CornerRadius="8"
+                                                        Background="{DynamicResource PopupBackgroundBrush}"
+                                                        BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
+                                                        Effect="{StaticResource PopupShadow}">
+                                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                                  HorizontalScrollBarVisibility="Disabled"
+                                                                  MaxHeight="620">
+                                                    <StackPanel>
+                                                        <TextBlock Text="BPM 修正与轻点测速" FontSize="13" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                        <TextBlock x:Name="BpmPopupSourceText" FontSize="11"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   TextWrapping="Wrap" Margin="0,3,0,10" />
+
+                                                        <!-- 变速段落分布可视化（进度条比例 + 明细列表；> 5 段隐藏明细并提示） -->
+                                                        <Border x:Name="BpmSegmentsCard" Margin="0,0,0,10" Padding="10,9" CornerRadius="6"
+                                                                Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                                Visibility="Collapsed"
+                                                                AutomationProperties.AutomationId="BpmSegmentsCard">
+                                                            <StackPanel>
+                                                                <StackPanel x:Name="BpmSegmentsVisualPanel" Visibility="Collapsed">
+                                                                    <Grid Margin="0,0,0,6">
+                                                                        <TextBlock x:Name="BpmSegmentsHeaderText" FontSize="11.5"
+                                                                                   FontWeight="SemiBold"
+                                                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                                        <TextBlock x:Name="BpmSegmentsHintText" FontSize="10"
+                                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                                   HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                                                   Text="点击条块可跳转试听" />
+                                                                    </Grid>
+
+                                                                    <Border x:Name="BpmSegmentsBarFrame" Height="24" CornerRadius="5"
+                                                                            ClipToBounds="True"
+                                                                            Background="{DynamicResource ProgressTrackBrush}"
+                                                                            BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                            BorderThickness="1">
+                                                                        <Grid x:Name="BpmSegmentsBarGrid" />
+                                                                    </Border>
+
+                                                                    <Grid Margin="0,3,0,6">
+                                                                        <TextBlock Text="00:00" FontSize="9.5"
+                                                                                   FontFamily="{StaticResource MonoFont}"
+                                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                                   HorizontalAlignment="Left" />
+                                                                        <TextBlock x:Name="BpmSegmentsEndTickText" FontSize="9.5"
+                                                                                   FontFamily="{StaticResource MonoFont}"
+                                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                                   HorizontalAlignment="Right" />
+                                                                    </Grid>
+
+                                                                    <StackPanel x:Name="BpmSegmentsListPanel" />
+                                                                </StackPanel>
+
+                                                                <TextBlock x:Name="BpmSegmentsNoticeText" FontSize="11"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                           TextWrapping="Wrap" Visibility="Collapsed"
+                                                                           AutomationProperties.AutomationId="BpmSegmentsNoticeText" />
+                                                            </StackPanel>
+                                                        </Border>
+
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBox x:Name="BpmEditBox" Grid.Column="0" Height="30"
+                                                                     FontFamily="{StaticResource MonoFont}" FontSize="13.5"
+                                                                     ToolTip="输入 20.0 – 300.0 之间的 BPM；留空保存可清除手动修正"
+                                                                     AutomationProperties.AutomationId="BpmEditBox" />
+                                                            <Button x:Name="BpmHalveButton" Grid.Column="1" Content="÷2"
+                                                                    Style="{StaticResource FlatButton}"
+                                                                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                    Height="30" Padding="10,0" Margin="6,0,0,0"
+                                                                    ToolTip="折半（修正倍频误判，如 256 → 128）"
+                                                                    Click="OnBpmHalveClick"
+                                                                    AutomationProperties.AutomationId="BpmHalveButton" />
+                                                            <Button x:Name="BpmDoubleButton" Grid.Column="2" Content="×2"
+                                                                    Style="{StaticResource FlatButton}"
+                                                                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                    Height="30" Padding="10,0" Margin="4,0,0,0"
+                                                                    ToolTip="翻倍（修正半频误判，如 64 → 128）"
+                                                                    Click="OnBpmDoubleClick"
+                                                                    AutomationProperties.AutomationId="BpmDoubleButton" />
+                                                        </Grid>
+
+                                                        <!-- Tap 轻点测速区 -->
+                                                        <Border Margin="0,10,0,0" Padding="9,8" CornerRadius="6"
+                                                                Background="{DynamicResource PanelAltBackgroundBrush}"
+                                                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                                            <StackPanel>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <Button x:Name="BpmTapButton" Grid.Column="0"
+                                                                            Content="♩ 轻点测速（点击或按空格 / T）"
+                                                                            Style="{StaticResource FlatButton}"
+                                                                            Background="{DynamicResource PanelBackgroundBrush}"
+                                                                            BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                            HorizontalAlignment="Stretch" Padding="8,6"
+                                                                            Click="OnBpmTapClick"
+                                                                            AutomationProperties.AutomationId="BpmTapButton" />
+                                                                    <Button x:Name="BpmTapResetButton" Grid.Column="1"
+                                                                            Content="重置" Style="{StaticResource FlatButton}"
+                                                                            Padding="8,6" Margin="6,0,0,0"
+                                                                            ToolTip="清空当前轻点记录重新计时"
+                                                                            Click="OnBpmTapResetClick" />
+                                                                </Grid>
+                                                                <TextBlock x:Name="BpmTapStatusText" FontSize="11"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                           Margin="0,6,0,0" TextWrapping="Wrap"
+                                                                           Text="跟着节拍连续点击或敲空格（4 拍后趋稳，停顿 2.5 秒自动重计）。" />
+                                                            </StackPanel>
+                                                        </Border>
+
+                                                        <!-- 算法候选值 -->
+                                                        <StackPanel x:Name="BpmCandidatesRow" Margin="0,10,0,0" Visibility="Collapsed">
+                                                            <TextBlock Text="候选 BPM（点击填入）" FontSize="11"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                                       Margin="0,0,0,5" />
+                                                            <WrapPanel x:Name="BpmCandidatesPanel" />
+                                                        </StackPanel>
+
+                                                        <CheckBox x:Name="BpmWriteToFileCheck" Content="同时写入音频文件标签"
+                                                                  Margin="0,10,0,0"
+                                                                  Checked="OnBpmWriteToFileCheckChanged"
+                                                                  Unchecked="OnBpmWriteToFileCheckChanged"
+                                                                  AutomationProperties.AutomationId="BpmWriteToFileCheck" />
+                                                        <TextBlock x:Name="BpmFormatHintText" FontSize="11"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   TextWrapping="Wrap" Margin="22,4,0,0"
+                                                                   Visibility="Collapsed" />
+
+                                                        <TextBlock x:Name="BpmEditErrorText" FontSize="11"
+                                                                   Foreground="{DynamicResource DangerBrush}"
+                                                                   TextWrapping="Wrap" Margin="0,6,0,0"
+                                                                   Visibility="Collapsed" />
+
+                                                        <Grid Margin="0,12,0,0">
+                                                            <Button x:Name="BpmClearManualButton" Content="清除修正"
+                                                                    Style="{StaticResource FlatButton}"
+                                                                    Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                    HorizontalAlignment="Left" Padding="6,5"
+                                                                    Click="OnBpmClearManualClick"
+                                                                    Visibility="Collapsed" />
+                                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                <Button Content="取消" Style="{StaticResource FlatButton}"
+                                                                        Margin="0,0,6,0" Click="OnBpmCancelClick" />
+                                                                <Button x:Name="BpmSaveButton" Content="保存"
+                                                                        Style="{StaticResource AccentButton}"
+                                                                        Padding="14,5" Click="OnBpmSaveClick"
+                                                                        AutomationProperties.AutomationId="BpmSaveButton" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </StackPanel>
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </Popup>
                                         </StackPanel>
                                         <StackPanel Grid.Row="2" Grid.Column="2">
                                             <TextBlock Text="备注" Style="{StaticResource TagFieldLabel}" />

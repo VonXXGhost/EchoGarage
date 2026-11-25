@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using EchoGarage.Core.Abstractions;
 using EchoGarage.Core.Models;
+using EchoGarage.Core.Services;
 
 namespace EchoGarage.Infrastructure.Tagging;
 
@@ -84,7 +85,8 @@ public sealed class TagLibTagService : ITagService
             YearText = ReadYearText(file),
             BitsPerSample = properties is { BitsPerSample: > 0 } audioProperties
                 ? audioProperties.BitsPerSample
-                : null
+                : null,
+            Bpm = ReadBpm(file)
         };
     }
 
@@ -225,6 +227,13 @@ public sealed class TagLibTagService : ITagService
         }
 
         ApplyAdditionalTagChanges(file, edit.AdditionalTagChanges);
+
+        // ADR-034：仅当本次编辑显式改动了 BPM 时才写回，避免编辑其它字段时丢失原有小数或触发无谓修改。
+        if (edit.BpmChanged)
+        {
+            WriteBpm(file, path, edit.Bpm, edit.RoundId3BpmToInteger);
+        }
+
         file.Save();
     }
 
@@ -376,6 +385,141 @@ public sealed class TagLibTagService : ITagService
         return file.Tag?.Year is { } fallback && fallback > 0
             ? fallback.ToString(CultureInfo.InvariantCulture)
             : null;
+    }
+
+    /// <summary>
+    /// 跨格式读取标准 BPM 标签并尽量保留小数（ADR-034 / KB-021 §6）：
+    /// 直接从各容器原生帧读取文本解析 double（绕过 TagLib <c>uint</c> 截断），
+    /// Apple M4A/MP4 的二进制整型 <c>tmpo</c> atom 则走 <c>AppleTag.BeatsPerMinute</c>。
+    /// </summary>
+    private double? ReadBpm(TagLib.File file)
+    {
+        try
+        {
+            if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2)
+            {
+                var text = FirstNonEmpty(id3v2.GetTextAsString(
+                    TagLib.ByteVector.FromString("TBPM", TagLib.StringType.Latin1)));
+                if (BpmFormatter.TryParse(text, out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+            {
+                var text = FirstNonEmpty(xiph.GetField("BPM"));
+                if (text.Length == 0)
+                {
+                    text = FirstNonEmpty(xiph.GetField("TBPM"));
+                }
+
+                if (text.Length == 0)
+                {
+                    text = FirstNonEmpty(xiph.GetField("TEMPO"));
+                }
+
+                if (BpmFormatter.TryParse(text, out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            if (file.GetTag(TagLib.TagTypes.Apple) is TagLib.Mpeg4.AppleTag apple &&
+                apple.BeatsPerMinute is > 0 and var appleBpm &&
+                BpmFormatter.IsValid(appleBpm))
+            {
+                return appleBpm;
+            }
+
+            if (file.GetTag(TagLib.TagTypes.Asf) is TagLib.Asf.Tag asf)
+            {
+                var text = FirstNonEmpty(asf.GetDescriptorString("WM/BeatsPerMinute"));
+                if (BpmFormatter.TryParse(text, out var parsed))
+                {
+                    return parsed;
+                }
+
+                if (asf.BeatsPerMinute is > 0 and var asfBpm && BpmFormatter.IsValid(asfBpm))
+                {
+                    return asfBpm;
+                }
+            }
+
+            if (file.Tag?.BeatsPerMinute is > 0 and var genericBpm && BpmFormatter.IsValid(genericBpm))
+            {
+                return genericBpm;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Reading BPM tag failed: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 按音频格式写回标准 BPM 标签：FLAC/Xiph 与 ID3v2 支持 1 位小数（整拍写整数），
+    /// Apple M4A/MP4 的 <c>tmpo</c> atom 按规范以 16-bit 无符号整数写入；值为 null 或非法时清除标签。
+    /// </summary>
+    private static void WriteBpm(TagLib.File file, string path, double? bpm, bool roundId3ToInteger)
+    {
+        var hasValue = bpm is { } value && BpmFormatter.IsValid(value);
+        var validValue = hasValue ? bpm!.Value : 0.0;
+        var rawTag = file.GetTag(DefaultTagTypeFor(path), true);
+
+        switch (rawTag)
+        {
+            case TagLib.Mpeg4.AppleTag apple:
+                apple.BeatsPerMinute = hasValue ? BpmFormatter.ToIntegerTag(validValue) : 0u;
+                break;
+
+            case TagLib.Id3v2.Tag id3v2:
+                var tbpm = TagLib.ByteVector.FromString("TBPM", TagLib.StringType.Latin1);
+                if (hasValue)
+                {
+                    id3v2.SetTextFrame(tbpm, BpmFormatter.FormatTagText(validValue, roundId3ToInteger));
+                }
+                else
+                {
+                    id3v2.RemoveFrames(tbpm);
+                }
+
+                break;
+
+            case TagLib.Ogg.XiphComment xiph:
+                if (hasValue)
+                {
+                    xiph.SetField("BPM", [BpmFormatter.FormatTagText(validValue, roundToInteger: false)]);
+                }
+                else
+                {
+                    xiph.RemoveField("BPM");
+                }
+
+                break;
+
+            case TagLib.Asf.Tag asf:
+                if (hasValue)
+                {
+                    asf.SetDescriptorString(BpmFormatter.FormatTagText(validValue, roundToInteger: false), "WM/BeatsPerMinute");
+                }
+                else
+                {
+                    asf.RemoveDescriptors("WM/BeatsPerMinute");
+                }
+
+                break;
+
+            default:
+                if (file.Tag is not null)
+                {
+                    file.Tag.BeatsPerMinute = hasValue ? BpmFormatter.ToIntegerTag(validValue) : 0u;
+                }
+
+                break;
+        }
     }
 
     /// <summary>
@@ -874,7 +1018,7 @@ public sealed class TagLibTagService : ITagService
 
     private static readonly HashSet<string> KnownId3FrameIds = new(StringComparer.OrdinalIgnoreCase)
     {
-        "TIT2", "TPE1", "TPE2", "TALB", "TCOM", "TCON", "TYER", "TDRC", "TRCK", "TPOS", "COMM", "APIC", "USLT", "SYLT"
+        "TIT2", "TPE1", "TPE2", "TALB", "TCOM", "TCON", "TYER", "TDRC", "TRCK", "TPOS", "COMM", "APIC", "USLT", "SYLT", "TBPM"
     };
 
     private static readonly Dictionary<string, string> Id3FrameLabels = new(StringComparer.OrdinalIgnoreCase)
@@ -919,7 +1063,7 @@ public sealed class TagLibTagService : ITagService
     private static readonly HashSet<string> KnownXiphFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "TITLE", "ARTIST", "ALBUM", "ALBUMARTIST", "ALBUM ARTIST", "COMPOSER", "GENRE", "COMMENT",
-        "DATE", "YEAR", "TRACKNUMBER", "DISCNUMBER", "METADATA_BLOCK_PICTURE", "COVERART", "COVERARTMIME"
+        "DATE", "YEAR", "TRACKNUMBER", "DISCNUMBER", "BPM", "METADATA_BLOCK_PICTURE", "COVERART", "COVERARTMIME"
     };
 
     private static readonly Dictionary<string, string> XiphLabels = new(StringComparer.OrdinalIgnoreCase)
@@ -969,7 +1113,7 @@ public sealed class TagLibTagService : ITagService
 
     private static readonly HashSet<string> KnownAppleAtoms = new(StringComparer.OrdinalIgnoreCase)
     {
-        "©nam", "©ART", "©alb", "aART", "©wrt", "©gen", "gnre", "©cmt", "©day", "trkn", "disk", "covr"
+        "©nam", "©ART", "©alb", "aART", "©wrt", "©gen", "gnre", "©cmt", "©day", "trkn", "disk", "covr", "tmpo"
     };
 
     private static readonly Dictionary<string, string> AppleAtomLabels = new(StringComparer.OrdinalIgnoreCase)
@@ -997,7 +1141,7 @@ public sealed class TagLibTagService : ITagService
     private static readonly HashSet<string> KnownAsfNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "Title", "Author", "Description", "WM/AlbumTitle", "WM/AlbumArtist", "WM/Composer",
-        "WM/Genre", "WM/Year", "WM/TrackNumber", "WM/PartOfSet", "WM/Picture"
+        "WM/Genre", "WM/Year", "WM/TrackNumber", "WM/PartOfSet", "WM/Picture", "WM/BeatsPerMinute"
     };
 
     private static TagLib.TagTypes DefaultTagTypeFor(string path) =>

@@ -558,6 +558,7 @@
                                         <ContextMenu x:Name="ClearCacheMenu" Opened="OnClearCacheMenuOpened">
                                             <MenuItem x:Name="ClearCoverCacheItem" Header="清空封面缓存" Click="OnClearCoverCache" />
                                             <MenuItem x:Name="ClearWaveformCacheItem" Header="清空波形缓存" Click="OnClearWaveformCache" />
+                                            <MenuItem x:Name="ClearBpmCacheItem" Header="清空 BPM 测量缓存" Click="OnClearBpmCache" />
                                             <Separator />
                                             <MenuItem x:Name="ClearAllCachesItem" Header="清空全部缓存" Click="OnClearAllCaches" />
                                         </ContextMenu>
@@ -668,6 +669,100 @@
                             <TextBlock Text="仅影响「响度调整」窗口打开时的目标初始值，默认 -10.0 LUFS；实际调整仍以窗口内输入为准。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                        Margin="90,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- BPM measurement (ADR-034) -->
+                    <TextBlock Text="BPM 测量" Style="{StaticResource SectionLabel}" Margin="0,18,0,8" />
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="108" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="识别模型" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="BpmModelBox" Grid.Column="1" HorizontalAlignment="Left" MinWidth="240"
+                                          SelectionChanged="OnBpmModelChanged">
+                                    <ComboBoxItem Content="内置紧凑模型 (small0 · 约 10.5 MB)" Tag="Small0" />
+                                    <ComboBoxItem Content="高精度主模型 (final0 · 约 80 MB，需自装)" Tag="Final0" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock x:Name="BpmModelStatusText" Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap" Margin="108,6,0,0" />
+
+                            <!-- final0 下载与安装指引 -->
+                            <Border Margin="0,10,0,0" Padding="11,9" CornerRadius="5"
+                                    Background="{DynamicResource PanelAltBackgroundBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="可选高精度模型（beat_this_final0.onnx）安装指引"
+                                               FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock x:Name="BpmFinal0GuideText" FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Button Content="打开模型目录" Style="{StaticResource FlatButton}"
+                                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                Padding="9,4" Margin="0,0,6,4" Click="OnOpenBpmModelsFolder" />
+                                        <Button Content="重新检测" Style="{StaticResource FlatButton}"
+                                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                Padding="9,4" Margin="0,0,6,4" Click="OnRedetectBpmModels" />
+                                        <Button Content="打开下载页" Style="{StaticResource FlatButton}"
+                                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                Padding="9,4" Margin="0,0,6,4" Click="OnOpenBpmDownloadPage" />
+                                        <Button Content="复制下载链接" Style="{StaticResource FlatButton}"
+                                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                Padding="9,4" Margin="0,0,0,4" Click="OnCopyBpmDownloadUrl" />
+                                    </WrapPanel>
+                                    <TextBlock x:Name="BpmGuideFeedbackText" FontSize="11"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed" />
+                                </StackPanel>
+                            </Border>
+
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="108" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="显示精度" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="BpmDecimalPlacesBox" Grid.Column="1" HorizontalAlignment="Left" Width="170"
+                                          SelectionChanged="OnBpmSettingsChanged">
+                                    <ComboBoxItem Content="1 位小数（默认，128.0）" Tag="1" />
+                                    <ComboBoxItem Content="整数（128）" Tag="0" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="108" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="显存释放" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ComboBox x:Name="BpmIdleUnloadBox" Grid.Column="1" HorizontalAlignment="Left" Width="190"
+                                          SelectionChanged="OnBpmSettingsChanged">
+                                    <ComboBoxItem Content="测完立即释放" Tag="0" />
+                                    <ComboBoxItem Content="空闲 30 秒后释放" Tag="30" />
+                                    <ComboBoxItem Content="空闲 60 秒后释放（默认）" Tag="60" />
+                                    <ComboBoxItem Content="空闲 5 分钟后释放" Tag="300" />
+                                </ComboBox>
+                            </Grid>
+
+                            <CheckBox x:Name="BpmUseGpuCheck" Content="优先使用 DirectML GPU 加速（不可用时自动回退 CPU）"
+                                      Margin="0,12,0,0" Checked="OnBpmRuntimeChanged" Unchecked="OnBpmRuntimeChanged" />
+                            <CheckBox x:Name="BpmWriteToFileDefaultCheck" Content="手动修正 BPM 时默认勾选「同时写入音频文件标签」"
+                                      Margin="0,8,0,0" Checked="OnBpmSettingsChanged" Unchecked="OnBpmSettingsChanged" />
+                            <CheckBox x:Name="BpmRoundId3Check" Content="写入 ID3v2 (MP3 / WAV) TBPM 时强制取整（兼容老式硬件播放器）"
+                                      Margin="0,8,0,0" Checked="OnBpmSettingsChanged" Unchecked="OnBpmSettingsChanged" />
+                            <TextBlock Text="推理引擎仅在点击「♩ BPM 测量」时按需加载，不占用平时启动时间与待机内存；默认仅写入软件本地缓存，不会自动修改音频文件。"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                       Margin="0,8,0,0" />
                         </StackPanel>
                     </Border>
 

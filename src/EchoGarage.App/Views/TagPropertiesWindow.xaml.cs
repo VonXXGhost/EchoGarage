@@ -39,6 +39,7 @@ public partial class TagPropertiesWindow : ThemedWindow
         (TagFieldKeys.Year, "年份"),
         (TagFieldKeys.TrackNumber, "音轨号"),
         (TagFieldKeys.DiscNumber, "碟片号"),
+        (TagFieldKeys.Bpm, "BPM"),
         (TagFieldKeys.Comment, "备注")
     ];
 
@@ -1005,6 +1006,27 @@ public partial class TagPropertiesWindow : ThemedWindow
 
     private void OnOk(object sender, RoutedEventArgs e)
     {
+        var bpmEditor = _editors.FirstOrDefault(editor => editor.Key == TagFieldKeys.Bpm);
+        if (bpmEditor is not null)
+        {
+            var bpmText = bpmEditor.TextBox.Text.Trim();
+            if (bpmText != bpmEditor.InitialText &&
+                bpmText != MultiValueText &&
+                !string.IsNullOrEmpty(bpmText) &&
+                !BpmFormatter.TryParse(bpmText, out _))
+            {
+                MessageBox.Show(
+                    this,
+                    $"BPM 必须是 {BpmFormatter.MinBpm:0}–{BpmFormatter.MaxBpm:0} 之间的数字（或留空以清除）。",
+                    "EchoGarage",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                bpmEditor.TextBox.Focus();
+                bpmEditor.TextBox.SelectAll();
+                return;
+            }
+        }
+
         if (!ConfirmCoverRecompression())
         {
             // 用户在“是否再压一次封面”里选择了取消：留在属性页继续编辑，不保存。

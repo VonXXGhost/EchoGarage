@@ -57,6 +57,7 @@ public partial class SettingsWindow : ThemedWindow
     private bool _loadingCache;
     private bool _loadingWebSettings;
     private bool _loadingVisualizer;
+    private bool _loadingBpmSettings;
 
     public SettingsWindow(AppHost host, MainViewModel vm)
     {
@@ -91,6 +92,7 @@ public partial class SettingsWindow : ThemedWindow
         PopulateHotkeys();
         PopulateEncoders();
         PopulateLoudnessSettings();
+        PopulateBpmSettings();
         UpdateAssociationStatus();
         PopulateWebTagSettings();
         PopulateVisualizer();
@@ -464,6 +466,155 @@ public partial class SettingsWindow : ThemedWindow
 
         _host.Settings.Current.LoudnessDefaultTargetLufs = value;
         SaveSettings();
+    }
+
+    // =====================================================================
+    // BPM measurement & model guidance (ADR-034)
+    // =====================================================================
+
+    private void PopulateBpmSettings()
+    {
+        _loadingBpmSettings = true;
+        try
+        {
+            var bpm = BpmSettings.Normalize(_host.Settings.Current.Bpm);
+            _host.Settings.Current.Bpm = bpm;
+            SelectComboTag(BpmModelBox, bpm.PreferredModel.ToString());
+            SelectComboTag(BpmDecimalPlacesBox, bpm.DecimalPlaces.ToString(CultureInfo.InvariantCulture));
+            SelectComboNearest(BpmIdleUnloadBox, bpm.IdleUnloadSeconds);
+            BpmUseGpuCheck.IsChecked = bpm.UseGpuAcceleration;
+            BpmWriteToFileDefaultCheck.IsChecked = bpm.WriteToFileByDefault;
+            BpmRoundId3Check.IsChecked = bpm.RoundId3BpmToInteger;
+            BpmFinal0GuideText.Text =
+                $"1. 从社区 MIT 镜像下载 {BpmFormatter.Final0FileName}（约 80 MB，SHA-256 前缀 {BpmFormatter.Final0ExpectedSha256[..12]}…）；\n" +
+                $"2. 将文件放入：{_host.Paths.ModelsDirectory}\n" +
+                $"3. 点击「重新检测」并将上方识别模型切到 final0 即可生效（无需重启）。";
+            BpmGuideFeedbackText.Visibility = Visibility.Collapsed;
+            RefreshBpmModelStatus();
+        }
+        finally
+        {
+            _loadingBpmSettings = false;
+        }
+    }
+
+    private void RefreshBpmModelStatus()
+    {
+        var status = _host.Bpm.GetModelStatus();
+        var smallState = status.Small0.Installed ? "已内置就绪" : "缺失（请检查 tools\\models）";
+        var finalState = status.Final0.Installed ? "已安装就绪" : "未安装（将自动回退内置 small0）";
+        var activeName = status.EffectiveModel == BpmModelKind.Final0 ? "final0" : "small0";
+        BpmModelStatusText.Text =
+            $"内置 small0：{smallState} · 可选 final0：{finalState} · 当前实际生效：{activeName}。";
+    }
+
+    private void OnBpmModelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingBpmSettings)
+        {
+            return;
+        }
+
+        var bpm = _host.Settings.Current.Bpm;
+        bpm.PreferredModel = ReadEnumTag(BpmModelBox, BpmModelKind.Small0);
+        SaveSettings();
+        _host.Bpm.UnloadRuntime();
+        RefreshBpmModelStatus();
+        var status = _host.Bpm.GetModelStatus();
+        if (bpm.PreferredModel == BpmModelKind.Final0 && !status.Final0.Installed)
+        {
+            ShowBpmGuideFeedback("尚未检测到 beat_this_final0.onnx：按下方指引放入模型目录并点「重新检测」前，测量会自动使用内置 small0。");
+        }
+        else
+        {
+            BpmGuideFeedbackText.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OnBpmRuntimeChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingBpmSettings)
+        {
+            return;
+        }
+
+        _host.Settings.Current.Bpm.UseGpuAcceleration = BpmUseGpuCheck.IsChecked == true;
+        SaveSettings();
+        _host.Bpm.UnloadRuntime();
+    }
+
+    private void OnBpmSettingsChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingBpmSettings)
+        {
+            return;
+        }
+
+        var bpm = _host.Settings.Current.Bpm;
+        bpm.DecimalPlaces = ReadIntTag(BpmDecimalPlacesBox, 1);
+        bpm.IdleUnloadSeconds = ReadIntTag(BpmIdleUnloadBox, 60);
+        bpm.WriteToFileByDefault = BpmWriteToFileDefaultCheck.IsChecked == true;
+        bpm.RoundId3BpmToInteger = BpmRoundId3Check.IsChecked == true;
+        BpmSettings.Normalize(bpm);
+        SaveSettings();
+        _vm.RefreshNowPlayingBpmDisplay();
+    }
+
+    private void OnOpenBpmModelsFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(_host.Paths.ModelsDirectory);
+            OpenFolder(_host.Paths.ModelsDirectory);
+        }
+        catch (Exception ex)
+        {
+            ShowBpmGuideFeedback($"无法创建或打开模型目录：{ex.Message}");
+        }
+    }
+
+    private void OnRedetectBpmModels(object sender, RoutedEventArgs e)
+    {
+        _host.Bpm.UnloadRuntime();
+        RefreshBpmModelStatus();
+        var status = _host.Bpm.GetModelStatus();
+        ShowBpmGuideFeedback(status.Final0.Installed
+            ? $"已检测到 {BpmFormatter.Final0FileName}（{status.Final0.ResolvedPath}）。"
+            : $"未在 {_host.Paths.ModelsDirectory} 中检测到有效的 {BpmFormatter.Final0FileName}。");
+    }
+
+    private void OnOpenBpmDownloadPage(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(BpmFormatter.ModelRepoUrl)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowBpmGuideFeedback($"无法打开浏览器：{ex.Message}");
+        }
+    }
+
+    private void OnCopyBpmDownloadUrl(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(BpmFormatter.Final0DownloadUrl);
+            ShowBpmGuideFeedback($"已复制下载链接：{BpmFormatter.Final0DownloadUrl}");
+        }
+        catch (Exception ex)
+        {
+            ShowBpmGuideFeedback($"复制链接失败：{ex.Message}");
+        }
+    }
+
+    private void ShowBpmGuideFeedback(string message)
+    {
+        BpmGuideFeedbackText.Text = message;
+        BpmGuideFeedbackText.Visibility = Visibility.Visible;
     }
 
     private void OnRefreshDevices(object sender, RoutedEventArgs e) => _vm.RefreshDevices();
@@ -859,6 +1010,7 @@ public partial class SettingsWindow : ThemedWindow
         await ClearCacheAsync(
             cover: true,
             waveform: false,
+            bpm: false,
             prompt: "清空封面缓存",
             detail: "删除后滚动列表时会重新解码并写入新的封面缓存。",
             done: "封面缓存已清空，滚动列表时会重新生成。");
@@ -869,9 +1021,21 @@ public partial class SettingsWindow : ThemedWindow
         await ClearCacheAsync(
             cover: false,
             waveform: true,
+            bpm: false,
             prompt: "清空波形缓存",
             detail: "删除后再次播放歌曲时会重新分析波形（每首约 0.3–1 秒后台任务）。",
             done: "波形缓存已清空，重新播放时会重新分析。");
+    }
+
+    private async void OnClearBpmCache(object sender, RoutedEventArgs e)
+    {
+        await ClearCacheAsync(
+            cover: false,
+            waveform: false,
+            bpm: true,
+            prompt: "清空 BPM 测量缓存",
+            detail: "仅删除算法自动测量的 BPM 缓存，你手动修正过的 BPM 记录会完整保留。",
+            done: "BPM 测量缓存已清空（手动修正记录已保留）。");
     }
 
     private async void OnClearAllCaches(object sender, RoutedEventArgs e)
@@ -879,21 +1043,35 @@ public partial class SettingsWindow : ThemedWindow
         await ClearCacheAsync(
             cover: true,
             waveform: true,
+            bpm: true,
             prompt: "清空全部缓存",
-            detail: "封面与波形缓存都会被删除，随后按需重新生成。媒体库与设置不受影响。",
-            done: "封面与波形缓存已清空。");
+            detail: "封面、波形及 BPM 自动测量缓存都会被清空；手动修正过的 BPM、媒体库与设置不受影响。",
+            done: "封面、波形与 BPM 测量缓存已清空。");
     }
 
-    private async Task ClearCacheAsync(bool cover, bool waveform, string prompt, string detail, string done)
+    private async Task ClearCacheAsync(bool cover, bool waveform, bool bpm, string prompt, string detail, string done)
     {
-        if (!EnsureCacheDirectoryApplied())
+        if ((cover || waveform) && !EnsureCacheDirectoryApplied())
         {
             return;
         }
 
         var (coverFiles, waveformFiles) = CountCacheFiles();
-        var count = (cover ? coverFiles : 0) + (waveform ? waveformFiles : 0);
-        if (MessageBox.Show(this, $"{prompt}（{count} 个文件）？\n\n{detail}", "EchoGarage",
+        var bpmStats = bpm ? await _host.Bpm.GetCacheStatsAsync() : new BpmCacheStats(0, 0, 0);
+        var summaryParts = new List<string>();
+        if (cover || waveform)
+        {
+            var fileCount = (cover ? coverFiles : 0) + (waveform ? waveformFiles : 0);
+            summaryParts.Add($"{fileCount} 个文件");
+        }
+
+        if (bpm)
+        {
+            summaryParts.Add($"{bpmStats.MeasuredCount} 条 BPM 测量记录");
+        }
+
+        var countText = string.Join("，", summaryParts);
+        if (MessageBox.Show(this, $"{prompt}（{countText}）？\n\n{detail}", "EchoGarage",
                 MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
         {
             return;
@@ -912,6 +1090,12 @@ public partial class SettingsWindow : ThemedWindow
                 await _host.WaveformCache.ClearAsync();
                 // 正在播放的曲目立即重算，避免进度区空白到下次切歌。
                 _vm.StartWaveformLoad(_vm.CurrentRow?.Track.Path);
+            }
+
+            if (bpm)
+            {
+                await _host.Bpm.ClearMeasuredCacheAsync();
+                _vm.RefreshNowPlayingBpmDisplay(reloadFromStore: true);
             }
 
             CacheStatusText.Text = done;
@@ -945,13 +1129,25 @@ public partial class SettingsWindow : ThemedWindow
         }
     }
 
-    private void OnClearCacheMenuOpened(object sender, RoutedEventArgs e)
+    private async void OnClearCacheMenuOpened(object sender, RoutedEventArgs e)
     {
-        // 只在菜单真正打开时枚举目录，设置页打开本身不做任何磁盘 IO。
+        // 只在菜单真正打开时枚举目录与查询统计，设置页打开本身不做任何磁盘 IO。
         var (coverFiles, waveformFiles) = CountCacheFiles();
+        var bpmMeasured = 0;
+        try
+        {
+            var stats = await _host.Bpm.GetCacheStatsAsync();
+            bpmMeasured = stats.MeasuredCount;
+        }
+        catch (Exception ex)
+        {
+            _host.Logger.Debug($"BPM cache count failed: {ex.Message}");
+        }
+
         ClearCoverCacheItem.Header = $"清空封面缓存（{coverFiles} 个文件）";
         ClearWaveformCacheItem.Header = $"清空波形缓存（{waveformFiles} 个文件）";
-        ClearAllCachesItem.Header = $"清空全部缓存（{coverFiles + waveformFiles} 个文件）";
+        ClearBpmCacheItem.Header = $"清空 BPM 测量缓存（{bpmMeasured} 条记录）";
+        ClearAllCachesItem.Header = $"清空全部缓存（{coverFiles + waveformFiles} 个文件，{bpmMeasured} 条 BPM）";
     }
 
     private (int Covers, int Waveforms) CountCacheFiles()

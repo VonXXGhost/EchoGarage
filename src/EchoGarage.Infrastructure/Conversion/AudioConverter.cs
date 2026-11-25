@@ -419,6 +419,8 @@ public sealed class AudioConverter : IAudioConverter
             YearChanged = true,
             TrackNumber = tags.TrackNumber,
             DiscNumber = tags.DiscNumber,
+            Bpm = tags.Bpm,
+            BpmChanged = tags.Bpm.HasValue,
             NewCoverBytes = copyCover ? tags.CoverBytes : null,
             NewCoverMime = copyCover ? tags.CoverMime : null,
             RemoveCover = false

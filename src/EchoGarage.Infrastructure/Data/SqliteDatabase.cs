@@ -71,6 +71,18 @@ public sealed class SqliteDatabase
         if (version < 4)
         {
             await MigrateToVersion4Async(connection, cancellationToken);
+            version = 4;
+        }
+
+        if (version < 5)
+        {
+            await MigrateToVersion5Async(connection, cancellationToken);
+            version = 5;
+        }
+
+        if (version < 6)
+        {
+            await MigrateToVersion6Async(connection, cancellationToken);
         }
     }
 
@@ -193,6 +205,45 @@ public sealed class SqliteDatabase
             PRAGMA user_version = 4;
             """, cancellationToken: cancellationToken));
         _logger.Info("SQLite schema migrated to version 4 (metadata repair for legacy Apple track numbers).");
+    }
+
+    private async Task MigrateToVersion5Async(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // ADR-034：新增独立 BPM 缓存表 track_bpm_cache，存放算法自动测量缓存（可清理）与
+        // 用户未写文件的手动修正（软件侧状态，受清空缓存保护）。不改动 tracks 表、不触发全库重扫。
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition("""
+            CREATE TABLE IF NOT EXISTS track_bpm_cache (
+                Path TEXT NOT NULL COLLATE NOCASE PRIMARY KEY,
+                FileSize INTEGER NOT NULL,
+                ModifiedAtUtc TEXT NOT NULL,
+                DurationMs INTEGER NOT NULL,
+                MeasuredBpm REAL NULL,
+                Confidence REAL NULL,
+                IsVariableTempo INTEGER NOT NULL DEFAULT 0,
+                CandidatesJson TEXT NULL,
+                AnalyzerId TEXT NULL,
+                AnalyzerVersion INTEGER NOT NULL DEFAULT 0,
+                ManualBpm REAL NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            PRAGMA user_version = 5;
+            """, transaction: transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        _logger.Info("SQLite schema migrated to version 5 (track_bpm_cache).");
+    }
+
+    private async Task MigrateToVersion6Async(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // ADR-034 增补：track_bpm_cache 新增变速曲目分段速度明细（2–5 段）与检出段数（>5 时隐藏明细并提示）。
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition("""
+            ALTER TABLE track_bpm_cache ADD COLUMN SegmentsJson TEXT NULL;
+            ALTER TABLE track_bpm_cache ADD COLUMN DetectedSegmentCount INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 6;
+            """, transaction: transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        _logger.Info("SQLite schema migrated to version 6 (track_bpm_cache segments).");
     }
 
     public async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)

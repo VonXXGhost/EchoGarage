@@ -235,6 +235,14 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         await connection.ExecuteAsync(new CommandDefinition(
             "UPDATE playlist_items SET TrackPath = @newNormalized WHERE TrackPath = @oldNormalized;",
             new { newNormalized, oldNormalized }, transaction, cancellationToken: cancellationToken));
+        // ADR-034：同步迁移 BPM 缓存路径；仅当源路径存在缓存时才替换目标路径旧行，避免空源冲掉目标。
+        await connection.ExecuteAsync(new CommandDefinition("""
+            DELETE FROM track_bpm_cache
+            WHERE Path = @newNormalized AND Path <> @oldNormalized
+              AND EXISTS (SELECT 1 FROM track_bpm_cache WHERE Path = @oldNormalized);
+            UPDATE track_bpm_cache SET Path = @newNormalized WHERE Path = @oldNormalized;
+            """,
+            new { newNormalized, oldNormalized }, transaction, cancellationToken: cancellationToken));
         await transaction.CommitAsync(cancellationToken);
         _logger.Debug($"Track path updated {oldNormalized} -> {newNormalized} (folderId={(folderId?.ToString() ?? "null")})");
     }

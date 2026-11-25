@@ -13,6 +13,7 @@ public static class TagFieldKeys
     public const string TrackNumber = "track";
     public const string DiscNumber = "disc";
     public const string Comment = "comment";
+    public const string Bpm = "bpm";
 }
 
 /// <summary>
@@ -50,7 +51,8 @@ public static class TagBatchEditor
             [TagFieldKeys.Year] = tag.Year is > 0 ? tag.Year.Value.ToString() : string.Empty,
             [TagFieldKeys.TrackNumber] = tag.TrackNumber > 0 ? tag.TrackNumber.ToString() : string.Empty,
             [TagFieldKeys.DiscNumber] = tag.DiscNumber > 0 ? tag.DiscNumber.ToString() : string.Empty,
-            [TagFieldKeys.Comment] = tag.Comment
+            [TagFieldKeys.Comment] = tag.Comment,
+            [TagFieldKeys.Bpm] = Services.BpmFormatter.FormatInput(tag.Bpm)
         };
 
     /// <summary>
@@ -72,7 +74,9 @@ public static class TagBatchEditor
             YearText = source.YearText,
             YearChanged = false,
             TrackNumber = source.TrackNumber,
-            DiscNumber = source.DiscNumber
+            DiscNumber = source.DiscNumber,
+            Bpm = source.Bpm,
+            BpmChanged = false
         };
 
         if (edit.Fields.TryGetValue(TagFieldKeys.Title, out var title)) model.Title = title;
@@ -92,6 +96,11 @@ public static class TagBatchEditor
         }
         if (edit.Fields.TryGetValue(TagFieldKeys.TrackNumber, out var track)) model.TrackNumber = ParseInt(track);
         if (edit.Fields.TryGetValue(TagFieldKeys.DiscNumber, out var disc)) model.DiscNumber = ParseInt(disc);
+        if (edit.Fields.TryGetValue(TagFieldKeys.Bpm, out var bpmText))
+        {
+            model.BpmChanged = true;
+            model.Bpm = Services.BpmFormatter.TryParse(bpmText, out var parsedBpm) ? parsedBpm : null;
+        }
 
         if (edit.CoverChanged)
         {
