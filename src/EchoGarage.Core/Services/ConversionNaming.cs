@@ -156,6 +156,13 @@ public static class ConversionNaming
         var builder = new StringBuilder(segment.Length);
         foreach (var ch in segment)
         {
+            if (ch == '*')
+            {
+                // 通配符按惯例写成 x（"a*b" → "axb"）；其余非法字符仍替换成下划线。
+                builder.Append('x');
+                continue;
+            }
+
             if (char.IsControl(ch) || InvalidFileNameChars.Contains(ch))
             {
                 builder.Append('_');

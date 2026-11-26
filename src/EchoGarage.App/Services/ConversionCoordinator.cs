@@ -19,6 +19,7 @@ public sealed class ConversionCoordinator
     private readonly IDialogService _dialogs;
     private readonly Window _owner;
     private bool _running;
+    private ConversionProgressWindow? _window;
 
     public ConversionCoordinator(AppHost host, MainViewModel vm, IDialogService dialogs, Window owner)
     {
@@ -32,6 +33,8 @@ public sealed class ConversionCoordinator
     {
         if (_running)
         {
+            // 同一时间只允许一个批次；重复触发时把已经在跑的进度窗口带到前台。
+            _window?.Activate();
             return;
         }
 
@@ -82,13 +85,33 @@ public sealed class ConversionCoordinator
             return;
         }
 
+        CloseCompletedWindow();
+
         _running = true;
         using var cancellation = new CancellationTokenSource();
-        var window = new ConversionProgressWindow(preset.Name, items.Count) { Owner = _owner };
+
+        var rows = new List<ConversionResultRowViewModel>(plan.Items.Count);
+        var rowsByItem = new Dictionary<ConversionPlanItem, ConversionResultRowViewModel>();
+        foreach (var planItem in plan.Items)
+        {
+            var row = new ConversionResultRowViewModel(planItem);
+            rows.Add(row);
+            rowsByItem[planItem] = row;
+        }
+
+        var window = new ConversionProgressWindow(preset.Name, rows) { Owner = _owner };
         window.CancelRequested += (_, _) => cancellation.Cancel();
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_window, window))
+            {
+                _window = null;
+            }
+        };
+        _window = window;
         window.Show();
 
-        var results = new List<ConversionResult>(items.Count);
+        var results = new List<(ConversionPlanItem Item, ConversionResult Result)>(items.Count);
         var cancelled = false;
         try
         {
@@ -102,6 +125,8 @@ public sealed class ConversionCoordinator
 
                 var item = items[index];
                 var currentIndex = index;
+                rowsByItem[item].MarkRunning();
+
                 var progress = new Progress<ConversionProgress>(report =>
                     window.Report(currentIndex, items.Count, Path.GetFileName(item.Track.Path),
                         report.Stage, report.Fraction, report.Detail));
@@ -113,7 +138,8 @@ public sealed class ConversionCoordinator
                     new ConversionRequest(item.Track.Path, item.OutputPath, itemPreset, _host.Settings.Current.Encoders),
                     progress,
                     cancellation.Token);
-                results.Add(result);
+                results.Add((item, result));
+                rowsByItem[item].ApplyResult(result);
 
                 if (cancellation.IsCancellationRequested)
                 {
@@ -128,11 +154,33 @@ public sealed class ConversionCoordinator
         }
         finally
         {
-            window.Complete();
+            if (cancelled)
+            {
+                foreach (var pendingRow in rows.Where(pendingRow => pendingRow.IsPending))
+                {
+                    pendingRow.MarkCancelled();
+                }
+            }
+
             _running = false;
         }
 
-        ReportSummary(preset, items.Count, results, plan, cancelled);
+        ReportSummary(window, preset, results, plan, cancelled);
+    }
+
+    /// <summary>
+    /// 批次结束后的结果窗口保持打开供查看；下一次转换开始前先关掉上一批的结果窗口，避免窗口堆叠。
+    /// </summary>
+    private void CloseCompletedWindow()
+    {
+        var window = _window;
+        if (window is null || window.IsRunning)
+        {
+            return;
+        }
+
+        _window = null;
+        window.Close();
     }
 
     /// <summary>
@@ -235,46 +283,52 @@ public sealed class ConversionCoordinator
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 批次结束后把结果写进窗口列表与状态栏。不再弹出完成提示：成功 / 跳过 / 失败
+    /// 与失败原因都留在 <see cref="ConversionProgressWindow"/> 的列表里。
+    /// </summary>
     private void ReportSummary(
+        ConversionProgressWindow window,
         ConversionPreset preset,
-        int total,
-        IReadOnlyList<ConversionResult> results,
+        IReadOnlyList<(ConversionPlanItem Item, ConversionResult Result)> results,
         ConversionPlan plan,
         bool cancelled)
     {
-        var succeeded = results.Count(result => result.Success);
-        var failed = results.Where(result => !result.Success && !result.Skipped).ToList();
-        var skipped = plan.Items.Count(item => item.Skipped) + results.Count(result => result.Skipped);
+        var succeeded = results.Count(entry => entry.Result.Success);
+        var failed = results.Count(entry => !entry.Result.Success && !entry.Result.Skipped);
+        var skipped = plan.Items.Count(item => item.Skipped) + results.Count(entry => entry.Result.Skipped);
 
-        if (cancelled)
-        {
-            _vm.SetStatus($"转换已取消：成功 {succeeded} 个，失败 {failed.Count} 个，跳过 {skipped} 个。");
-            return;
-        }
-
-        if (failed.Count > 0)
-        {
-            var details = string.Join(Environment.NewLine, failed
-                .Take(5)
-                .Select(result => $"{Path.GetFileName(result.OutputPath ?? string.Empty)}：{result.Error}"));
-            if (failed.Count > 5)
-            {
-                details += Environment.NewLine + $"……共 {failed.Count} 个失败";
-            }
-
-            _dialogs.Error($"使用预设“{preset.Name}”转换完成，{failed.Count} 个文件失败。{Environment.NewLine}{Environment.NewLine}{details}");
-            _vm.SetStatus($"转换完成：成功 {succeeded} 个，失败 {failed.Count} 个，跳过 {skipped} 个。");
-            return;
-        }
-
-        _vm.SetStatus($"转换完成：成功 {succeeded} 个，跳过 {skipped} 个。");
+        // 只列出非零项：全成功时不再出现“失败 0 个 / 跳过 0 个”的噪音。
+        var parts = new List<string>(3);
         if (succeeded > 0)
         {
-            _dialogs.Info($"使用预设“{preset.Name}”转换完成，共 {succeeded} 个文件。");
+            parts.Add($"成功 {succeeded} 个");
         }
-        else
+
+        if (failed > 0)
         {
-            _dialogs.Info("没有文件被转换。");
+            parts.Add($"失败 {failed} 个");
         }
+
+        if (skipped > 0)
+        {
+            parts.Add($"跳过 {skipped} 个");
+        }
+
+        var detail = parts.Count == 0 ? "没有文件被转换" : string.Join("，", parts);
+        var summary = cancelled ? $"已取消 · {detail}。" : $"{detail}。";
+
+        var hint = cancelled
+            ? "未转换的文件保持原样，可重新选择后再次转换。"
+            : failed > 0
+                ? $"预设“{preset.Name}”的结果如上，失败原因见「状态」列。"
+                : succeeded > 0
+                    ? $"预设“{preset.Name}”的结果如上，输出文件已写入目标位置。"
+                    : "没有文件被转换。";
+
+        _host.Logger.Info(
+            $"Conversion batch finished: preset={preset.Name}, succeeded={succeeded}, failed={failed}, skipped={skipped}, cancelled={cancelled}.");
+        _vm.SetStatus(cancelled ? $"转换已取消：{detail}。" : $"转换完成：{detail}。");
+        window.Complete(summary, hint, cancelled);
     }
 }

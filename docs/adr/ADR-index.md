@@ -26,7 +26,7 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 | [ADR-014](ADR-014-cache-repair-migrations.md) | 缓存修复迁移：schema v3 回填作曲家 / schema v4 Apple 音轨号自愈 | Accepted | 2026-11-14（2026-11-18 并入 schema v4，原 ADR-029） | 统一以 `DurationMs <= 0` = 缓存失效：schema v3 把 `FolderId IS NOT NULL` 的旧行清零回填 Composer；schema v4 把 `.m4a/.mp4/.m4b` 且 `TrackNumber = 0` 的行清零，重读旧式 Apple 音轨号 |
 | [ADR-015](ADR-015-waveform-seekbar.md) | 播放进度条的波形视图（Waveform Seek Bar） | Accepted | 2026-11-14（2026-11-16 并入原 ADR-015-A1 / A2；2026-11-21 修订几何与已播放区绘制） | 进度条可切整曲三频段波形：三层堆叠、动态范围窗口只向下放宽（`MinimumStretchDb` 30 dB）、已播放区 26% 观感（单遍绘制 + 轨道底色覆盖）、每频段一条阶梯折线 `StreamGeometry`、50 列/秒 EGWV 缓存 + LRU、点击 / 拖动跳转 |
 | [ADR-016](ADR-016-search-hotkeys-playback-mode.md) | 列表搜索、可配置与全局快捷键、播放模式、年份原文显示、媒体键、播放列表管理与单曲循环 | Accepted | 2026-11-14（2026-11-19 并入原 ADR-026；2026-11-24 批准修订 A1） | 列宽拖拽即时落盘；内联搜索 + Ctrl+F 高级搜索；快捷键可配置且可选全局注册；播放模式三态（顺序 / 随机 / 单曲循环）；年份保留原文 `YearText`（不落库）；媒体键默认控制播放；媒体库 / 播放列表导航右键管理；标点键与小键盘运算符可绑定；音量 ±5% 快捷键与滚轮共用步进 |
-| [ADR-017](ADR-017-audio-conversion.md) | 音频转换（编码转换） | Accepted | 2026-11-14（2026-11-19 由 ADR-028 修订） | 预设驱动的转换器：格式 / 输出位置 / 文件名模板 / 高质量重采样 / 标签复制，右键与快捷键触发；响度增益与 SSRC 延迟补偿见 ADR-028 |
+| [ADR-017](ADR-017-audio-conversion.md) | 音频转换（编码转换） | Accepted | 2026-11-14（2026-11-19 由 ADR-028 修订；2026-11-27 修订文件名清洗与结果窗口） | 预设驱动的转换器：格式 / 输出位置 / 文件名模板 / 高质量重采样 / 标签复制，右键与快捷键触发；响度增益与 SSRC 延迟补偿见 ADR-028；`*` 清洗为 `x`，完成 / 取消提示并入进度窗口结果列表 |
 | [ADR-018](ADR-018-track-metadata-refresh.md) | 播放列表外部文件的标签缓存刷新策略 | Accepted | 2026-11-14 | 外部文件缓存行按 `FileSize` + `ModifiedAtUtc` 比对，窗口激活 / 切换来源时后台刷新标签，不阻塞列表加载 |
 | [ADR-019](ADR-019-tag-editor-and-cover-conversion.md) | 标签编辑页重设计、额外标签展示、封面 JPG 转换与多文件批量编辑 | Accepted | 2026-11-14（2026-11-15 修订） | `#` 列显示「碟片号.音轨号」；标签编辑改两列表格 + 其他标签可编辑；封面可转 JPG 并限制最大边长；支持多文件批量编辑 |
 | [ADR-020](ADR-020-playing-file-write-lock.md) | 播放中文件的标签写入（共享句柄 + 临时副本原子替换） | Accepted | 2026-11-14 | 播放器共享句柄 + 写标签时临时副本 `File.Replace` 原子替换，播放中改标签不再中断播放 |
@@ -81,3 +81,4 @@ EchoGarage 的每个重要取舍都记录在这里。ADR 一经批准即生效�
 - 2026-11-24：批准 ADR-016 修订 A1（标点键捕获与音量 ±5% 快捷键）；已并入 ADR-016 §5.1 / §5.2 / §5.4，提案文件已删除。
 - 2026-11-25：批准 ADR-034（「正在播放」页 BPM 测量、ONNX Runtime DirectML GPU 加速 + CPU 回退、内置 `beat_this_small0.onnx` + 设置页 `final0` 下载安装指引、懒加载与空闲卸载保非 BPM 零性能影响、SQLite schema v5 `track_bpm_cache` 表、默认 1 位小数、`÷2`/`×2` + Tap 轻点测速与可选无中断写文件标签）与 KB-021；同步修订 ADR-001（第 8 条）与 ADR-003（§2 未落盘手动修正 BPM 状态说明）。
 - 2026-11-26：批准 ADR-034 增补（变速曲目分段 BPM 识别 `TempoSegmentAnalyzer`、SQLite schema v6 分段缓存列、进度条比例可视化 + 明细列表与 `> 5` 段隐藏保护）与 KB-021 §3.2/§3.4 实测参数修订；增补已并入 ADR-034 §10，提案文件已删除。
+- 2026-11-27：按 owner 要求修订 ADR-017：文件名清洗中 `*` 单独映射为 `x`（其余非法字符仍为 `_`）；转换完成 / 取消提示并入进度窗口，列表逐行展示 `源文件 → 转换后文件名` 与状态，不再弹完成 / 失败对话框。

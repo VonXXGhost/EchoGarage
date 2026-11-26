@@ -130,7 +130,7 @@
                             <Button Grid.Row="1" Grid.Column="2" x:Name="BrowseOutputFolderButton" Content="浏览…" Style="{StaticResource FlatButton}" Click="OnBrowseOutputFolderClick" Margin="8,4,0,4" />
 
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="文件名模板" VerticalAlignment="Center" Margin="0,6" />
-                            <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="TemplateBox" Height="26" Margin="0,4" ToolTip="可用：%title% %artist% %album% %albumartist% %composer% %genre% %year% %track% %disc% %filename% %codec%" />
+                            <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="TemplateBox" Height="26" Margin="0,4" ToolTip="可用：%title% %artist% %album% %albumartist% %composer% %genre% %year% %track% %disc% %filename% %codec%；文件名中的 * 会写作 x" />
 
                             <TextBlock Grid.Row="3" Grid.Column="0" Text="冲突处理" VerticalAlignment="Center" Margin="0,6" />
                             <ComboBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" x:Name="ConflictBox" Height="26" Margin="0,4" />

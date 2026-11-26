@@ -61,6 +61,16 @@ public sealed class ConversionNamingTests
     }
 
     [Fact]
+    public void BuildRelativePath_MapsAsteriskToXInsteadOfUnderscore()
+    {
+        var preset = new ConversionPreset { Format = ConversionFormat.Mp3, FileNameTemplate = "%title%" };
+        var track = MakeTrack();
+        track.Title = "a*b";
+
+        Assert.Equal("axb.mp3", ConversionNaming.BuildRelativePath(preset, track));
+    }
+
+    [Fact]
     public void BuildRelativePath_SupportsSubdirectories()
     {
         var preset = new ConversionPreset { Format = ConversionFormat.Mp3, FileNameTemplate = "%artist%/%title%" };
