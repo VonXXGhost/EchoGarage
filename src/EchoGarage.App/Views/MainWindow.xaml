@@ -604,7 +604,6 @@
                         <MenuItem Header="导入配置…" Command="{Binding ImportConfigurationCommand}" />
                         <Separator />
                         <MenuItem Header="注册为默认播放器…" Command="{Binding RegisterDefaultPlayerCommand}" />
-                        <MenuItem Header="设置…" Command="{Binding OpenSettingsCommand}" />
                         <MenuItem Header="转换器设置…" Click="OnConversionSettingsClick" />
                         <MenuItem Header="打开日志目录" Command="{Binding OpenLogsCommand}" />
                         <Separator />
@@ -637,6 +636,7 @@
                         <Separator />
                         <MenuItem Header="打开配置目录" Command="{Binding OpenConfigFolderCommand}" />
                     </MenuItem>
+                    <MenuItem Header="设置" Command="{Binding OpenSettingsCommand}" />
                 </Menu>
 
                 <!-- 页面切换（设计稿顶部 TAB）：播放列表 / 正在播放。 -->
@@ -683,8 +683,6 @@
                               DisplayMemberPath="FriendlyName" ToolTip="{Binding OutputDescription}" />
                     <ComboBox Width="92" Margin="6,0,0,0" ItemsSource="{Binding OutputModeOptions}"
                               SelectedIndex="{Binding OutputModeIndex}" />
-                    <Button Content="⚙" FontSize="14" Style="{StaticResource ToolbarButton}" Margin="8,0,0,0"
-                            ToolTip="设置" Command="{Binding OpenSettingsCommand}" />
                 </StackPanel>
             </Grid>
         </Border>

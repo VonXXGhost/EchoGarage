@@ -177,9 +177,6 @@
                         MinWidth="84" Margin="10,0,0,0" Command="{Binding SearchCommand}" />
             </Grid>
 
-            <TextBlock Grid.Row="2" Margin="0,8,0,0" Style="{StaticResource MutedText}"
-                       Text="窗口打开时不会联网；点击“搜索”后才请求所选来源。搜索为空时保持空列表。" />
-
             <StackPanel Grid.Row="4" Margin="0,16,0,0">
                 <Button Content="手动链接 / 专辑 ID ▸" Style="{StaticResource WeakLinkButton}"
                         HorizontalAlignment="Left" Command="{Binding ToggleManualLinkCommand}" />
@@ -317,14 +314,10 @@
                                 Visibility="{Binding SelectedResult.IsDerived, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Text="由单曲结果推导，字段可能不完整。" TextWrapping="Wrap" FontSize="11" />
                         </Border>
-                        <TextBlock Text="双击列表项可直接进入匹配步骤；若详情加载失败可重试。"
-                                   Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,14,0,0" />
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <TextBlock Grid.Row="2" Margin="0,8,0,0" Style="{StaticResource MutedText}"
-                       Text="上一步会保留关键词与搜索结果；返回后再次搜索同一关键词不会重复联网。" />
         </Grid>
 
         <!-- ============ 第三步：匹配与写入 ============ -->
@@ -345,7 +338,7 @@
 
                 <Border Grid.Column="0" Style="{StaticResource PreviewPanel}">
                     <StackPanel>
-                        <TextBlock Text="歌曲级标签（只写入已匹配的本地文件）" Style="{StaticResource MutedText}" />
+                        <TextBlock Text="歌曲级标签" Style="{StaticResource MutedText}" />
                         <TextBlock Style="{StaticResource MutedText}" Margin="0,3,0,0">
                             <Run Text="当前远程曲目：" /><Run Text="{Binding SelectedRemoteRow.OrdinalDisplay, Mode=OneWay}" />
                             <Run Text=" " /><Run Text="{Binding SelectedRemoteRow.TitleDisplay, Mode=OneWay}" />
@@ -364,14 +357,12 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="上方勾选是全局写入策略：每个匹配文件写入它自己对应远程曲目的值。"
-                                   Style="{StaticResource MutedText}" TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0" />
                     </StackPanel>
                 </Border>
 
                 <Border Grid.Column="2" Style="{StaticResource PreviewPanel}">
                     <StackPanel>
-                        <TextBlock Text="专辑级标签（写入全部本地文件）" Style="{StaticResource MutedText}" />
+                        <TextBlock Text="专辑级标签" Style="{StaticResource MutedText}" />
                         <Grid Margin="0,6,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -430,8 +421,6 @@
             <StackPanel Grid.Row="1" Margin="0,10,0,8">
                 <TextBlock Text="{Binding ReleaseSummary}" Foreground="{DynamicResource TextPrimaryBrush}"
                            TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Step3Summary}" Style="{StaticResource MutedText}"
-                           TextWrapping="Wrap" Margin="0,3,0,0" />
             </StackPanel>
 
             <!-- 下方：左远程曲目 / 右本地文件 -->
@@ -640,6 +629,7 @@
             </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Column="0" Text="{Binding WriteHint}" Style="{StaticResource MutedText}"
+                       Visibility="{Binding HasWriteHint, Converter={StaticResource BoolToVisibility}}"
                        VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0" />
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"

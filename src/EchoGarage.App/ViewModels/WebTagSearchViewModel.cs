@@ -172,9 +172,6 @@ public sealed partial class WebTagSearchViewModel : ObservableObject
     private string _releaseSummary = string.Empty;
 
     [ObservableProperty]
-    private string _step3Summary = string.Empty;
-
-    [ObservableProperty]
     private RemoteTrackRow? _selectedRemoteRow;
 
     [ObservableProperty]
@@ -199,13 +196,16 @@ public sealed partial class WebTagSearchViewModel : ObservableObject
     private string _coverMaxEdgeText = "1000";
 
     [ObservableProperty]
-    private string _writeHint = "写入会修改本地音频文件，操作不可撤销。";
+    private string _writeHint = string.Empty;
 
     public bool IsStep1 => Step == 1;
 
     public bool IsStep2 => Step == 2;
 
     public bool IsStep3 => Step == 3;
+
+    /// <summary>底部只在「暂不可写入」时提示原因；常规状态下不占用空间。</summary>
+    public bool HasWriteHint => WriteHint.Length > 0;
 
     public bool IsResultsEmpty => HasSearchCompleted && Results.Count == 0;
 
@@ -1318,35 +1318,9 @@ public sealed partial class WebTagSearchViewModel : ObservableObject
 
     private void RefreshAfterBindingChange()
     {
-        RefreshStep3Summary();
         RefreshWriteState();
         RefreshCommands();
         OnPropertyChanged(nameof(HasAnyMatch));
-    }
-
-    private void RefreshStep3Summary()
-    {
-        var localCount = LocalFiles.Count;
-        var remoteCount = RemoteTracks.Count;
-        var matched = RemoteTracks.Count(row => row.IsBound);
-        var unmatchedRemote = remoteCount - matched;
-        var unmatchedLocal = LocalFiles.Count(file => file.BoundRemote is null);
-
-        var parts = new List<string>
-        {
-            $"本地 {localCount} 首 / 远程 {remoteCount} 首：已匹配 {matched} 首"
-        };
-        if (unmatchedRemote > 0)
-        {
-            parts.Add($"远程 {unmatchedRemote} 首未使用（正常）");
-        }
-
-        if (unmatchedLocal > 0)
-        {
-            parts.Add($"{unmatchedLocal} 个本地文件未匹配，仅写专辑级字段");
-        }
-
-        Step3Summary = string.Join("；", parts) + "。";
     }
 
     private void RefreshWriteState()
@@ -1363,8 +1337,9 @@ public sealed partial class WebTagSearchViewModel : ObservableObject
         }
 
         WriteHint = reasons.Count == 0
-            ? "写入会修改本地音频文件，操作不可撤销。"
+            ? string.Empty
             : $"暂不可写入：{string.Join("；", reasons)}。";
+        OnPropertyChanged(nameof(HasWriteHint));
         WriteCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(HasSelectedFields));
         OnPropertyChanged(nameof(HasWritableFiles));
