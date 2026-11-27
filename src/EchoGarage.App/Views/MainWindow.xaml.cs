@@ -113,6 +113,7 @@ public partial class MainWindow : Window
         // Build the track context menu before it opens; see OnTrackMenuOpening.
         TrackGrid.ContextMenuOpening += OnTrackMenuOpening;
         GroupedList.ContextMenuOpening += OnTrackMenuOpening;
+        NowPlayingPageList.ContextMenuOpening += OnTrackMenuOpening;
         Loaded += OnLoaded;
         // Tags of files outside the library folders are never picked up by the scanner or the
         // watcher, so refresh the visible rows whenever the window is activated again.
@@ -186,6 +187,16 @@ public partial class MainWindow : Window
             }
 
             ApplyNowPlayingPageChrome();
+            // 两个页面的歌曲列表共享 _vm 的选择：离开时放回播放列表页；进入时右侧列表刚重建
+            // （ItemsSource 刷新会隐式清空选择），等布局完成后再套回去。
+            if (_vm.IsNowPlayingPageActive)
+            {
+                ScheduleSelectionRestore();
+            }
+            else
+            {
+                ApplySelectionToActiveList();
+            }
         }
         else if (e.PropertyName is nameof(MainViewModel.HasCurrentTrack))
         {
@@ -598,8 +609,145 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnTrackSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void OnTrackSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelectionSync)
+        {
+            // 「正在播放」页同步选择时会写回 SelectedRow（与 DataGrid.SelectedItem 两向绑定），
+            // DataGrid 因此回调到这里；此时选择已由调用方直接维护，不能再被覆盖成单选。
+            return;
+        }
+
         SyncSelectedRows(TrackGrid.SelectedItems, e.RemovedItems);
+    }
+
+    /// <summary>
+    /// 「正在播放」页右侧列表的选择同步：列表是 <see cref="MainViewModel.SelectedRows"/> 的另一个
+    /// 视图，右键菜单与批量命令读同一份选择，因此两边必须保持一致。
+    /// </summary>
+    private void OnNowPlayingPageSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelectionSync)
+        {
+            return;
+        }
+
+        if (NowPlayingPageList.SelectedItems.Count == 0 && e.RemovedItems.Count > 0 &&
+            !NowPlayingPageList.IsKeyboardFocusWithin && Mouse.LeftButton != MouseButtonState.Pressed)
+        {
+            // 重建 ItemsSource（换源 / 排序 / 过滤）时 ListView 会隐式清空选择，这不是用户操作：
+            // 保留 _vm 里的选择，等布局完成后再套回列表。
+            ScheduleSelectionRestore();
+            return;
+        }
+
+        SyncSelectedRows(NowPlayingPageList.SelectedItems, e.RemovedItems);
+        // 压住 DataGrid 的回调，避免两向绑定的 SelectedItem 把多选覆盖成单选。
+        _suppressSelectionSync = true;
+        try
+        {
+            _vm.SelectedRow = NowPlayingPageList.SelectedItem as TrackRowViewModel;
+        }
+        finally
+        {
+            _suppressSelectionSync = false;
+        }
+    }
+
+    /// <summary>等当前这轮布局 / 绑定处理完后再把选择套回可见列表（ItemsSource 刚被替换时不能立即设选择）。</summary>
+    private void ScheduleSelectionRestore() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ApplySelectionToActiveList));
+
+    /// <summary>
+    /// 把 <see cref="MainViewModel.SelectedRows"/> 重新套到当前可见的歌曲列表上：两个页面、
+    /// 分组 / 扁平视图共用同一份选择，隐藏的控件不会自动跟随，切页后必须显式重放。
+    /// </summary>
+    private void ApplySelectionToActiveList()
+    {
+        _suppressSelectionSync = true;
+        try
+        {
+            if (_vm.IsNowPlayingPageActive)
+            {
+                ApplySelection(NowPlayingPageList);
+            }
+            else if (_vm.IsGroupedViewActive)
+            {
+                ApplySelection(GroupedList);
+            }
+            else
+            {
+                ApplySelection(TrackGrid);
+            }
+        }
+        finally
+        {
+            _suppressSelectionSync = false;
+        }
+    }
+
+    private void ApplySelection(DataGrid grid)
+    {
+        grid.SelectedItems.Clear();
+        foreach (var row in _vm.SelectedRows)
+        {
+            if (grid.Items.Contains(row))
+            {
+                grid.SelectedItems.Add(row);
+            }
+        }
+
+        if (_vm.SelectedRows.Count > 0)
+        {
+            var anchor = _vm.SelectedRows.FirstOrDefault(row => grid.Items.Contains(row));
+            if (anchor is not null)
+            {
+                grid.SelectedItem = anchor;
+            }
+
+            return;
+        }
+
+        // SelectedRow 可能在启动恢复时先于 SelectedRows 被赋值（见 RefreshCurrentSourceAsync），
+        // 此时用单选锚点兜底，避免切页后 Enter / 单曲命令失去目标。
+        if (_vm.SelectedRow is { } fallback && grid.Items.Contains(fallback))
+        {
+            grid.SelectedItems.Add(fallback);
+            grid.SelectedItem = fallback;
+            _vm.SelectedRows.Add(fallback);
+        }
+    }
+
+    private void ApplySelection(ListView list)
+    {
+        list.SelectedItems.Clear();
+        foreach (var row in _vm.SelectedRows)
+        {
+            if (list.Items.Contains(row))
+            {
+                list.SelectedItems.Add(row);
+            }
+        }
+
+        var anchor = _vm.SelectedRows.FirstOrDefault(row => list.Items.Contains(row));
+        if (anchor is not null)
+        {
+            list.SelectedItem = anchor;
+        }
+    }
+
+    /// <summary>右键菜单里只处理单曲的命令（属性 / Web 标签）取当前可见列表的选中行。</summary>
+    private TrackRowViewModel? GetActiveListSelectedRow()
+    {
+        if (_vm.IsNowPlayingPageActive)
+        {
+            return NowPlayingPageList.SelectedItem as TrackRowViewModel;
+        }
+
+        return _vm.IsGroupedViewActive
+            ? GroupedList.SelectedItem as TrackRowViewModel
+            : TrackGrid.SelectedItem as TrackRowViewModel;
+    }
 
     /// <summary>
     /// 把列表控件的选中项同步到 <see cref="MainViewModel.SelectedRows"/>（批量命令的唯一数据源），
@@ -928,6 +1076,30 @@ public partial class MainWindow : Window
 
         GroupedList.SelectedItems.Clear();
         GroupedList.SelectedItem = model;
+    }
+
+    /// <summary>「正在播放」页右侧列表的右键：先选中光标所在行，菜单命令再按这份选择执行。</summary>
+    private void OnNowPlayingPageListPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var item = FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject);
+        if (item?.DataContext is not TrackRowViewModel model || NowPlayingPageList.SelectedItems.Contains(model))
+        {
+            return;
+        }
+
+        _suppressSelectionSync = true;
+        try
+        {
+            NowPlayingPageList.SelectedItems.Clear();
+            NowPlayingPageList.SelectedItem = model;
+        }
+        finally
+        {
+            _suppressSelectionSync = false;
+        }
+
+        SyncSelectedRows(NowPlayingPageList.SelectedItems, Array.Empty<object>());
+        _vm.SelectedRow = model;
     }
 
     private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
@@ -1732,7 +1904,7 @@ public partial class MainWindow : Window
 
     private async void OnPropertiesClick(object sender, RoutedEventArgs e)
     {
-        if (TrackGrid.SelectedItem is TrackRowViewModel row)
+        if (GetActiveListSelectedRow() is { } row)
         {
             await _vm.EditTagsCommand.ExecuteAsync(row);
         }
@@ -1740,7 +1912,7 @@ public partial class MainWindow : Window
 
     private async void OnWebTagSearchClick(object sender, RoutedEventArgs e)
     {
-        if (TrackGrid.SelectedItem is TrackRowViewModel row)
+        if (GetActiveListSelectedRow() is { } row)
         {
             await _vm.SearchWebTagsCommand.ExecuteAsync(row);
         }

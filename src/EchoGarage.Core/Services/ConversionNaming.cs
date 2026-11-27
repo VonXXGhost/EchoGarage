@@ -113,7 +113,8 @@ public static class ConversionNaming
 
             if (!string.IsNullOrEmpty(value))
             {
-                builder.Append(value);
+                // 标签值里的 / 与 \ 属于文件名内容，不能当成模板中的子目录分隔符，统一替换为下划线。
+                AppendTokenValue(builder, value);
                 index = closing + 1;
                 continue;
             }
@@ -295,6 +296,15 @@ public static class ConversionNaming
         }
 
         builder.Append(literal);
+    }
+
+    /// <summary>把标签值里的路径分隔符转义成下划线，避免被当成模板的子目录。</summary>
+    private static void AppendTokenValue(StringBuilder builder, string value)
+    {
+        foreach (var ch in value)
+        {
+            builder.Append(ch is '/' or '\\' ? '_' : ch);
+        }
     }
 
     private static bool IsTextSeparator(char ch) => TextSeparators.Contains(ch);

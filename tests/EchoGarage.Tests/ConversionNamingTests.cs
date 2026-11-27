@@ -71,6 +71,29 @@ public sealed class ConversionNamingTests
     }
 
     [Fact]
+    public void ExpandTemplate_ReplacesPathSeparatorsInsideTokenValue()
+    {
+        var track = MakeTrack();
+        track.Artist = "Artist/Sub\\Dir";
+
+        var result = ConversionNaming.ExpandTemplate("%artist% - %title%", track);
+
+        Assert.Equal("Artist_Sub_Dir - Song", result);
+    }
+
+    [Fact]
+    public void BuildRelativePath_DoesNotTurnSeparatorsInsideTagValueIntoDirectories()
+    {
+        var preset = new ConversionPreset { Format = ConversionFormat.Mp3, FileNameTemplate = "%artist%/%title%" };
+        var track = MakeTrack();
+        track.Artist = "Artist/Sub";
+
+        var result = ConversionNaming.BuildRelativePath(preset, track);
+
+        Assert.Equal(Path.Combine("Artist_Sub", "Song.mp3"), result);
+    }
+
+    [Fact]
     public void BuildRelativePath_SupportsSubdirectories()
     {
         var preset = new ConversionPreset { Format = ConversionFormat.Mp3, FileNameTemplate = "%artist%/%title%" };
