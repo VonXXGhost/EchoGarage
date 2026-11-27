@@ -84,10 +84,7 @@ public partial class SettingsWindow : ThemedWindow
                            $"日志：{_host.Paths.LogsDirectory}";
         DataDirText.Text = $"数据库：{_host.Paths.DatabaseFile}";
         DataPathText.Text = $"配置目录：{_host.Paths.ConfigDirectory}\n" +
-                            $"数据目录：{_host.Paths.DataDirectory}\n" +
-                            (_host.Paths.IsPortable
-                                ? "（便携模式：数据保存在程序目录）"
-                                : "（自定义目录：ECHOGARAGE_DATA_DIR）");
+                            $"数据目录：{_host.Paths.DataDirectory}";
         RefreshFolders();
         PopulateHotkeys();
         PopulateEncoders();
@@ -523,7 +520,7 @@ public partial class SettingsWindow : ThemedWindow
         var status = _host.Bpm.GetModelStatus();
         if (bpm.PreferredModel == BpmModelKind.Final0 && !status.Final0.Installed)
         {
-            ShowBpmGuideFeedback("尚未检测到 beat_this_final0.onnx：按下方指引放入模型目录并点「重新检测」前，测量会自动使用内置 small0。");
+            ShowBpmGuideFeedback("尚未检测到 beat_this_final0.onnx：把文件放入模型目录并点「重新检测」前，测量会自动使用内置 small0。");
         }
         else
         {
@@ -615,6 +612,16 @@ public partial class SettingsWindow : ThemedWindow
     {
         BpmGuideFeedbackText.Text = message;
         BpmGuideFeedbackText.Visibility = Visibility.Visible;
+        SetBpmGuideExpanded(true);
+    }
+
+    private void OnToggleBpmGuide(object sender, RoutedEventArgs e) =>
+        SetBpmGuideExpanded(BpmGuidePanel.Visibility != Visibility.Visible);
+
+    private void SetBpmGuideExpanded(bool expanded)
+    {
+        BpmGuidePanel.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        BpmGuideToggleButton.Content = expanded ? "收起指引 ▴" : "安装指引 ▾";
     }
 
     private void OnRefreshDevices(object sender, RoutedEventArgs e) => _vm.RefreshDevices();
@@ -798,10 +805,8 @@ public partial class SettingsWindow : ThemedWindow
             }
         }
 
-        var enabled = _tagNormalizationRows.Count(row => row.Enabled);
         var limitReached = _tagNormalizationRows.Count >= TagNormalization.MaxRuleCount;
-        var status = $"共 {_tagNormalizationRows.Count} 条规则，已启用 {enabled} 条。";
-        status += limitReached
+        var status = limitReached
             ? $"已达上限 {TagNormalization.MaxRuleCount} 条，无法再添加。"
             : $"最多 {TagNormalization.MaxRuleCount} 条规则。";
         if (invalid > 0)
@@ -1326,14 +1331,12 @@ public partial class SettingsWindow : ThemedWindow
     {
         var mode = SelectedProxyMode;
         ProxyUrlBox.IsEnabled = mode == WebProxyMode.Custom;
-        ProxyHintText.Text = mode switch
-        {
-            WebProxyMode.Direct => "直接连接，不使用代理。",
-            WebProxyMode.Custom when NetworkSettings.TryNormalizeProxyUrl(ProxyUrlBox.Text, out var normalized) =>
-                $"将使用代理 {normalized}。",
-            WebProxyMode.Custom => "请输入以 http:// 或 https:// 开头的代理地址，例如 http://127.0.0.1:7890。",
-            _ => "使用 Windows 系统代理设置；系统未配置代理时直接连接。"
-        };
+        var invalid = mode == WebProxyMode.Custom &&
+                      !NetworkSettings.TryNormalizeProxyUrl(ProxyUrlBox.Text, out _);
+        ProxyHintText.Text = invalid
+            ? "请输入以 http:// 或 https:// 开头的代理地址，例如 http://127.0.0.1:7890。"
+            : string.Empty;
+        ProxyHintText.Visibility = invalid ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnProxyModeChanged(object sender, SelectionChangedEventArgs e)

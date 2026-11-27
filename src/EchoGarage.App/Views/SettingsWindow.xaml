@@ -106,9 +106,6 @@
                                 <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
                                           ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
                             </Grid>
-                            <TextBlock Text="切换立即生效，并保存在配置中。纯净极简白为默认浅色主题；午夜黑胶 / 深海蓝灰为深色主题，适合夜间使用。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="90,8,0,0" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -142,12 +139,6 @@
                                 <ComboBox Grid.Column="1" Width="160" HorizontalAlignment="Left"
                                           ItemsSource="{Binding OutputModeOptions}" SelectedIndex="{Binding OutputModeIndex}" />
                             </Grid>
-                            <TextBlock Text="{Binding OutputDescription}" Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="11" Margin="90,10,0,0" TextWrapping="Wrap" />
-                            <TextBlock Text="独占模式绕过系统混音器，可减少处理环节；其他程序将无法同时播放声音。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="90,6,0,0" />
-
                             <TextBlock Text="音量上限（按模式）" Foreground="{DynamicResource TextSecondaryBrush}"
                                        Margin="90,14,0,0" />
                             <Grid Margin="90,6,0,0">
@@ -178,7 +169,7 @@
                                            FontFamily="{StaticResource MonoFont}" FontSize="12"
                                            Text="{Binding ExclusiveVolumeCeiling, StringFormat={}{0:0}%}" />
                             </Grid>
-                            <TextBlock Text="音量滑块的 100% 对应这里设置的上限：实际输出 = 滑块百分比 × 上限。独占模式绕过系统音量限制，建议调低上限，避免输出过高功率损伤设备或听力。"
+                            <TextBlock Text="音量滑块的 100% 对应这里设置的上限：实际输出 = 滑块百分比 × 上限。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                        Margin="90,8,0,0" />
                         </StackPanel>
@@ -189,11 +180,8 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="右栏「正在播放」下方的实时频谱。所有参数改动立即生效，并随配置一起保存。"
+                            <TextBlock Text="分段数越大低频分得越细；FFT 越大频率分辨率越高、柱体反应越迟钝。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
-                            <TextBlock Text="分段数越大低频分得越细；FFT 越大频率分辨率越高、柱体反应越迟钝。默认 32 段、4096 点、−50 dB 下限。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="0,6,0,0" />
 
                             <Grid Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
@@ -226,9 +214,6 @@
                                     <ComboBoxItem Content="180 FPS" Tag="Fps180" />
                                 </ComboBox>
                             </Grid>
-                            <TextBlock Text="帧率上限是绘制频率的天花板，实际帧率还受显示器刷新率限制；上限越低越省电。频谱弹道与释放速度不受影响。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="90,6,0,0" />
 
                             <Grid Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
@@ -405,7 +390,7 @@
 
                 <StackPanel x:Name="PageHotkeys" Visibility="Collapsed">
                     <TextBlock Text="快捷键" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
-                    <TextBlock Text="点击快捷键按钮后直接按下组合键即可完成绑定：Esc 取消并恢复原值，Backspace 或 Delete 清除。字母、数字、功能键、方向键与标点符号（如 Ctrl+;）均可绑定；勾选“全局”后，即使焦点在其他程序也会生效。媒体键（播放/暂停、上一首/下一首、停止、音量）也支持本地与全局绑定。键盘上的媒体键无需设置即默认控制播放（见下方内置快捷键），为同一媒体键显式绑定动作后以绑定为准。音量 +5% / -5% 动作与音量条滚轮使用同一套 5% 步进，并会自动解除静音。"
+                    <TextBlock Text="Esc 取消并恢复原值，Backspace 或 Delete 清除。"
                                Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                Margin="0,0,0,8" />
 
@@ -443,8 +428,6 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="每个转换预设都可以绑定一个启动快捷键，预设名称显示为标签；修改会立即写入该转换预设的快捷键设置，并随设置一起保存。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
                             <ItemsControl x:Name="PresetHotkeyList" Margin="0,8,0,0">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -476,7 +459,7 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="以下为程序内置的默认按键，不能修改；对应的可自定义动作留空/未设置时生效。媒体键默认控制播放：本应用有播放内容（含暂停）或窗口在前台时响应，后台且未播放时交给系统处理；如需在后台全局响应，可把媒体键绑定到上方动作并勾选“全局”。"
+                            <TextBlock Text="以下为程序内置的默认按键，不能修改；对应的可自定义动作留空/未设置时生效。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
                             <ItemsControl x:Name="BuiltInHotkeyList" Margin="0,8,0,0">
                                 <ItemsControl.ItemTemplate>
@@ -622,10 +605,8 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="内置编码器：FLAC、LAME、SSRC 随软件附带，无需配置路径。"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
                             <TextBlock x:Name="EncoderStatusText" Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                       FontSize="11" TextWrapping="Wrap" />
                             <Grid Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="90" />
@@ -666,9 +647,6 @@
                                              ToolTip="响度调整窗口打开时填入的目标积分响度（-60.0 … 0.0 LUFS）" />
                                 </DockPanel>
                             </Grid>
-                            <TextBlock Text="仅影响「响度调整」窗口打开时的目标初始值，默认 -10.0 LUFS；实际调整仍以窗口内输入为准。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="90,8,0,0" />
                         </StackPanel>
                     </Border>
 
@@ -680,6 +658,7 @@
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="108" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="识别模型" VerticalAlignment="Center"
@@ -689,21 +668,24 @@
                                     <ComboBoxItem Content="内置紧凑模型 (small0 · 约 10.5 MB)" Tag="Small0" />
                                     <ComboBoxItem Content="高精度主模型 (final0 · 约 80 MB，需自装)" Tag="Final0" />
                                 </ComboBox>
+                                <Button x:Name="BpmGuideToggleButton" Grid.Column="2" Content="安装指引 ▾"
+                                        Style="{StaticResource FlatButton}" HorizontalAlignment="Left"
+                                        Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Center"
+                                        ToolTip="展开 / 收起 final0 高精度模型的下载与安装步骤"
+                                        Click="OnToggleBpmGuide" />
                             </Grid>
                             <TextBlock x:Name="BpmModelStatusText" Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="11" TextWrapping="Wrap" Margin="108,6,0,0" />
 
-                            <!-- final0 下载与安装指引 -->
-                            <Border Margin="0,10,0,0" Padding="11,9" CornerRadius="5"
+                            <!-- final0 下载与安装指引（默认折叠，按需展开） -->
+                            <Border x:Name="BpmGuidePanel" Margin="0,8,0,0" Padding="11,9" CornerRadius="5"
                                     Background="{DynamicResource PanelAltBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                    Visibility="Collapsed">
                                 <StackPanel>
-                                    <TextBlock Text="可选高精度模型（beat_this_final0.onnx）安装指引"
-                                               FontSize="12" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextPrimaryBrush}" />
                                     <TextBlock x:Name="BpmFinal0GuideText" FontSize="11"
                                                Foreground="{DynamicResource TextSecondaryBrush}"
-                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                               TextWrapping="Wrap" />
                                     <WrapPanel Margin="0,8,0,0">
                                         <Button Content="打开模型目录" Style="{StaticResource FlatButton}"
                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
@@ -760,9 +742,6 @@
                                       Margin="0,8,0,0" Checked="OnBpmSettingsChanged" Unchecked="OnBpmSettingsChanged" />
                             <CheckBox x:Name="BpmRoundId3Check" Content="写入 ID3v2 (MP3 / WAV) TBPM 时强制取整（兼容老式硬件播放器）"
                                       Margin="0,8,0,0" Checked="OnBpmSettingsChanged" Unchecked="OnBpmSettingsChanged" />
-                            <TextBlock Text="推理引擎仅在点击「♩ BPM 测量」时按需加载，不占用平时启动时间与待机内存；默认仅写入软件本地缓存，不会自动修改音频文件。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="0,8,0,0" />
                         </StackPanel>
                     </Border>
 
@@ -771,15 +750,10 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="对选中歌曲按正则批量规范化标签；规则保存在 settings.json，只在右键菜单或标签编辑窗口里主动执行时生效。正则表达式非法的规则不会被应用。"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
-                            <TextBlock Text="示例：内置规则会把专辑「Demo Album A - EP」整理为「Demo Album A」；规则按列表从上到下依次应用。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="0,6,0,0" />
                             <TextBlock x:Name="TagNormalizationEmptyHint"
                                        Text="尚未配置规则。点击下方「恢复默认规则」可以恢复内置的两条规则。"
                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                       Margin="0,8,0,0" Visibility="Collapsed" />
+                                       Visibility="Collapsed" />
                             <ListBox x:Name="TagNormalizationRuleList" Margin="0,8,0,0" Background="Transparent"
                                      BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      ScrollViewer.VerticalScrollBarVisibility="Disabled">
@@ -918,9 +892,7 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
-                            <TextBlock Text="Web 搜索标签会访问 Apple Music 日本网页；仅在你主动搜索时联网，启动过程不会发起网络请求。"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
-                            <Grid Margin="0,12,0,0">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
@@ -955,9 +927,6 @@
                             <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,12" />
                             <CheckBox x:Name="AppleMusicSourceCheck" Content="启用 Apple Music（日本）网页源"
                                       Checked="OnWebSourceChanged" Unchecked="OnWebSourceChanged" />
-                            <TextBlock Text="第一阶段仅内置该源。搜索关键词、结果与标签均来自 Apple Music 网页返回的数据。"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0"
-                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -969,7 +938,7 @@
                             BorderThickness="1" CornerRadius="6" Padding="14">
                         <StackPanel>
                             <TextBlock Text="EchoGarage v0.1.0" FontWeight="SemiBold" />
-                            <TextBlock Text="本地音乐播放器 · WPF / .NET 10 · NAudio WASAPI" Foreground="{DynamicResource TextSecondaryBrush}"
+                            <TextBlock Text="WPF / .NET 10 · NAudio WASAPI" Foreground="{DynamicResource TextSecondaryBrush}"
                                        Margin="0,4,0,0" />
                             <TextBlock x:Name="StartupText" Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
                                        Margin="0,8,0,0" TextWrapping="Wrap" />
